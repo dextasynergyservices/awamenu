@@ -97,7 +97,7 @@ awamenu.com/[slug]/reservation/[id] → Reservation status page (no login requir
 - Every Prisma query scoped by `restaurantId`
 - PostgreSQL RLS as a second layer
 - Redis cache keys namespaced `tenant:{restaurantId}:*`
-- R2 assets under `restaurants/{restaurantId}/...`
+- Cloudinary assets under `restaurants/{restaurantId}/...`
 - Plan limits enforced in server actions before every write
 
 ---
@@ -123,7 +123,7 @@ awamenu.com/[slug]/reservation/[id] → Reservation status page (no login requir
 | ORM | Prisma 6 + Prisma Accelerate | Type-safe, connection pooling |
 | Database | Neon (PostgreSQL) | Serverless, free tier |
 | Cache / Sessions | Upstash Redis | Serverless Redis |
-| File Storage | Cloudflare R2 | 10GB free, no egress fees |
+| File Storage | Cloudinary | Image storage, transformations, CDN delivery |
 | Background Jobs | Upstash QStash | Serverless queues |
 | Real-time | Upstash Redis pub/sub + SSE | In-app notifications (zero cost) |
 
@@ -164,7 +164,7 @@ awamenu.com/[slug]/reservation/[id] → Reservation status page (no login requir
 ```
 ┌──────────────────────────────────────────────────────────┐
 │              Cloudflare Edge (Free Tier)                  │
-│   WAF · DDoS · Turnstile · CDN · R2 · Bot rules          │
+│   WAF · DDoS · Turnstile · Bot rules                     │
 └────────────────────────┬─────────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────────┐
@@ -204,7 +204,7 @@ awamenu.com/[slug]/reservation/[id] → Reservation status page (no login requir
 ┌──────────▼──────────────────────────────────────────────┐
 │  External Services                                        │
 │  Paystack · Stripe · Resend · QStash · Sentry            │
-│  Posthog · Cloudflare R2 · Twilio WhatsApp               │
+│  Posthog · Cloudinary · Twilio WhatsApp                  │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -401,7 +401,7 @@ export const config = {
 │   ├── staff-auth.ts
 │   ├── payments.ts
 │   ├── qr.ts
-│   ├── r2.ts
+│   ├── cloudinary.ts
 │   ├── qstash.ts
 │   ├── email.ts
 │   ├── whatsapp.ts
@@ -484,7 +484,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────
@@ -639,16 +639,34 @@ model Session {
 }
 
 model Account {
-  id           String  @id @default(cuid())
-  userId       String
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider     String
-  providerId   String
-  accessToken  String?
-  refreshToken String?
-  idToken      String?
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  provider              String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  @@unique([provider, providerId])
+  @@unique([provider, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
 }
 
 // ─── Staff Accounts ───────────────────────────────────
@@ -1723,11 +1741,11 @@ const sw = new Serwist({
       handler: 'StaleWhileRevalidate',
       options: { cacheName: 'dashboard-shell', expiration: { maxAgeSeconds: 60 * 60 * 24 } },
     },
-    // Cache R2 images aggressively (they are content-addressed)
+    // Cache Cloudinary images aggressively (they are CDN-hosted)
     {
-      matcher: new RegExp(`^${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}`),
+      matcher: new RegExp(`^${process.env.NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL}`),
       handler: 'CacheFirst',
-      options: { cacheName: 'r2-images', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
+      options: { cacheName: 'cloudinary-images', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
     },
     ...defaultCache,
   ],
@@ -2121,7 +2139,7 @@ export async function sendOrderNotification(toNumber: string, order: OrderNotifi
 - Tap targets min 44×44px
 - Skeleton screens, optimistic UI
 - Min 16px body font; inputs `font-size: 16px` (prevents iOS zoom)
-- `next/image` WebP via Cloudflare CDN, lazy-loaded
+- `next/image` WebP via Cloudinary CDN, lazy-loaded
 - Offline banner when `navigator.onLine = false`
 
 ---
@@ -2140,7 +2158,7 @@ Sentry.init({
 })
 ```
 
-Monitored: Unhandled exceptions, failed server actions, slow Prisma queries, payment webhook failures, WhatsApp failures, QStash failures, R2 upload failures, staff PIN failures, **SSE errors**, **Web Push delivery failures**.
+Monitored: Unhandled exceptions, failed server actions, slow Prisma queries, payment webhook failures, WhatsApp failures, QStash failures, Cloudinary upload failures, staff PIN failures, **SSE errors**, **Web Push delivery failures**.
 
 ---
 
@@ -2148,7 +2166,7 @@ Monitored: Unhandled exceptions, failed server actions, slow Prisma queries, pay
 
 ### Prerequisites
 
-Bun >= 1.1, Node.js >= 20, Git. Accounts: Neon, Upstash, Cloudflare, Vercel, Paystack, Resend, Twilio, Sentry, Posthog.
+Bun >= 1.1, Node.js >= 20, Git. Accounts: Neon, Upstash, Cloudflare, Cloudinary, Vercel, Paystack, Resend, Twilio, Sentry, Posthog.
 
 ### Initial Setup
 
@@ -2303,7 +2321,7 @@ NEXT_PUBLIC_APP_URL=https://awamenu.com
 
 # ─── Database (Neon) ──────────────────────────────────
 DATABASE_URL=postgresql://...?sslmode=require
-DIRECT_DATABASE_URL=postgresql://...?sslmode=require
+DATABASE_URL=postgresql://...?sslmode=require
 
 # ─── Redis (Upstash) ──────────────────────────────────
 UPSTASH_REDIS_REST_URL=https://...
@@ -2330,12 +2348,11 @@ TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_WHATSAPP_FROM=+14155238886
 
-# ─── Storage (Cloudflare R2) ──────────────────────────
-R2_ACCOUNT_ID=...
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET_NAME=awamenu-assets
-NEXT_PUBLIC_R2_PUBLIC_URL=https://assets.awamenu.com
+# ─── Storage (Cloudinary) ─────────────────────────────
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL=https://res.cloudinary.com/your-cloud-name
 
 # ─── QStash (Upstash) ─────────────────────────────────
 QSTASH_TOKEN=...
@@ -2382,15 +2399,15 @@ SKIP_ENV_VALIDATION=   # "true" in CI only
 
 - `main` → production, `dev` → local. Migrations via `bun prisma migrate deploy`.
 
-### R2 Bucket
+### Cloudinary Media Library
 
 ```
-awamenu-assets/restaurants/{restaurantId}/logo.webp
-                                          cover.webp
-                                          menu/{menuItemId}.webp
+restaurants/{restaurantId}/logo
+                          cover
+                          menu/{menuItemId}
 ```
 
-Custom domain: `assets.awamenu.com` → R2 via Cloudflare DNS.
+Images are uploaded to Cloudinary and delivered through the Cloudinary CDN. Optional custom delivery domains may be configured in Cloudinary after MVP.
 
 ### PWA Icons
 
@@ -2415,7 +2432,7 @@ Creates: default FREE / STARTER / PRO plans + super admin user (`SUPER_ADMIN_EMA
 | Upstash Redis | 10,000 commands/day | Sessions, cart, rate limits, SSE pub/sub |
 | Upstash QStash | 500 messages/day | Reservation expiry |
 | Cloudflare (CDN + WAF + Turnstile) | Unlimited | Edge, security |
-| Cloudflare R2 | 10GB storage, 10M reads/mo | Images, QR codes |
+| Cloudinary | Free tier image storage + transformations | Images, QR codes |
 | Resend | 3,000 emails/month | Confirmations |
 | Sentry | 5,000 errors/month | Error tracking |
 | Posthog | 1M events/month | Analytics |
@@ -2452,7 +2469,7 @@ Creates: default FREE / STARTER / PRO plans + super admin user (`SUPER_ADMIN_EMA
 - [ ] Onboarding + dashboard layout guards
 - [ ] `/onboarding/choose-plan` → `/onboarding/checkout` → `/onboarding/setup`
 - [ ] Paystack webhook — SUBSCRIPTION branch
-- [ ] R2 presigned upload
+- [ ] Cloudinary signed upload
 - [ ] `completeSetupAction`
 - [ ] Welcome email
 
