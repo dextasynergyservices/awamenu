@@ -4,6 +4,7 @@ import {
 	ArrowRight,
 	Check,
 	Flame,
+	Loader2,
 	Lock,
 	Mail,
 	MapPin,
@@ -14,11 +15,14 @@ import {
 	Sparkles,
 	Star,
 	User,
+	UserRoundPlus,
+	Users,
 	Utensils,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lookupCustomerByPhoneAction } from "@/actions/customer.actions";
 import { createOrderAction } from "@/actions/order.actions";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { SubmitButton } from "@/components/ui/action-button";
@@ -92,9 +96,65 @@ export function CheckoutFlow({
 	const setAppendOrderId = useCart((state) => state.setAppendOrderId);
 	const setQuantity = useCart((state) => state.setQuantity);
 	const [type, setType] = useState<CheckoutOrderType>("PICKUP");
+	const [orderFor, setOrderFor] = useState<"SELF" | "SOMEONE_ELSE">("SELF");
 	const [dineInServiceMode, setDineInServiceMode] = useState<
 		"SELF_SERVED" | "SERVED_BY_WAITER"
 	>("SELF_SERVED");
+
+	// Auto-fetch customer details
+	const [customerName, setCustomerName] = useState("");
+	const [customerPhone, setCustomerPhone] = useState("");
+	const [customerEmail, setCustomerEmail] = useState("");
+	const [deliveryAddress, setDeliveryAddress] = useState("");
+	const [autoFetched, setAutoFetched] = useState(false);
+	const [fetchingProfile, setFetchingProfile] = useState(false);
+	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const handlePhoneChange = useCallback(
+		(phone: string) => {
+			setCustomerPhone(phone);
+			setAutoFetched(false);
+
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+
+			const trimmed = phone.replace(/\s+/g, "").trim();
+			if (trimmed.length < 10) {
+				setFetchingProfile(false);
+				return;
+			}
+
+			debounceRef.current = setTimeout(async () => {
+				setFetchingProfile(true);
+				try {
+					const result = await lookupCustomerByPhoneAction({
+						restaurantSlug: slug,
+						phone: trimmed,
+					});
+					if (result) {
+						let loadedDetails = false;
+						if (result.fullName && !customerName) {
+							setCustomerName(result.fullName);
+							loadedDetails = true;
+						}
+						if (result.email && !customerEmail) {
+							setCustomerEmail(result.email);
+							loadedDetails = true;
+						}
+						if (result.deliveryAddress && !deliveryAddress) {
+							setDeliveryAddress(result.deliveryAddress);
+							loadedDetails = true;
+						}
+						setAutoFetched(loadedDetails);
+					}
+				} catch {
+					// Silently fail – customer may not exist
+				} finally {
+					setFetchingProfile(false);
+				}
+			}, 600);
+		},
+		[customerName, customerEmail, deliveryAddress, slug],
+	);
 	const availableOrderTypes = useMemo(
 		() =>
 			orderTypes.filter(
@@ -136,6 +196,12 @@ export function CheckoutFlow({
 
 		setAppendOrderId(null);
 	}, [existingOrderId, setAppendOrderId]);
+
+	useEffect(() => {
+		return () => {
+			if (debounceRef.current) clearTimeout(debounceRef.current);
+		};
+	}, []);
 
 	const submitLabel = orderIdToAppend
 		? "Add items to order"
@@ -333,11 +399,113 @@ export function CheckoutFlow({
 							</section>
 						)}
 
+						{/* ── Order for Self / Someone Else toggle ── */}
+						{!orderIdToAppend ? (
+							<section className="mt-7">
+								<h3 className="text-lg font-black">Who is this order for?</h3>
+								<div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
+									<button
+										type="button"
+										onClick={() => setOrderFor("SELF")}
+										className={cn(
+											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
+											orderFor === "SELF"
+												? "bg-white text-emerald-700 shadow-sm"
+												: "text-slate-500 hover:text-slate-700",
+										)}
+									>
+										<User className="size-4" />
+										For myself
+									</button>
+									<button
+										type="button"
+										onClick={() => setOrderFor("SOMEONE_ELSE")}
+										className={cn(
+											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
+											orderFor === "SOMEONE_ELSE"
+												? "bg-white text-emerald-700 shadow-sm"
+												: "text-slate-500 hover:text-slate-700",
+										)}
+									>
+										<Users className="size-4" />
+										For somebody
+									</button>
+								</div>
+								<input type="hidden" name="orderFor" value={orderFor} />
+							</section>
+						) : null}
+
+						{/* ── "For somebody else" fields ── */}
+						{orderFor === "SOMEONE_ELSE" && !orderIdToAppend ? (
+							<section className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+								<div className="flex items-center gap-2 text-sm font-black text-emerald-800">
+									<UserRoundPlus className="size-4" />
+									Recipient details
+								</div>
+								<div className="mt-3 grid gap-4 md:grid-cols-2">
+									<label className="grid gap-2">
+										<span className="text-sm font-black text-slate-700">
+											Recipient name
+										</span>
+										<input
+											name="receiverName"
+											required
+											placeholder="Enter recipient's name"
+											className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+										/>
+									</label>
+									<label className="grid gap-2">
+										<span className="text-sm font-black text-slate-700">
+											Recipient phone
+										</span>
+										<input
+											name="receiverPhone"
+											required
+											type="tel"
+											placeholder="Enter recipient's phone"
+											className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+										/>
+									</label>
+									{selectedType === "DINE_IN" ? (
+										<label className="grid gap-2 md:col-span-2">
+											<span className="text-sm font-black text-slate-700">
+												Seat number (optional)
+											</span>
+											<input
+												name="seatNumber"
+												placeholder="e.g. Seat 3"
+												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+											/>
+										</label>
+									) : (
+										<label className="grid gap-2 md:col-span-2">
+											<span className="text-sm font-black text-slate-700">
+												Sender phone (your number)
+											</span>
+											<input
+												name="senderPhone"
+												required
+												type="tel"
+												placeholder="Enter your phone number"
+												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+											/>
+										</label>
+									)}
+								</div>
+							</section>
+						) : null}
+
 						<section className="mt-7">
 							<h3 className="text-lg font-black">Contact information</h3>
 							{selectedType === "DINE_IN" || orderIdToAppend ? (
 								<p className="mt-1 text-sm font-bold text-slate-500">
 									Optional for dine-in orders.
+								</p>
+							) : null}
+							{autoFetched ? (
+								<p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+									<Check className="size-3.5" />
+									Details loaded from your previous order
 								</p>
 							) : null}
 							<div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -349,6 +517,8 @@ export function CheckoutFlow({
 										<User className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
 										<input
 											name="customerName"
+											value={customerName}
+											onChange={(e) => setCustomerName(e.target.value)}
 											required={selectedType !== "DINE_IN" && !orderIdToAppend}
 											placeholder="Enter your full name"
 											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
@@ -363,10 +533,15 @@ export function CheckoutFlow({
 										<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
 										<input
 											name="customerPhone"
+											value={customerPhone}
+											onChange={(e) => handlePhoneChange(e.target.value)}
 											required={selectedType !== "DINE_IN" && !orderIdToAppend}
 											placeholder="Enter your phone number"
 											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
 										/>
+										{fetchingProfile ? (
+											<Loader2 className="-translate-y-1/2 absolute top-1/2 right-4 size-4 animate-spin text-emerald-600" />
+										) : null}
 									</span>
 								</label>
 							</div>
@@ -378,6 +553,8 @@ export function CheckoutFlow({
 									<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
 									<input
 										name="customerEmail"
+										value={customerEmail}
+										onChange={(e) => setCustomerEmail(e.target.value)}
 										type="email"
 										placeholder="Enter your email address"
 										className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
@@ -495,6 +672,8 @@ export function CheckoutFlow({
 										name="deliveryAddress"
 										required
 										rows={3}
+										value={deliveryAddress}
+										onChange={(e) => setDeliveryAddress(e.target.value)}
 										placeholder="Enter your delivery address"
 										className="rounded-xl border border-slate-200 px-3 py-3 text-semibold outline-none focus:border-emerald-700"
 									/>

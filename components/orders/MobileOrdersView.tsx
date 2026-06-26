@@ -3,6 +3,8 @@
 import {
 	Check,
 	ChevronDown,
+	ChevronLeft,
+	ChevronRight,
 	ClipboardList,
 	Clock,
 	EllipsisVertical,
@@ -116,6 +118,10 @@ function getNextStatusLabel(status: string, type: string) {
 	return `Mark as ${next.charAt(0)}${next.slice(1).toLowerCase()}`;
 }
 
+// ─── Pagination ───────────────────────────────────────
+
+const ORDERS_PER_PAGE = 10;
+
 // ─── Component ────────────────────────────────────────
 
 export function MobileOrdersView({
@@ -128,6 +134,7 @@ export function MobileOrdersView({
 	const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 	const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 	const [menuOrderId, setMenuOrderId] = useState<string | null>(null);
+	const [currentPage, setCurrentPage] = useState(0);
 
 	// ─── Derived counts ───────────────────────────────
 	const counts = useMemo(() => {
@@ -171,6 +178,13 @@ export function MobileOrdersView({
 		return list;
 	}, [orders, activeFilter, searchQuery, sortOrder]);
 
+	// ─── Pagination derived values ───────────────────
+	const totalPages = Math.max(1, Math.ceil(filtered.length / ORDERS_PER_PAGE));
+	const paginatedOrders = filtered.slice(
+		currentPage * ORDERS_PER_PAGE,
+		currentPage * ORDERS_PER_PAGE + ORDERS_PER_PAGE,
+	);
+
 	return (
 		<>
 			{/* ── Search ─────────────────────────────────── */}
@@ -183,7 +197,10 @@ export function MobileOrdersView({
 					<input
 						type="text"
 						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
+						onChange={(e) => {
+							setSearchQuery(e.target.value);
+							setCurrentPage(0);
+						}}
 						placeholder="Search orders by ID, customer, phone..."
 						className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
 					/>
@@ -236,7 +253,10 @@ export function MobileOrdersView({
 					<button
 						key={pill.key}
 						type="button"
-						onClick={() => setActiveFilter(pill.key)}
+						onClick={() => {
+							setActiveFilter(pill.key);
+							setCurrentPage(0);
+						}}
 						className={cn(
 							"flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors",
 							activeFilter === pill.key ? pill.activeColors : pill.colors,
@@ -254,9 +274,10 @@ export function MobileOrdersView({
 				<p className="text-sm font-black text-slate-950">Active Orders</p>
 				<button
 					type="button"
-					onClick={() =>
-						setSortOrder((s) => (s === "newest" ? "oldest" : "newest"))
-					}
+					onClick={() => {
+						setSortOrder((s) => (s === "newest" ? "oldest" : "newest"));
+						setCurrentPage(0);
+					}}
 					className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600"
 				>
 					{sortOrder === "newest" ? "Newest First" : "Oldest First"}
@@ -267,7 +288,7 @@ export function MobileOrdersView({
 			{/* ── Order cards ────────────────────────────── */}
 			{filtered.length > 0 ? (
 				<div className="grid gap-3">
-					{filtered.map((order) => (
+					{paginatedOrders.map((order) => (
 						<OrderCard
 							key={order.id}
 							order={order}
@@ -287,6 +308,35 @@ export function MobileOrdersView({
 					<p className="text-sm font-black text-slate-950">No orders found</p>
 				</div>
 			)}
+
+			{/* ── Pagination ─────────────────────────────── */}
+			{totalPages > 1 ? (
+				<div className="flex items-center justify-between gap-3 pt-2">
+					<button
+						type="button"
+						onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+						disabled={currentPage === 0}
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 disabled:opacity-40"
+					>
+						<ChevronLeft className="size-3.5" aria-hidden="true" />
+						Previous
+					</button>
+					<p className="text-xs font-semibold text-slate-500">
+						Page {currentPage + 1} of {totalPages}
+					</p>
+					<button
+						type="button"
+						onClick={() =>
+							setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+						}
+						disabled={currentPage >= totalPages - 1}
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 disabled:opacity-40"
+					>
+						Next
+						<ChevronRight className="size-3.5" aria-hidden="true" />
+					</button>
+				</div>
+			) : null}
 
 			{/* ── Order detail modal ─────────────────────── */}
 			{selectedOrder ? (

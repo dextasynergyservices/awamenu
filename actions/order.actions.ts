@@ -29,9 +29,17 @@ const checkoutItemSchema = z.object({
 const optionalString = (max: number) =>
 	z.preprocess(
 		(value) =>
-			typeof value === "string" && value.trim() === "" ? undefined : value,
+			value === null || (typeof value === "string" && value.trim() === "")
+				? undefined
+				: value,
 		z.string().trim().max(max).optional(),
 	);
+
+const orderForSchema = z.preprocess(
+	(value) =>
+		value === null || value === undefined || value === "" ? "SELF" : value,
+	z.enum(["SELF", "SOMEONE_ELSE"]),
+);
 
 const createOrderSchema = z
 	.object({
@@ -47,10 +55,45 @@ const createOrderSchema = z
 		waiterName: optionalString(100),
 		deliveryAddress: optionalString(240),
 		deliveryNotes: optionalString(240),
+		orderFor: orderForSchema,
+		senderPhone: optionalString(40),
+		receiverPhone: optionalString(40),
+		receiverName: optionalString(100),
+		seatNumber: optionalString(40),
 		items: z.array(checkoutItemSchema).min(1),
 	})
 	.superRefine((input, ctx) => {
-		if (input.existingOrderId || input.type === OrderType.DINE_IN) {
+		if (input.existingOrderId) {
+			return;
+		}
+
+		if (input.orderFor === "SOMEONE_ELSE") {
+			if (!input.receiverName) {
+				ctx.addIssue({
+					code: "custom",
+					path: ["receiverName"],
+					message: "Recipient name is required for this order.",
+				});
+			}
+
+			if (!input.receiverPhone || input.receiverPhone.length < 3) {
+				ctx.addIssue({
+					code: "custom",
+					path: ["receiverPhone"],
+					message: "Recipient phone is required for this order.",
+				});
+			}
+
+			if (input.type !== OrderType.DINE_IN && !input.senderPhone) {
+				ctx.addIssue({
+					code: "custom",
+					path: ["senderPhone"],
+					message: "Sender phone is required for this order.",
+				});
+			}
+		}
+
+		if (input.type === OrderType.DINE_IN) {
 			return;
 		}
 
@@ -85,6 +128,11 @@ export async function createOrderAction(formData: FormData) {
 		waiterName: formData.get("waiterName") || undefined,
 		deliveryAddress: formData.get("deliveryAddress") || undefined,
 		deliveryNotes: formData.get("deliveryNotes") || undefined,
+		orderFor: formData.get("orderFor") || undefined,
+		senderPhone: formData.get("senderPhone") || undefined,
+		receiverPhone: formData.get("receiverPhone") || undefined,
+		receiverName: formData.get("receiverName") || undefined,
+		seatNumber: formData.get("seatNumber") || undefined,
 		items: JSON.parse(String(formData.get("items") ?? "[]")),
 	});
 	const restaurant = await db.restaurant.findFirstOrThrow({
@@ -242,6 +290,19 @@ export async function createOrderAction(formData: FormData) {
 			deliveryAddress:
 				input.type === OrderType.DELIVERY ? input.deliveryAddress : undefined,
 			deliveryNotes: input.deliveryNotes,
+			orderFor: input.orderFor,
+			senderPhone:
+				input.orderFor === "SOMEONE_ELSE" && input.type !== OrderType.DINE_IN
+					? input.senderPhone
+					: undefined,
+			receiverPhone:
+				input.orderFor === "SOMEONE_ELSE" ? input.receiverPhone : undefined,
+			receiverName:
+				input.orderFor === "SOMEONE_ELSE" ? input.receiverName : undefined,
+			seatNumber:
+				input.orderFor === "SOMEONE_ELSE" && input.type === OrderType.DINE_IN
+					? input.seatNumber
+					: undefined,
 			deliveryFee,
 			subtotal,
 			total,

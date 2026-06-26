@@ -235,7 +235,13 @@ export function AdminDashboardShell({
 							className={cn(
 								"grid min-h-14 place-items-center rounded-2xl px-0.5 text-xs font-black text-slate-600 min-[390px]:min-h-16 min-[390px]:px-1",
 								(pathname === `${basePath}/settings` ||
-									pathname.startsWith(`${basePath}/settings`)) &&
+									pathname.startsWith(`${basePath}/settings`) ||
+									pathname === `${basePath}/tables` ||
+									pathname.startsWith(`${basePath}/tables`) ||
+									pathname === `${basePath}/staff` ||
+									pathname.startsWith(`${basePath}/staff`) ||
+									pathname === `${basePath}/analytics` ||
+									pathname.startsWith(`${basePath}/analytics`)) &&
 									"text-emerald-700",
 							)}
 						>
@@ -256,6 +262,46 @@ export function AdminDashboardShell({
 						<div className="absolute right-3 bottom-24 left-3 rounded-3xl border border-slate-100 bg-white p-3 shadow-2xl">
 							<div className="grid gap-2">
 								<Link
+									href={`${basePath}/tables`}
+									onClick={() => setMoreOpen(false)}
+									className={cn(
+										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
+										(pathname === `${basePath}/tables` ||
+											pathname.startsWith(`${basePath}/tables`)) &&
+											"bg-emerald-50 text-emerald-700",
+									)}
+								>
+									<Grid2X2 className="size-5 text-emerald-700" />
+									Tables
+								</Link>
+								<Link
+									href={`${basePath}/staff`}
+									onClick={() => setMoreOpen(false)}
+									className={cn(
+										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
+										(pathname === `${basePath}/staff` ||
+											pathname.startsWith(`${basePath}/staff`)) &&
+											"bg-emerald-50 text-emerald-700",
+									)}
+								>
+									<Users className="size-5 text-emerald-700" />
+									Staff
+								</Link>
+								<Link
+									href={`${basePath}/analytics`}
+									onClick={() => setMoreOpen(false)}
+									className={cn(
+										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
+										(pathname === `${basePath}/analytics` ||
+											pathname.startsWith(`${basePath}/analytics`)) &&
+											"bg-emerald-50 text-emerald-700",
+									)}
+								>
+									<BarChart3 className="size-5 text-emerald-700" />
+									Analytics
+								</Link>
+								<div className="my-1 border-t border-slate-100" />
+								<Link
 									href={`/${slug}`}
 									onClick={() => setMoreOpen(false)}
 									className="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50"
@@ -266,7 +312,12 @@ export function AdminDashboardShell({
 								<Link
 									href={`${basePath}/settings`}
 									onClick={() => setMoreOpen(false)}
-									className="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50"
+									className={cn(
+										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
+										(pathname === `${basePath}/settings` ||
+											pathname.startsWith(`${basePath}/settings`)) &&
+											"bg-emerald-50 text-emerald-700",
+									)}
 								>
 									<Settings className="size-5 text-emerald-700" />
 									Settings

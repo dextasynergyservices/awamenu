@@ -118,11 +118,12 @@ export async function requestCustomerOtpAction(input: unknown) {
 		},
 	});
 
-	return {
-		ok: true,
-		// Until SMS/WhatsApp OTP delivery is connected, expose this in dev UI.
-		devCode: code,
-	};
+	// Log the code in dev for testing – not exposed to the client
+	if (process.env.NODE_ENV === "development") {
+		console.log(`[OTP] Code for ${identifier}: ${code}`);
+	}
+
+	return { ok: true };
 }
 
 export async function verifyCustomerOtpAction(input: unknown) {
@@ -286,4 +287,74 @@ export async function updateCustomerProfileAction(input: unknown) {
 	}
 
 	return db.customerProfile.create({ data });
+}
+
+const lookupByPhoneSchema = z.object({
+	restaurantSlug: z.string().min(1),
+	phone: z.string().trim().min(7).max(40),
+});
+
+export async function lookupCustomerByPhoneAction(input: unknown) {
+	const parsed = lookupByPhoneSchema.parse(input);
+	const phone = parsed.phone.replace(/\s+/g, "").trim();
+	const restaurant = await db.restaurant.findFirstOrThrow({
+		where: { slug: parsed.restaurantSlug, isActive: true },
+		select: { id: true },
+	});
+
+	// Try customer profile first
+	const profile = await db.customerProfile.findFirst({
+		where: {
+			OR: [{ whatsappNumber: phone }, { alternativePhone: phone }],
+		},
+		select: {
+			fullName: true,
+			email: true,
+			deliveryAddress: true,
+		},
+	});
+
+	if (profile) {
+		// If profile has no delivery address, try the most recent order
+		let address = profile.deliveryAddress;
+		if (!address) {
+			const recentOrder = await db.order.findFirst({
+				where: {
+					restaurantId: restaurant.id,
+					customerPhone: phone,
+					deliveryAddress: { not: null },
+				},
+				orderBy: { createdAt: "desc" },
+				select: { deliveryAddress: true },
+			});
+			address = recentOrder?.deliveryAddress ?? null;
+		}
+
+		return {
+			fullName: profile.fullName,
+			email: profile.email,
+			deliveryAddress: address,
+		};
+	}
+
+	// Fallback: look up by recent orders
+	const recentOrder = await db.order.findFirst({
+		where: { restaurantId: restaurant.id, customerPhone: phone },
+		orderBy: { createdAt: "desc" },
+		select: {
+			customerName: true,
+			customerEmail: true,
+			deliveryAddress: true,
+		},
+	});
+
+	if (recentOrder) {
+		return {
+			fullName: recentOrder.customerName,
+			email: recentOrder.customerEmail,
+			deliveryAddress: recentOrder.deliveryAddress,
+		};
+	}
+
+	return null;
 }

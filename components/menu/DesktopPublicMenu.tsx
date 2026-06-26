@@ -183,7 +183,7 @@ export function DesktopPublicMenu({
 						<OrderLookupForm restaurantSlug={restaurantSlug} compact />
 					</div>
 
-					<div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3 xl:gap-4">
+					<div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4 xl:gap-4">
 						{displayItems.map((item, index) => (
 							<article
 								key={item.id}

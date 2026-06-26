@@ -124,11 +124,29 @@
 		@apply border-border outline-ring/50;
 	}
 	body {
-		@apply bg-background text-foreground;
+		@apply bg-background text-foreground text-sm;
 	}
 	html {
 		@apply font-sans;
 	}
+}
+
+/* Global override: reduce all heavy font weights across the site */
+.font-black {
+	font-weight: 600;
+}
+.font-extrabold {
+	font-weight: 600;
+}
+.font-bold {
+	font-weight: 500;
+}
+.font-semibold {
+	font-weight: 500;
+}
+b,
+strong {
+	font-weight: 500;
 }
 
 @layer utilities {

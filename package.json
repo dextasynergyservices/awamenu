@@ -23,8 +23,7 @@
 	},
 	"lint-staged": {
 		"*.{ts,tsx}": [
-			"biome check --apply",
-			"biome format --write"
+			"biome check --write"
 		],
 		"prisma/schema.prisma": [
 			"bunx prisma format"

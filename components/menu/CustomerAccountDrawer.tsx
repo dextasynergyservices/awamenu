@@ -108,7 +108,6 @@ export function CustomerAccountDrawer({
 	const [identifier, setIdentifier] = useState("");
 	const [channel, setChannel] = useState<OtpChannel>("whatsapp");
 	const [code, setCode] = useState("");
-	const [devCode, setDevCode] = useState("");
 	const [otpRequested, setOtpRequested] = useState(false);
 	const [activeTab, setActiveTab] = useState<ActiveTab>("orders");
 	const [hubData, setHubData] = useState<CustomerHubData | null>(null);
@@ -148,7 +147,7 @@ export function CustomerAccountDrawer({
 		const normalizedIdentifier = normalizeIdentifier(identityType, identifier);
 
 		try {
-			const response = await requestCustomerOtpAction({
+			await requestCustomerOtpAction({
 				restaurantSlug,
 				identityType,
 				identifier: normalizedIdentifier,
@@ -156,7 +155,6 @@ export function CustomerAccountDrawer({
 			});
 			setIdentifier(normalizedIdentifier);
 			setOtpRequested(true);
-			setDevCode(response.devCode);
 		} catch (requestError) {
 			setError(
 				requestError instanceof Error
@@ -201,7 +199,6 @@ export function CustomerAccountDrawer({
 		window.localStorage.removeItem(SESSION_KEY);
 		setHubData(null);
 		setCode("");
-		setDevCode("");
 		setOtpRequested(false);
 		setActiveTab("orders");
 	}
@@ -264,15 +261,18 @@ export function CustomerAccountDrawer({
 							) : otpRequested ? (
 								<form onSubmit={handleVerifyOtp} className="grid gap-4">
 									<p className="text-sm font-semibold leading-6 text-slate-600">
-										Enter the 6-digit code sent to {identifier}. For this MVP,
-										the test code is shown below until SMS/WhatsApp OTP delivery
-										is connected.
+										Enter the 6-digit code sent to{" "}
+										<span className="font-black text-slate-900">
+											{identifier}
+										</span>{" "}
+										via{" "}
+										{channel === "whatsapp"
+											? "WhatsApp"
+											: channel === "sms"
+												? "SMS"
+												: "email"}
+										.
 									</p>
-									{devCode ? (
-										<div className="rounded-2xl bg-emerald-50 p-4 text-center text-2xl font-black tracking-[0.35em] text-emerald-800">
-											{devCode}
-										</div>
-									) : null}
 									<label className="grid gap-2 text-sm font-black text-slate-700">
 										Verification code
 										<input
@@ -457,36 +457,77 @@ function OrdersPanel({
 	data: CustomerHubData;
 	onSelectOrder: (order: CustomerOrder) => void;
 }) {
+	const PAGE_SIZE = 5;
+	const [page, setPage] = useState(0);
+	const totalPages = Math.max(1, Math.ceil(data.orders.length / PAGE_SIZE));
+	const pagedOrders = data.orders.slice(
+		page * PAGE_SIZE,
+		page * PAGE_SIZE + PAGE_SIZE,
+	);
+
+	useEffect(() => {
+		if (page >= totalPages) {
+			setPage(Math.max(0, totalPages - 1));
+		}
+	}, [page, totalPages]);
+
 	return (
 		<div className="grid gap-3">
 			{data.orders.length > 0 ? (
-				data.orders.map((order) => (
-					<button
-						key={order.id}
-						type="button"
-						onClick={() => onSelectOrder(order)}
-						className="grid gap-2 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
-					>
-						<div className="flex items-start justify-between gap-3">
-							<div>
-								<p className="text-sm font-black text-slate-950">
-									#{order.id.slice(-6).toUpperCase()} · {order.restaurant.name}
-								</p>
-								<p className="mt-1 text-xs font-semibold text-slate-500">
-									{formatDate(order.createdAt)}
+				<>
+					{pagedOrders.map((order) => (
+						<button
+							key={order.id}
+							type="button"
+							onClick={() => onSelectOrder(order)}
+							className="grid gap-2 rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
+						>
+							<div className="flex items-start justify-between gap-3">
+								<div>
+									<p className="text-sm font-black text-slate-950">
+										#{order.id.slice(-6).toUpperCase()} ·{" "}
+										{order.restaurant.name}
+									</p>
+									<p className="mt-1 text-xs font-semibold text-slate-500">
+										{formatDate(order.createdAt)}
+									</p>
+								</div>
+								<p className="text-sm font-black text-emerald-700">
+									{formatMoney(Number(order.total), order.restaurant.currency)}
 								</p>
 							</div>
-							<p className="text-sm font-black text-emerald-700">
-								{formatMoney(Number(order.total), order.restaurant.currency)}
+							<div className="flex flex-wrap gap-2">
+								<Pill>{order.type.replaceAll("_", " ")}</Pill>
+								<Pill>{order.status.replaceAll("_", " ")}</Pill>
+								<Pill>{order.paymentStatus}</Pill>
+							</div>
+						</button>
+					))}
+
+					{totalPages > 1 ? (
+						<div className="flex items-center justify-between gap-3 pt-1">
+							<button
+								type="button"
+								onClick={() => setPage((p) => Math.max(0, p - 1))}
+								disabled={page === 0}
+								className="min-h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 disabled:opacity-40"
+							>
+								Previous
+							</button>
+							<p className="text-xs font-semibold text-slate-500">
+								{page + 1} / {totalPages}
 							</p>
+							<button
+								type="button"
+								onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+								disabled={page >= totalPages - 1}
+								className="min-h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 disabled:opacity-40"
+							>
+								Next
+							</button>
 						</div>
-						<div className="flex flex-wrap gap-2">
-							<Pill>{order.type.replaceAll("_", " ")}</Pill>
-							<Pill>{order.status.replaceAll("_", " ")}</Pill>
-							<Pill>{order.paymentStatus}</Pill>
-						</div>
-					</button>
-				))
+					) : null}
+				</>
 			) : (
 				<EmptyState
 					title="No orders yet"
