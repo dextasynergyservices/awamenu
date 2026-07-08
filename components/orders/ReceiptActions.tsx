@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Download, Share2 } from "lucide-react";
+import { Download, Printer, Share2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -16,8 +16,6 @@ type ReceiptData = {
 	orderCode: string;
 	receiptTitle?: string;
 	trackingLabel?: string;
-	copyLabel?: string;
-	copyValue?: string;
 	totalLabel?: string;
 	itemsLabel?: string;
 	restaurantName: string;
@@ -33,10 +31,18 @@ type ReceiptData = {
 		label: string;
 		value: string;
 	}>;
+	payments?: Array<{
+		method: string;
+		amount: string | number;
+	}>;
 };
 
 type ReceiptActionsProps = {
 	receipt: ReceiptData;
+	hidePrint?: boolean;
+	hideDownload?: boolean;
+	hideShare?: boolean;
+	size?: "sm" | "default";
 };
 
 type ReceiptFormat = "image" | "pdf";
@@ -107,7 +113,7 @@ function drawWrappedLines(
 	return cursorY;
 }
 
-function roundedRect(
+function _roundedRect(
 	context: CanvasRenderingContext2D,
 	x: number,
 	y: number,
@@ -134,16 +140,13 @@ function roundedRect(
 }
 
 function buildReceiptCanvas(receipt: ReceiptData) {
-	const width = 900;
-	const outerPadding = 40;
-	const cardPadding = 40;
-	const cardX = 48;
-	const cardY = 40;
-	const cardWidth = width - 96;
-	const contentX = cardX + cardPadding;
-	const contentWidth = cardWidth - cardPadding * 2;
-	const amountX = cardX + cardWidth - cardPadding;
-	const itemTextWidth = 500;
+	// Standard thermal receipt width (80mm) is ~384px at 203 DPI. Let's use 400px.
+	const width = 400;
+	const padding = 24;
+	const contentWidth = width - padding * 2;
+	const contentX = padding;
+	const amountX = width - padding;
+
 	const measureCanvas = document.createElement("canvas");
 	const measureContext = measureCanvas.getContext("2d");
 
@@ -151,19 +154,25 @@ function buildReceiptCanvas(receipt: ReceiptData) {
 		throw new Error("Unable to prepare receipt image.");
 	}
 
-	measureContext.font = "900 25px Arial";
+	measureContext.font = "bold 20px monospace";
 	const itemLayouts = receipt.items.map((item) => {
-		const nameLines = getWrappedLines(measureContext, item.name, itemTextWidth);
-		const noteLines = item.notes
-			? getWrappedLines(measureContext, `Note: ${item.notes}`, itemTextWidth)
-			: [];
-		const height = Math.max(
-			92,
-			nameLines.length * 31 + noteLines.length * 24 + 44,
+		const nameLines = getWrappedLines(
+			measureContext,
+			item.name,
+			contentWidth - 100,
 		);
+		const noteLines = item.notes
+			? getWrappedLines(
+					measureContext,
+					`Note: ${item.notes}`,
+					contentWidth - 100,
+				)
+			: [];
+		const height = nameLines.length * 24 + noteLines.length * 20 + 20;
 
 		return { item, nameLines, noteLines, height };
 	});
+
 	const itemsHeight = itemLayouts.reduce(
 		(total, item) => total + item.height,
 		0,
@@ -171,16 +180,27 @@ function buildReceiptCanvas(receipt: ReceiptData) {
 	const extraDetailLines =
 		receipt.extraDetails?.map((detail) => `${detail.label}: ${detail.value}`) ??
 		[];
-	const headerHeight = 484 + extraDetailLines.length * 38;
-	const totalHeight = 106;
+	const headerHeight = 220 + extraDetailLines.length * 24;
+
+	let paymentsHeight = 0;
+	if (
+		receipt.paymentStatus === "PAID" &&
+		receipt.payments &&
+		receipt.payments.length > 0
+	) {
+		paymentsHeight = receipt.payments.length * 24 + 48; // Space for breakdown
+	}
+
+	const totalHeight = 80;
 	const height =
-		outerPadding +
-		cardPadding +
+		padding +
 		headerHeight +
 		itemsHeight +
 		totalHeight +
-		cardPadding +
-		outerPadding;
+		paymentsHeight +
+		padding +
+		60; // Extra padding at bottom
+
 	const canvas = document.createElement("canvas");
 	canvas.width = width;
 	canvas.height = height;
@@ -190,72 +210,72 @@ function buildReceiptCanvas(receipt: ReceiptData) {
 		throw new Error("Unable to prepare receipt image.");
 	}
 
-	context.fillStyle = "#f6faf7";
-	context.fillRect(0, 0, width, height);
+	// Fill white background for thermal printer
 	context.fillStyle = "#ffffff";
-	roundedRect(context, cardX, cardY, cardWidth, height - 80, 0);
-	context.fill();
-	context.strokeStyle = "#d1fae5";
-	context.lineWidth = 4;
-	roundedRect(context, cardX, cardY, cardWidth, height - 80, 0);
-	context.stroke();
+	context.fillRect(0, 0, width, height);
 
-	context.fillStyle = "#047857";
-	context.font = "700 30px Arial";
-	context.fillText(receipt.restaurantName, contentX, 100);
-	context.fillStyle = "#0f172a";
-	context.font = "900 48px Arial";
-	context.fillText(
-		`${receipt.receiptTitle ?? "Receipt"} ${receipt.orderCode}`,
-		contentX,
-		164,
-	);
+	// Draw Header
+	context.fillStyle = "#000000";
+	context.textAlign = "center";
+	context.font = "bold 28px monospace";
+	context.fillText(receipt.restaurantName, width / 2, padding + 30);
 
-	context.fillStyle = "#475569";
-	context.font = "700 24px Arial";
+	const isPaid = receipt.paymentStatus === "PAID";
+	const receiptTitle = isPaid ? "RECEIPT" : "INVOICE";
+
+	context.font = "bold 24px monospace";
+	context.fillText(receiptTitle, width / 2, padding + 70);
+	context.font = "bold 20px monospace";
+	context.fillText(`Order: ${receipt.orderCode}`, width / 2, padding + 100);
+
+	// Draw dashed line
+	context.textAlign = "left";
+	context.font = "bold 16px monospace";
+	function drawDashedLine(y: number) {
+		context?.fillText("-".repeat(44), contentX, y);
+	}
+
+	drawDashedLine(padding + 130);
+
+	// Draw details
+	context.font = "18px monospace";
 	const detailLines = [
-		`${receipt.trackingLabel ?? "Tracking ID"}: ${receipt.orderId}`,
 		`Customer: ${receipt.customerName}`,
 		`Type: ${receipt.orderType.replace("_", " ")}`,
 		`Status: ${receipt.status.replace("_", " ")}`,
-		`Payment: ${receipt.paymentStatus}`,
 		`Date: ${new Date(receipt.createdAt).toLocaleString("en-NG", {
-			dateStyle: "medium",
+			dateStyle: "short",
 			timeStyle: "short",
 		})}`,
 		...extraDetailLines,
 	];
+
 	detailLines.forEach((line, index) => {
-		context.fillText(line, contentX, 218 + index * 38);
+		context?.fillText(line, contentX, padding + 160 + index * 24);
 	});
 
-	const itemsHeaderY = 458 + extraDetailLines.length * 38;
-	context.fillStyle = "#ecfdf5";
-	roundedRect(context, contentX, itemsHeaderY, contentWidth, 68, 0);
-	context.fill();
-	context.fillStyle = "#065f46";
-	context.font = "900 28px Arial";
-	context.fillText(
-		receipt.itemsLabel ?? "Items",
-		contentX + 24,
-		itemsHeaderY + 44,
-	);
+	const itemsHeaderY = padding + 160 + detailLines.length * 24;
+	drawDashedLine(itemsHeaderY);
 
-	let y = itemsHeaderY + 120;
+	context.font = "bold 18px monospace";
+	context.fillText(receipt.itemsLabel ?? "Items", contentX, itemsHeaderY + 24);
+	drawDashedLine(itemsHeaderY + 48);
+
+	// Draw Items
+	let y = itemsHeaderY + 76;
 	for (const { item, nameLines, noteLines, height: rowHeight } of itemLayouts) {
-		context.fillStyle = "#0f172a";
-		context.font = "900 25px Arial";
-		const nextY = drawWrappedLines(context, nameLines, contentX, y, 31);
-		context.fillStyle = "#64748b";
-		context.font = "700 21px Arial";
-		context.fillText(`x${item.qty}`, contentX, nextY + 8);
+		context.font = "bold 18px monospace";
+		const nextY = drawWrappedLines(context, nameLines, contentX, y, 24);
+
+		context.font = "16px monospace";
+		context.fillText(`x${item.qty}`, contentX, nextY + 4);
+
 		if (noteLines.length > 0) {
-			context.fillStyle = "#64748b";
-			context.font = "700 18px Arial";
-			drawWrappedLines(context, noteLines, contentX, nextY + 38, 24);
+			context.font = "italic 14px monospace";
+			drawWrappedLines(context, noteLines, contentX, nextY + 24, 20);
 		}
-		context.fillStyle = "#047857";
-		context.font = "900 24px Arial";
+
+		context.font = "bold 18px monospace";
 		context.textAlign = "right";
 		context.fillText(
 			formatMoney(item.unitPrice * item.qty, receipt.currency),
@@ -263,30 +283,63 @@ function buildReceiptCanvas(receipt: ReceiptData) {
 			y,
 		);
 		context.textAlign = "left";
-		context.strokeStyle = "#e2e8f0";
-		context.lineWidth = 2;
-		context.beginPath();
-		context.moveTo(contentX, y + rowHeight - 20);
-		context.lineTo(amountX, y + rowHeight - 20);
-		context.stroke();
+
 		y += rowHeight;
 	}
 
-	const totalY = y + 20;
-	context.fillStyle = "#ecfdf5";
-	roundedRect(context, contentX, totalY, contentWidth, 76, 0);
-	context.fill();
-	context.fillStyle = "#0f172a";
-	context.font = "900 30px Arial";
-	context.fillText(receipt.totalLabel ?? "Total", contentX + 24, totalY + 48);
-	context.fillStyle = "#047857";
+	drawDashedLine(y);
+	y += 24;
+
+	// Total
+	context.font = "bold 24px monospace";
+	context.fillText(receipt.totalLabel ?? "Total", contentX, y + 20);
 	context.textAlign = "right";
 	context.fillText(
 		formatMoney(receipt.total, receipt.currency),
-		amountX - 24,
-		totalY + 48,
+		amountX,
+		y + 20,
 	);
 	context.textAlign = "left";
+	y += 40;
+
+	// Payments Breakdown (if paid)
+	if (isPaid && receipt.payments && receipt.payments.length > 0) {
+		drawDashedLine(y);
+		y += 30;
+		context.font = "bold 18px monospace";
+		context.fillText("Payments", contentX, y);
+		y += 24;
+
+		let totalPaid = 0;
+		context.font = "16px monospace";
+		for (const payment of receipt.payments) {
+			const amount = Number(payment.amount);
+			totalPaid += amount;
+			context.fillText(payment.method, contentX, y);
+			context.textAlign = "right";
+			context.fillText(formatMoney(amount, receipt.currency), amountX, y);
+			context.textAlign = "left";
+			y += 24;
+		}
+
+		drawDashedLine(y);
+		y += 24;
+		context.font = "bold 18px monospace";
+		context.fillText("Balance", contentX, y);
+		context.textAlign = "right";
+		context.fillText(
+			formatMoney(Math.max(0, receipt.total - totalPaid), receipt.currency),
+			amountX,
+			y,
+		);
+		context.textAlign = "left";
+		y += 30;
+	}
+
+	drawDashedLine(y);
+	context.textAlign = "center";
+	context.font = "italic 16px monospace";
+	context.fillText("Thank you for your business!", width / 2, y + 30);
 
 	return canvas;
 }
@@ -358,16 +411,55 @@ function buildPdfBlob(canvas: HTMLCanvasElement) {
 	return new Blob([...chunks, xref], { type: "application/pdf" });
 }
 
-export function ReceiptActions({ receipt }: ReceiptActionsProps) {
+export function ReceiptActions({
+	receipt,
+	hidePrint,
+	hideDownload,
+	hideShare,
+	size = "default",
+}: ReceiptActionsProps) {
 	const [downloadOpen, setDownloadOpen] = useState(false);
 	const [shareOpen, setShareOpen] = useState(false);
-	const [copied, setCopied] = useState(false);
 	const filename = useMemo(
 		() => `receipt-${receipt.orderCode.replace("#", "")}`,
 		[receipt.orderCode],
 	);
-	const copyLabel = receipt.copyLabel ?? "Copy receipt code";
-	const copyValue = receipt.copyValue ?? receipt.orderCode;
+	const docLabel = receipt.paymentStatus === "PAID" ? "Receipt" : "Invoice";
+
+	async function handlePrint() {
+		const canvas = buildReceiptCanvas(receipt);
+		const dataUrl = canvas.toDataURL("image/png");
+
+		const printWindow = window.open("", "_blank");
+		if (printWindow) {
+			printWindow.document.write(`
+				<html>
+					<head>
+						<title>${receipt.receiptTitle ?? "Receipt"} ${receipt.orderCode}</title>
+						<style>
+							@page { margin: 0; }
+							body { margin: 0; padding: 20px; display: flex; justify-content: center; background: #eee; }
+							img { max-width: 100%; height: auto; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+							@media print {
+								body { background: white; padding: 0; }
+								img { box-shadow: none; }
+							}
+						</style>
+					</head>
+					<body>
+						<img src="${dataUrl}" />
+						<script>
+							window.onload = () => {
+								window.print();
+								setTimeout(() => window.close(), 500);
+							};
+						</script>
+					</body>
+				</html>
+			`);
+			printWindow.document.close();
+		}
+	}
 
 	async function createReceiptBlob(format: ReceiptFormat) {
 		const canvas = buildReceiptCanvas(receipt);
@@ -417,68 +509,82 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
 		setShareOpen(false);
 	}
 
-	async function handleCopy() {
-		await navigator.clipboard.writeText(copyValue);
-		setCopied(true);
-		window.setTimeout(() => setCopied(false), 1200);
-	}
+	const btnClasses =
+		size === "sm"
+			? "h-8 items-center gap-1.5 rounded-md px-3 text-[11px]"
+			: "min-h-9 items-center gap-2 rounded-xl px-3 text-xs";
+	const iconClasses = size === "sm" ? "size-3.5" : "size-4";
+	const printBtnClasses =
+		size === "sm"
+			? "size-8 items-center justify-center rounded-md text-[11px]"
+			: "size-9 items-center justify-center rounded-xl text-xs";
 
 	return (
 		<div className="mt-4 flex flex-wrap gap-2">
-			<button
-				type="button"
-				onClick={handleCopy}
-				aria-label={copied ? "Code copied" : copyLabel}
-				title={copied ? "Copied" : copyLabel}
-				className="inline-flex size-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-700"
-			>
-				{copied ? (
-					<Check className="size-4 text-emerald-700" aria-hidden="true" />
-				) : (
-					<Copy className="size-4" aria-hidden="true" />
-				)}
-			</button>
+			{!hideDownload && (
+				<div className="relative">
+					<button
+						type="button"
+						onClick={() => {
+							setDownloadOpen((value) => !value);
+							setShareOpen(false);
+						}}
+						className={cn(
+							"inline-flex font-black text-white bg-emerald-700",
+							btnClasses,
+						)}
+					>
+						<Download className={iconClasses} aria-hidden="true" />
+						Download {docLabel}
+					</button>
+					{downloadOpen ? (
+						<ActionMenu
+							onImage={() => handleDownload("image")}
+							onPdf={() => handleDownload("pdf")}
+						/>
+					) : null}
+				</div>
+			)}
 
-			<div className="relative">
+			{!hidePrint && (
 				<button
 					type="button"
-					onClick={() => {
-						setDownloadOpen((value) => !value);
-						setShareOpen(false);
-					}}
-					className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-3 text-sm font-black text-white"
+					onClick={handlePrint}
+					className={cn(
+						"inline-flex font-black border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+						printBtnClasses,
+					)}
+					title={`Print POS ${docLabel}`}
 				>
-					<Download className="size-4" aria-hidden="true" />
-					Download
+					<Printer className={iconClasses} aria-hidden="true" />
 				</button>
-				{downloadOpen ? (
-					<ActionMenu
-						onImage={() => handleDownload("image")}
-						onPdf={() => handleDownload("pdf")}
-					/>
-				) : null}
-			</div>
+			)}
 
-			<div className="relative">
-				<button
-					type="button"
-					onClick={() => {
-						setShareOpen((value) => !value);
-						setDownloadOpen(false);
-					}}
-					className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-sm font-black text-emerald-800"
-				>
-					<Share2 className="size-4" aria-hidden="true" />
-					Share
-				</button>
-				{shareOpen ? (
-					<ActionMenu
-						align="right"
-						onImage={() => handleShare("image")}
-						onPdf={() => handleShare("pdf")}
-					/>
-				) : null}
-			</div>
+			{!hideShare && (
+				<div className="relative">
+					<button
+						type="button"
+						onClick={() => {
+							setShareOpen((value) => !value);
+							setDownloadOpen(false);
+						}}
+						className={cn(
+							"inline-flex font-black border border-emerald-100 bg-emerald-50 text-emerald-800",
+							btnClasses,
+						)}
+					>
+						<Share2 className={iconClasses} aria-hidden="true" />
+						Share {docLabel}
+					</button>
+					{shareOpen ? (
+						<ActionMenu
+							align="right"
+							onImage={() => handleShare("image")}
+							onPdf={() => handleShare("pdf")}
+						/>
+					) : null}
+				</div>
+			)}
 		</div>
 	);
 }

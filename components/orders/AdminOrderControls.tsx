@@ -1,12 +1,9 @@
 "use client";
 
 import { AlertTriangle, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import {
-	cancelOrderAction,
-	markOrderPaidAction,
-	updateOrderStatusAction,
-} from "@/actions/order.actions";
+import { useState } from "react";
+import { OrderActionForm } from "@/components/orders/OrderActionForm";
+import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
 import { SubmitButton } from "@/components/ui/action-button";
 import { cn } from "@/lib/utils";
 
@@ -19,20 +16,29 @@ type AdminOrderControlsProps = {
 	paymentStatus: string;
 	dineInPaymentPolicy: string | null;
 	dineInPaymentMethod: string | null;
+	total: number;
+	currency: string;
 	variant?: "desktop" | "mobile";
 };
 
-const statusOptions = [
-	"CONFIRMED",
-	"PREPARING",
-	"READY",
-	"DELIVERED",
-	"COMPLETED",
-] as const;
+function getStatusOptions(type: string) {
+	if (type === "DINE_IN" || type === "TABLE_RESERVATION") {
+		return ["CONFIRMED", "PREPARING", "READY", "COMPLETED"];
+	}
+	return ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+}
 
-function getInitialSelectedStatus(status: string) {
+function getStatusOptionLabel(status: string, type: string) {
+	if (type === "PICKUP" && status === "DELIVERED") return "COLLECTED";
+	return status.replaceAll("_", " ");
+}
+
+const DEFAULT_DECLINE_REASON =
+	"Sorry, we cannot accept this order right now. Please contact the restaurant for more details.";
+
+function getInitialSelectedStatus(status: string, type: string) {
 	if (status === "PENDING_PAYMENT") return "CONFIRMED";
-	if ((statusOptions as readonly string[]).includes(status)) return status;
+	if (getStatusOptions(type).includes(status)) return status;
 	return "CONFIRMED";
 }
 
@@ -63,6 +69,21 @@ function getDefaultStatusMessage(orderId: string, status: string) {
 }
 
 export function AdminOrderControls({
+	orderId,
+	status,
+	...props
+}: AdminOrderControlsProps) {
+	return (
+		<AdminOrderControlsContent
+			key={`${orderId}:${status}`}
+			orderId={orderId}
+			status={status}
+			{...props}
+		/>
+	);
+}
+
+function AdminOrderControlsContent({
 	slug,
 	orderId,
 	customerPhone,
@@ -71,27 +92,30 @@ export function AdminOrderControls({
 	paymentStatus,
 	dineInPaymentPolicy,
 	dineInPaymentMethod,
+	total,
+	currency,
 	variant = "desktop",
 }: AdminOrderControlsProps) {
 	const [cancelOpen, setCancelOpen] = useState(false);
 	const [selectedStatus, setSelectedStatus] = useState(() =>
-		getInitialSelectedStatus(status),
+		getInitialSelectedStatus(status, type),
 	);
 	const [whatsappMessage, setWhatsappMessage] = useState(() =>
-		getDefaultStatusMessage(orderId, getInitialSelectedStatus(status)),
+		getDefaultStatusMessage(orderId, getInitialSelectedStatus(status, type)),
 	);
+	const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
 	const isCancelled = status === "CANCELLED";
 	const isCompleted = status === "COMPLETED";
+	const isAwaitingAcceptance = status === "PENDING_PAYMENT";
 	const canUpdateStatus = !isCancelled;
 	const canCancel = !isCancelled && !isCompleted;
 	const canMarkPaid =
-		!isCancelled &&
-		type === "DINE_IN" &&
-		paymentStatus === "PENDING" &&
-		dineInPaymentPolicy === "PAY_AFTER_SERVICE";
-	const isAwaitingAcceptance = status === "PENDING_PAYMENT";
+		!isCancelled && type === "DINE_IN" && paymentStatus === "PENDING";
+	const usesInHouseDineInPayment =
+		type === "DINE_IN" && Boolean(dineInPaymentMethod);
 	const paymentRequiredBeforePreparation =
-		type !== "DINE_IN" || dineInPaymentPolicy === "PAY_BEFORE_SERVICE";
+		type !== "DINE_IN" ||
+		(dineInPaymentPolicy === "PAY_BEFORE_SERVICE" && !usesInHouseDineInPayment);
 	const canSendPaymentLink =
 		!isCancelled &&
 		selectedStatus === "CONFIRMED" &&
@@ -99,12 +123,6 @@ export function AdminOrderControls({
 		paymentRequiredBeforePreparation;
 	const normalizedPhone = normalizeWhatsAppPhone(customerPhone);
 	const canSendStatusMessage = !isCancelled;
-
-	useEffect(() => {
-		const nextStatus = getInitialSelectedStatus(status);
-		setSelectedStatus(nextStatus);
-		setWhatsappMessage(getDefaultStatusMessage(orderId, nextStatus));
-	}, [orderId, status]);
 
 	return (
 		<div
@@ -119,7 +137,10 @@ export function AdminOrderControls({
 					variant === "desktop" && "md:grid-cols-[1fr_auto] md:items-start",
 				)}
 			>
-				<form action={updateOrderStatusAction} className="flex flex-wrap gap-2">
+				<OrderActionForm
+					actionKind="updateStatus"
+					className="flex flex-wrap gap-2"
+				>
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="orderId" value={orderId} />
 					<select
@@ -136,12 +157,12 @@ export function AdminOrderControls({
 							"rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400",
 							variant === "desktop"
 								? "min-h-11 text-base"
-								: "h-9 flex-1 text-xs",
+								: "h-8 flex-1 text-[11px] rounded-md",
 						)}
 					>
-						{statusOptions.map((option) => (
+						{getStatusOptions(type).map((option) => (
 							<option key={option} value={option}>
-								{option.replace("_", " ")}
+								{getStatusOptionLabel(option, type)}
 							</option>
 						))}
 					</select>
@@ -153,12 +174,12 @@ export function AdminOrderControls({
 							"rounded-xl bg-emerald-700 text-white",
 							variant === "desktop"
 								? "min-h-11 px-4 text-base font-medium md:text-sm md:font-black"
-								: "h-9 px-4 text-xs font-black",
+								: "h-8 px-4 text-[11px] font-black rounded-md",
 						)}
 					>
 						{isAwaitingAcceptance ? "Accept order" : "Update"}
 					</SubmitButton>
-				</form>
+				</OrderActionForm>
 
 				<div className="grid gap-1">
 					<button
@@ -169,10 +190,10 @@ export function AdminOrderControls({
 							"rounded-xl border border-red-100 bg-white font-black text-red-600 disabled:opacity-50",
 							variant === "desktop"
 								? "min-h-11 px-4 text-base md:text-sm"
-								: "h-9 px-4 text-xs",
+								: "h-8 px-4 text-[11px] rounded-md",
 						)}
 					>
-						Cancel order
+						{isAwaitingAcceptance ? "Decline order" : "Cancel order"}
 					</button>
 					{isCancelled || isCompleted ? (
 						<p className="text-[11px] font-bold text-slate-400">
@@ -185,23 +206,29 @@ export function AdminOrderControls({
 			</div>
 
 			{canMarkPaid ? (
-				<form action={markOrderPaidAction} className="flex flex-wrap gap-2">
-					<input type="hidden" name="slug" value={slug} />
-					<input type="hidden" name="orderId" value={orderId} />
-					<SubmitButton
-						loadingText="Recording..."
-						successText="Paid"
+				<>
+					<button
+						type="button"
+						onClick={() => setIsSplitPaymentModalOpen(true)}
 						className={cn(
-							"rounded-xl bg-yellow-300 px-4 font-black text-emerald-950",
+							"rounded-xl bg-yellow-300 px-4 font-black text-emerald-950 hover:bg-yellow-400",
 							variant === "desktop"
 								? "min-h-11 text-base"
-								: "h-9 w-full text-xs",
+								: "h-8 w-full text-[11px] rounded-md",
 						)}
 					>
-						Mark {dineInPaymentMethod === "CASH" ? "cash" : "transfer/card"}{" "}
-						paid
-					</SubmitButton>
-				</form>
+						Confirm payment received
+					</button>
+
+					<SplitPaymentModal
+						isOpen={isSplitPaymentModalOpen}
+						onClose={() => setIsSplitPaymentModalOpen(false)}
+						orderId={orderId}
+						slug={slug}
+						total={total}
+						currency={currency}
+					/>
+				</>
 			) : null}
 
 			{canSendStatusMessage ? (
@@ -252,9 +279,10 @@ export function AdminOrderControls({
 			) : null}
 
 			{cancelOpen ? (
-				<div className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
-					<form
-						action={cancelOrderAction}
+				<div className="fixed inset-0 z-120 grid place-items-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+					<OrderActionForm
+						actionKind="cancel"
+						onSuccess={() => setCancelOpen(false)}
 						className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl"
 					>
 						<input type="hidden" name="slug" value={slug} />
@@ -266,10 +294,12 @@ export function AdminOrderControls({
 								</span>
 								<div>
 									<h2 className="text-sm font-black text-slate-950">
-										Are you sure?
+										{isAwaitingAcceptance ? "Decline order?" : "Cancel order?"}
 									</h2>
 									<p className="mt-1 text-xs font-bold text-slate-500">
-										This order will be cancelled and locked.
+										{isAwaitingAcceptance
+											? "The customer will see this order as declined."
+											: "This order will be cancelled and locked."}
 									</p>
 								</div>
 							</div>
@@ -282,6 +312,18 @@ export function AdminOrderControls({
 								<X className="size-4" aria-hidden="true" />
 							</button>
 						</div>
+
+						<label className="mt-4 block text-xs font-black text-slate-700">
+							{isAwaitingAcceptance ? "Decline reason" : "Cancellation reason"}
+							<textarea
+								name="cancellationNote"
+								required
+								rows={4}
+								maxLength={500}
+								defaultValue={DEFAULT_DECLINE_REASON}
+								className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100"
+							/>
+						</label>
 
 						<label className="mt-4 block text-xs font-black text-slate-700">
 							Admin password
@@ -303,15 +345,16 @@ export function AdminOrderControls({
 								Keep order
 							</button>
 							<SubmitButton
-								loadingText="Cancelling..."
-								successText="Cancelled"
-								onSuccess={() => setCancelOpen(false)}
+								loadingText={
+									isAwaitingAcceptance ? "Declining..." : "Cancelling..."
+								}
+								successText={isAwaitingAcceptance ? "Declined" : "Cancelled"}
 								className="h-10 rounded-xl bg-red-600 px-4 text-sm font-black text-white"
 							>
-								Cancel order
+								{isAwaitingAcceptance ? "Decline order" : "Cancel order"}
 							</SubmitButton>
 						</div>
-					</form>
+					</OrderActionForm>
 				</div>
 			) : null}
 		</div>

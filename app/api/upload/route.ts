@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 
 const uploadSchema = z.object({
 	restaurantId: z.string().cuid(),
-	kind: z.enum(["logo", "cover", "item"]),
+	kind: z.enum(["logo", "cover", "item", "table"]),
 	contentType: z.enum(["image/webp", "image/jpeg", "image/png"]),
 });
 
@@ -35,7 +35,9 @@ export async function POST(request: Request) {
 	const folder =
 		input.kind === "item"
 			? `restaurants/${restaurant.id}/items`
-			: `restaurants/${restaurant.id}`;
+			: input.kind === "table"
+				? `restaurants/${restaurant.id}/tables`
+				: `restaurants/${restaurant.id}`;
 	const signedUpload = createCloudinarySignedUpload({ folder, publicId });
 
 	return NextResponse.json({

@@ -9,7 +9,6 @@ import Link from "next/link";
 import { AdminOrdersPoller } from "@/components/orders/AdminOrdersPoller";
 import { DesktopOrdersList } from "@/components/orders/DesktopOrdersList";
 import { MobileOrdersView } from "@/components/orders/MobileOrdersView";
-import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 
 type OrdersPageProps = {
@@ -57,7 +56,6 @@ export default async function OrdersPage({
 	params,
 	searchParams,
 }: OrdersPageProps) {
-	const user = await requireUser();
 	const { slug } = await params;
 	const query = (await searchParams) ?? {};
 	const rawSearch = query.q ?? query.orderCode ?? "";
@@ -76,7 +74,7 @@ export default async function OrdersPage({
 	const dateTo = buildDate(query.dateTo, true);
 
 	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug, ownerId: user.id },
+		where: { slug },
 		select: {
 			id: true,
 			slug: true,
@@ -105,6 +103,7 @@ export default async function OrdersPage({
 			{ id: { endsWith: search.toLowerCase() } },
 			{ customerName: { contains: search, mode: "insensitive" } },
 			{ customerPhone: { contains: search } },
+			{ customerEmail: { contains: search, mode: "insensitive" } },
 		];
 	}
 
@@ -117,9 +116,11 @@ export default async function OrdersPage({
 				id: true,
 				customerName: true,
 				customerPhone: true,
+				customerEmail: true,
 				type: true,
 				status: true,
 				statusNote: true,
+				cancellationNote: true,
 				paymentStatus: true,
 				tableNumber: true,
 				tableLabel: true,
@@ -138,6 +139,28 @@ export default async function OrdersPage({
 						qty: true,
 						unitPrice: true,
 						notes: true,
+					},
+				},
+				payments: {
+					select: {
+						amount: true,
+						method: true,
+					},
+				},
+				events: {
+					select: {
+						id: true,
+						description: true,
+						isAutomatic: true,
+						createdAt: true,
+						staff: { select: { name: true, staffId: true } },
+					},
+					orderBy: { createdAt: "desc" },
+				},
+				attendingStaff: {
+					select: {
+						name: true,
+						staffId: true,
 					},
 				},
 			},
@@ -164,6 +187,10 @@ export default async function OrdersPage({
 			...item,
 			unitPrice: item.unitPrice.toString(),
 		})),
+		payments: order.payments.map((p) => ({
+			method: p.method,
+			amount: p.amount.toString(),
+		})),
 	}));
 	const pendingCount = statsOrders.filter(
 		(order) => order.paymentStatus === PaymentStatus.PENDING,
@@ -182,7 +209,7 @@ export default async function OrdersPage({
 						Manage and track all customer orders in real-time.
 					</p>
 				</div>
-				<div className="grid min-w-[42rem] grid-cols-3 gap-4">
+				<div className="grid min-w-2xl grid-cols-3 gap-4">
 					<MetricCard
 						label="Total Orders"
 						value={String(statsOrders.length)}
@@ -227,7 +254,7 @@ export default async function OrdersPage({
 					>
 						<label className="relative">
 							<span className="sr-only">
-								Search by order code, customer name, or phone
+								Search by order code, customer name, phone, or email
 							</span>
 							<Search
 								className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-slate-400"
@@ -236,7 +263,7 @@ export default async function OrdersPage({
 							<input
 								name="q"
 								defaultValue={rawSearch}
-								placeholder="Search by order code, customer name, or phone..."
+								placeholder="Search by order code, customer name, phone, or email..."
 								className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-11 text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-emerald-700"
 							/>
 						</label>
@@ -320,6 +347,7 @@ export default async function OrdersPage({
 							orders={serializedOrders}
 							currency={restaurant.currency}
 							slug={restaurant.slug}
+							restaurantName={restaurant.name}
 						/>
 					</div>
 
@@ -329,6 +357,7 @@ export default async function OrdersPage({
 								orders={serializedOrders}
 								currency={restaurant.currency}
 								slug={restaurant.slug}
+								restaurantName={restaurant.name}
 							/>
 						) : (
 							<div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center">

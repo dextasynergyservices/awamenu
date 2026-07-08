@@ -7,11 +7,19 @@ export function AdminOrdersPoller() {
 	const router = useRouter();
 
 	useEffect(() => {
-		const intervalId = window.setInterval(() => {
+		const refresh = () => {
 			router.refresh();
-		}, 20_000);
+		};
+		const intervalId = window.setInterval(refresh, 5_000);
 
-		return () => window.clearInterval(intervalId);
+		window.addEventListener("focus", refresh);
+		document.addEventListener("visibilitychange", refresh);
+
+		return () => {
+			window.clearInterval(intervalId);
+			window.removeEventListener("focus", refresh);
+			document.removeEventListener("visibilitychange", refresh);
+		};
 	}, [router]);
 
 	return null;

@@ -2,21 +2,24 @@
 
 import { Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNotificationStore } from "@/stores/notification.store";
 
 type NotificationBellProps = {
 	className?: string;
-	unreadCount?: number;
+	onClick?: () => void;
 };
 
 export function NotificationBell({
 	className,
-	unreadCount = 0,
+	onClick,
 }: NotificationBellProps) {
+	const unreadCount = useNotificationStore((s) => s.unreadCount);
 	const displayCount = unreadCount > 99 ? "99+" : unreadCount.toString();
 
 	return (
 		<button
 			type="button"
+			onClick={onClick}
 			className={cn(
 				"relative grid size-10 place-items-center rounded-full border border-emerald-100 bg-white text-emerald-950 shadow-sm transition-colors hover:bg-emerald-50 sm:size-11",
 				className,

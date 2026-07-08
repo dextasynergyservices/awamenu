@@ -12,6 +12,23 @@ function getQstashClient() {
 	return new Client({ token: env.QSTASH_TOKEN });
 }
 
+function getErrorMessage(error: unknown) {
+	if (error instanceof Error) return error.message;
+	if (typeof error === "string") return error;
+
+	try {
+		return JSON.stringify(error);
+	} catch {
+		return "";
+	}
+}
+
+function isQstashAuthenticationError(error: unknown) {
+	return /unable to authenticate|invalid token|unauthorized/i.test(
+		getErrorMessage(error),
+	);
+}
+
 export async function scheduleReservationExpiry(input: {
 	reservationId: string;
 	expiresAt: Date;
@@ -39,6 +56,13 @@ export async function scheduleReservationExpiry(input: {
 
 		return "messageId" in response ? response.messageId : null;
 	} catch (error) {
+		if (isQstashAuthenticationError(error)) {
+			console.warn(
+				"QStash could not authenticate with the configured token. Skipping reservation expiry scheduling.",
+			);
+			return null;
+		}
+
 		console.error("Failed to schedule reservation expiry", error);
 		return null;
 	}
@@ -52,6 +76,13 @@ export async function cancelReservationExpiry(messageId?: string | null) {
 	try {
 		await client.messages.cancel(messageId);
 	} catch (error) {
+		if (isQstashAuthenticationError(error)) {
+			console.warn(
+				"QStash could not authenticate with the configured token. Skipping reservation expiry cancellation.",
+			);
+			return;
+		}
+
 		console.error("Failed to cancel reservation expiry", error);
 	}
 }

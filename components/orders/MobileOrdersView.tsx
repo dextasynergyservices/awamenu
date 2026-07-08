@@ -16,8 +16,13 @@ import {
 	X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { updateOrderStatusAction } from "@/actions/order.actions";
 import { AdminOrderControls } from "@/components/orders/AdminOrderControls";
+import { OrderActionForm } from "@/components/orders/OrderActionForm";
+import {
+	type OrderEventDTO,
+	OrderTimelineModal,
+} from "@/components/orders/OrderTimeline";
+import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SubmitButton } from "@/components/ui/action-button";
 import { cn } from "@/lib/utils";
 
@@ -35,11 +40,17 @@ type Order = {
 	id: string;
 	customerName: string;
 	customerPhone: string;
+	customerEmail: string | null;
 	type: string;
 	status: string;
+	cancellationNote: string | null;
 	paymentStatus: string;
 	tableNumber: string | null;
 	tableLabel: string | null;
+	orderFor?: string | null;
+	senderPhone?: string | null;
+	receiverPhone?: string | null;
+	senderTableNumber?: string | null;
 	deliveryAddress: string | null;
 	deliveryNotes: string | null;
 	dineInPaymentPolicy: string | null;
@@ -49,12 +60,19 @@ type Order = {
 	total: string | number;
 	createdAt: string;
 	items: OrderItem[];
+	payments: Array<{
+		amount: string | number;
+		method: string;
+	}>;
+	events: OrderEventDTO[];
+	attendingStaff: { name: string; staffId: string | null } | null;
 };
 
 type MobileOrdersViewProps = {
 	orders: Order[];
 	currency: string;
 	slug: string;
+	restaurantName: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────
@@ -83,7 +101,7 @@ function timeAgo(dateStr: string) {
 // ─── Status stepper config ────────────────────────────
 
 function getStatusSteps(type: string) {
-	if (type === "DELIVERY") {
+	if (type === "DELIVERY" || type === "PICKUP") {
 		return [
 			"CONFIRMED",
 			"PREPARING",
@@ -102,10 +120,12 @@ function getStepIndex(status: string, type: string) {
 }
 
 function getNextStatus(status: string, type: string) {
+	if (status === "PENDING_APPROVAL" || status === "PENDING_PAYMENT")
+		return "CONFIRMED";
 	if (status === "CONFIRMED") return "PREPARING";
 	if (status === "PREPARING") return "READY";
 	if (status === "READY") {
-		return type === "DELIVERY" ? "DELIVERED" : "COMPLETED";
+		return type === "DELIVERY" || type === "PICKUP" ? "DELIVERED" : "COMPLETED";
 	}
 	if (status === "DELIVERED") return "COMPLETED";
 	return null;
@@ -114,8 +134,23 @@ function getNextStatus(status: string, type: string) {
 function getNextStatusLabel(status: string, type: string) {
 	const next = getNextStatus(status, type);
 	if (!next) return null;
-	if (next === "COMPLETED") return "Completed";
-	return `Mark as ${next.charAt(0)}${next.slice(1).toLowerCase()}`;
+	if (status === "PENDING_APPROVAL" || status === "PENDING_PAYMENT")
+		return "Accept order";
+	if (next === "PREPARING") return "Preparing";
+	if (next === "READY") return "Ready";
+	if (next === "DELIVERED")
+		return type === "PICKUP" ? "Collected" : "Delivered";
+	if (next === "COMPLETED") return "Complete";
+	return next.charAt(0) + next.slice(1).toLowerCase();
+}
+
+function orderStatusLabel(
+	order: Pick<Order, "status" | "cancellationNote" | "type">,
+) {
+	if (order.status === "CANCELLED" && order.cancellationNote) return "DECLINED";
+	if (order.type === "PICKUP" && order.status === "DELIVERED")
+		return "COLLECTED";
+	return order.status.replaceAll("_", " ");
 }
 
 // ─── Pagination ───────────────────────────────────────
@@ -128,13 +163,17 @@ export function MobileOrdersView({
 	orders,
 	currency,
 	slug,
+	restaurantName,
 }: MobileOrdersViewProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [activeFilter, setActiveFilter] = useState<string>("ALL");
 	const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-	const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+	const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 	const [menuOrderId, setMenuOrderId] = useState<string | null>(null);
 	const [currentPage, setCurrentPage] = useState(0);
+	const selectedOrder = selectedOrderId
+		? (orders.find((order) => order.id === selectedOrderId) ?? null)
+		: null;
 
 	// ─── Derived counts ───────────────────────────────
 	const counts = useMemo(() => {
@@ -168,7 +207,8 @@ export function MobileOrdersView({
 				(o) =>
 					o.id.toLowerCase().includes(q) ||
 					o.customerName.toLowerCase().includes(q) ||
-					o.customerPhone.includes(q),
+					o.customerPhone.includes(q) ||
+					(o.customerEmail?.toLowerCase().includes(q) ?? false),
 			);
 		}
 
@@ -201,7 +241,7 @@ export function MobileOrdersView({
 							setSearchQuery(e.target.value);
 							setCurrentPage(0);
 						}}
-						placeholder="Search orders by ID, customer, phone..."
+						placeholder="Search orders by ID, customer, phone, email..."
 						className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
 					/>
 				</div>
@@ -294,7 +334,7 @@ export function MobileOrdersView({
 							order={order}
 							currency={currency}
 							slug={slug}
-							onViewDetails={() => setSelectedOrder(order)}
+							onViewDetails={() => setSelectedOrderId(order.id)}
 							menuOpen={menuOrderId === order.id}
 							onToggleMenu={() =>
 								setMenuOrderId((prev) => (prev === order.id ? null : order.id))
@@ -344,7 +384,8 @@ export function MobileOrdersView({
 					order={selectedOrder}
 					currency={currency}
 					slug={slug}
-					onClose={() => setSelectedOrder(null)}
+					restaurantName={restaurantName}
+					onClose={() => setSelectedOrderId(null)}
 				/>
 			) : null}
 		</>
@@ -511,63 +552,58 @@ function OrderCard({
 						})}
 					</div>
 				</div>
-			) : null}
+			) : order.status === "CANCELLED" ? (
+				<div className="mt-3 rounded-xl bg-red-50 p-3">
+					<p className="text-xs font-black text-red-700">
+						{orderStatusLabel(order)}
+					</p>
+					{order.cancellationNote ? (
+						<p className="mt-1 text-[11px] font-bold text-red-800">
+							{order.cancellationNote}
+						</p>
+					) : null}
+				</div>
+			) : (
+				<div className="mt-3 rounded-xl bg-yellow-50 p-3">
+					<p className="text-xs font-black text-yellow-800">
+						Pending admin acceptance
+					</p>
+				</div>
+			)}
 
 			{/* Action buttons */}
-			<div className="mt-3 flex gap-1.5">
+			<div className="mt-3 flex gap-2">
 				<button
 					type="button"
 					onClick={onViewDetails}
-					className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+					className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
 				>
 					<FileText className="size-3" aria-hidden="true" />
 					View Details
 				</button>
-				<form action={updateOrderStatusAction} className="flex flex-1">
-					<input type="hidden" name="slug" value={slug} />
-					<input type="hidden" name="orderId" value={order.id} />
-					<input
-						type="hidden"
-						name="status"
-						value={nextStatus ?? order.status}
-					/>
-					<SubmitButton
-						disabled={!nextStatus}
-						loadingText="Updating..."
-						successText="Updated"
-						className="flex h-8 w-full items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 disabled:opacity-40"
-					>
-						<svg
-							className="size-3"
-							viewBox="0 0 16 16"
-							fill="none"
-							aria-hidden="true"
-						>
-							<path
-								d="M2 8h12M10 4l4 4-4 4"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
-						Update Status
-					</SubmitButton>
-				</form>
 				{nextStatus ? (
-					<form action={updateOrderStatusAction} className="flex flex-1">
+					<OrderActionForm
+						actionKind={
+							order.status === "PENDING_APPROVAL"
+								? "acceptOrder"
+								: "updateStatus"
+						}
+						className="flex flex-1"
+					>
 						<input type="hidden" name="slug" value={slug} />
 						<input type="hidden" name="orderId" value={order.id} />
-						<input type="hidden" name="status" value={nextStatus} />
+						{order.status !== "PENDING_APPROVAL" ? (
+							<input type="hidden" name="status" value={nextStatus} />
+						) : null}
 						<SubmitButton
 							loadingText="..."
 							successText="Completed"
-							className="flex h-8 w-full items-center justify-center gap-1 rounded-lg bg-emerald-700 text-[11px] font-bold text-white"
+							className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 text-[11px] font-bold text-white"
 						>
 							<Check className="size-3" aria-hidden="true" />
 							{nextStatusLabel}
 						</SubmitButton>
-					</form>
+					</OrderActionForm>
 				) : null}
 			</div>
 		</article>
@@ -580,18 +616,21 @@ function OrderDetailModal({
 	order,
 	currency,
 	slug,
+	restaurantName,
 	onClose,
 }: {
 	order: Order;
 	currency: string;
 	slug: string;
+	restaurantName: string;
 	onClose: () => void;
 }) {
+	const [showTimeline, setShowTimeline] = useState(false);
 	const steps = getStatusSteps(order.type);
 	const currentStep = getStepIndex(order.status, order.type);
 
 	return (
-		<div className="fixed inset-0 z-[100] flex items-end justify-center">
+		<div className="fixed inset-0 z-100 flex items-end justify-center">
 			{/* Backdrop */}
 			<button
 				type="button"
@@ -713,12 +752,29 @@ function OrderDetailModal({
 							</div>
 						</div>
 					) : (
-						<div className="mt-4 rounded-xl bg-red-50 p-3">
-							<p className="text-xs font-black text-red-700">
+						<div
+							className={cn(
+								"mt-4 rounded-xl p-3",
+								order.status === "CANCELLED" ? "bg-red-50" : "bg-yellow-50",
+							)}
+						>
+							<p
+								className={cn(
+									"text-xs font-black",
+									order.status === "CANCELLED"
+										? "text-red-700"
+										: "text-yellow-800",
+								)}
+							>
 								{order.status === "CANCELLED"
-									? "Order Cancelled"
-									: "Pending Payment"}
+									? orderStatusLabel(order)
+									: "Pending admin acceptance"}
 							</p>
+							{order.status === "CANCELLED" && order.cancellationNote ? (
+								<p className="mt-1 text-xs font-bold text-red-800">
+									{order.cancellationNote}
+								</p>
+							) : null}
 						</div>
 					)}
 
@@ -747,10 +803,33 @@ function OrderDetailModal({
 									{order.tableLabel || order.tableNumber ? (
 										<div className="flex items-center justify-between">
 											<span className="text-xs font-medium text-slate-500">
-												Table
+												{order.orderFor === "SOMEONE_ELSE"
+													? "Receiver Table"
+													: "Table"}
 											</span>
 											<span className="text-xs font-bold text-slate-900">
 												{order.tableLabel ?? order.tableNumber}
+											</span>
+										</div>
+									) : null}
+									{order.orderFor === "SOMEONE_ELSE" &&
+									order.senderTableNumber ? (
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-medium text-slate-500">
+												Sender Table
+											</span>
+											<span className="text-xs font-bold text-slate-900">
+												{order.senderTableNumber}
+											</span>
+										</div>
+									) : null}
+									{order.orderFor === "SOMEONE_ELSE" && order.senderPhone ? (
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-medium text-slate-500">
+												Sender Phone
+											</span>
+											<span className="text-xs font-bold text-slate-900">
+												{order.senderPhone}
 											</span>
 										</div>
 									) : null}
@@ -772,7 +851,7 @@ function OrderDetailModal({
 											<span className="text-xs font-bold text-slate-900">
 												{order.dineInPaymentMethod === "CASH"
 													? "Cash"
-													: "Transfer/Card"}
+													: "POS / Transfer"}
 											</span>
 										</div>
 									) : null}
@@ -790,29 +869,15 @@ function OrderDetailModal({
 									) : null}
 								</>
 							) : null}
-							{order.type === "DELIVERY" ? (
-								<>
-									{order.deliveryAddress ? (
-										<div className="flex items-center justify-between">
-											<span className="text-xs font-medium text-slate-500">
-												Address
-											</span>
-											<span className="max-w-[60%] text-right text-xs font-bold text-slate-900">
-												{order.deliveryAddress}
-											</span>
-										</div>
-									) : null}
-									{order.deliveryNotes ? (
-										<div className="flex items-center justify-between">
-											<span className="text-xs font-medium text-slate-500">
-												Notes
-											</span>
-											<span className="max-w-[60%] text-right text-xs font-bold text-slate-900">
-												{order.deliveryNotes}
-											</span>
-										</div>
-									) : null}
-								</>
+							{order.type === "DELIVERY" && order.deliveryAddress ? (
+								<div className="flex items-center justify-between">
+									<span className="text-xs font-medium text-slate-500">
+										Address
+									</span>
+									<span className="max-w-[60%] text-right text-xs font-bold text-slate-900">
+										{order.deliveryAddress}
+									</span>
+								</div>
 							) : null}
 						</div>
 					</div>
@@ -856,7 +921,7 @@ function OrderDetailModal({
 					</div>
 
 					{/* Delivery notes */}
-					{order.deliveryNotes && order.type !== "DELIVERY" ? (
+					{order.deliveryNotes ? (
 						<div className="mt-4 rounded-xl bg-yellow-50 p-3">
 							<p className="text-[10px] font-black uppercase tracking-wider text-yellow-700">
 								Order Note
@@ -877,10 +942,62 @@ function OrderDetailModal({
 							paymentStatus={order.paymentStatus}
 							dineInPaymentPolicy={order.dineInPaymentPolicy}
 							dineInPaymentMethod={order.dineInPaymentMethod}
+							total={Number(order.total)}
+							currency={currency}
 							variant="mobile"
+						/>
+						{order.events ? (
+							<div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+								<button
+									type="button"
+									onClick={() => setShowTimeline(true)}
+									className="flex w-full items-center justify-between text-xs font-black text-slate-800"
+								>
+									View Order Timeline
+									<ChevronRight className="size-4 text-slate-400" />
+								</button>
+							</div>
+						) : null}
+					</div>
+					<div className="px-4 pb-4">
+						<ReceiptActions
+							size="sm"
+							receipt={{
+								orderId: order.id,
+								orderCode: `#${order.id.slice(-6).toUpperCase()}`,
+								restaurantName: restaurantName,
+								customerName: order.customerName,
+								status: order.status,
+								paymentStatus: order.paymentStatus,
+								orderType: order.type,
+								total: Number(order.total),
+								currency: currency,
+								createdAt: order.createdAt,
+								items: order.items.map((i) => ({
+									name: i.name,
+									qty: i.qty,
+									unitPrice: Number(i.unitPrice),
+									notes: i.notes,
+								})),
+								payments: order.payments,
+							}}
 						/>
 					</div>
 				</div>
+
+				{showTimeline && (
+					<OrderTimelineModal
+						events={order.events || []}
+						fallback={{
+							createdAt: order.createdAt,
+							status: order.status,
+							paymentStatus: order.paymentStatus,
+							paymentMethod: order.dineInPaymentMethod,
+							attendingStaff: order.attendingStaff,
+						}}
+						onClose={() => setShowTimeline(false)}
+					/>
+				)}
 			</div>
 		</div>
 	);

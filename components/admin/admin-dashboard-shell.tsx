@@ -16,17 +16,28 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { InstallPWAPrompt } from "@/components/notifications/InstallPWAPrompt";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { NotificationDrawer } from "@/components/notifications/NotificationDrawer";
+import { PushPermissionPrompt } from "@/components/notifications/PushPermissionPrompt";
 import { LoadingButton } from "@/components/ui/action-button";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
+import { useNotificationStream } from "@/hooks/useNotificationStream";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import type { Notification } from "@/stores/notification.store";
+import { useNotificationStore } from "@/stores/notification.store";
 
 type AdminDashboardShellProps = {
 	children: React.ReactNode;
+	restaurantId: string;
 	restaurantName: string;
 	restaurantLogoUrl: string | null;
 	slug: string;
+	userId: string;
+	initialNotifications: Notification[];
+	initialUnreadCount: number;
 };
 
 const navItems = [
@@ -49,18 +60,43 @@ const mobileNavItems = [
 
 export function AdminDashboardShell({
 	children,
+	restaurantId,
 	restaurantName,
 	restaurantLogoUrl,
 	slug,
+	userId,
+	initialNotifications,
+	initialUnreadCount,
 }: AdminDashboardShellProps) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [logoutSuccess, setLogoutSuccess] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
+	const [drawerOpen, setDrawerOpen] = useState(false);
 	const basePath = `/dashboard/${slug}`;
 	const mobileSubtitle =
 		pathname === `${basePath}/menu` ? "Menu Builder" : "Restaurant Management";
+
+	// Initialize notification store with server-fetched data
+	const setNotifications = useNotificationStore((s) => s.setNotifications);
+	useEffect(() => {
+		setNotifications(initialNotifications, initialUnreadCount);
+	}, [setNotifications, initialNotifications, initialUnreadCount]);
+
+	// Connect to SSE stream for real-time updates
+	useNotificationStream(restaurantId, {
+		onNotification(notification) {
+			if (
+				notification.type === "NEW_ORDER" ||
+				notification.type === "ORDER_STATUS_CHANGED" ||
+				notification.type === "ORDER_CANCELLED" ||
+				notification.type === "PAYMENT_RECEIVED"
+			) {
+				router.refresh();
+			}
+		},
+	});
 
 	async function handleLogout() {
 		setIsLoggingOut(true);
@@ -73,6 +109,9 @@ export function AdminDashboardShell({
 
 	return (
 		<div className="min-h-screen overflow-x-hidden bg-white text-[#10182f]">
+			{/* Offline Banner */}
+			<OfflineBanner />
+
 			<aside className="fixed top-0 left-0 z-40 hidden h-screen w-[264px] overflow-y-auto border-emerald-100 border-r bg-white md:flex md:flex-col">
 				<div className="px-6 pb-7 pt-8">
 					<Link href={basePath} className="flex items-center gap-3">
@@ -100,7 +139,7 @@ export function AdminDashboardShell({
 								key={item.label}
 								href={href}
 								className={cn(
-									"flex min-h-[3.25rem] items-center gap-4 rounded-2xl px-4 text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
+									"flex min-h-13 items-center gap-4 rounded-2xl px-4 text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
 									isActive &&
 										"bg-emerald-100 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-800",
 								)}
@@ -166,7 +205,7 @@ export function AdminDashboardShell({
 							</div>
 						</div>
 						<div className="flex shrink-0 items-center gap-1.5 sm:gap-3 md:gap-4">
-							<NotificationBell unreadCount={3} />
+							<NotificationBell onClick={() => setDrawerOpen(true)} />
 							<div className="hidden items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 md:flex">
 								<RestaurantLogo
 									name={restaurantName}
@@ -200,6 +239,13 @@ export function AdminDashboardShell({
 				</header>
 
 				<main className="min-w-0 max-w-full overflow-x-hidden px-3 py-2 min-[390px]:px-4 md:px-8 md:py-6">
+					{/* PWA & Push permission prompts */}
+					<InstallPWAPrompt />
+					<PushPermissionPrompt
+						restaurantId={restaurantId}
+						recipientType="admin"
+						recipientId={userId}
+					/>
 					{children}
 				</main>
 
@@ -252,7 +298,10 @@ export function AdminDashboardShell({
 				</nav>
 
 				{moreOpen ? (
-					<div className="fixed inset-0 z-[90] bg-slate-950/40 md:hidden">
+					<div
+						className="fixed inset-0 bg-slate-950/40 md:hidden"
+						style={{ zIndex: 90 }}
+					>
 						<button
 							type="button"
 							className="absolute inset-0 cursor-default"
@@ -327,6 +376,15 @@ export function AdminDashboardShell({
 					</div>
 				) : null}
 			</div>
+
+			{/* Notification Drawer */}
+			<NotificationDrawer
+				open={drawerOpen}
+				onClose={() => setDrawerOpen(false)}
+				slug={slug}
+				recipientType="admin"
+				recipientId={userId}
+			/>
 		</div>
 	);
 }

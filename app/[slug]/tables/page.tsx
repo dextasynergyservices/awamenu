@@ -10,6 +10,20 @@ type TablesPageProps = {
 
 export const dynamic = "force-dynamic";
 
+function getMinimumDateTime(advanceBookingHours: number) {
+	const date = new Date(Date.now() + advanceBookingHours * 60 * 60 * 1000);
+	if (date.getSeconds() > 0 || date.getMilliseconds() > 0) {
+		date.setMinutes(date.getMinutes() + 1);
+	}
+	date.setSeconds(0, 0);
+	const yyyy = date.getFullYear();
+	const mm = String(date.getMonth() + 1).padStart(2, "0");
+	const dd = String(date.getDate()).padStart(2, "0");
+	const hh = String(date.getHours()).padStart(2, "0");
+	const min = String(date.getMinutes()).padStart(2, "0");
+	return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
+}
+
 export async function generateMetadata({
 	params,
 }: TablesPageProps): Promise<Metadata> {
@@ -38,6 +52,8 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			name: true,
 			slug: true,
 			logoUrl: true,
+			phone: true,
+			whatsappNumber: true,
 			currency: true,
 			reservationSetting: true,
 			tables: {
@@ -47,6 +63,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
 					id: true,
 					label: true,
 					description: true,
+					imageUrl: true,
 					capacity: true,
 					bookingModeOverride: true,
 					paymentTimingOverride: true,
@@ -103,6 +120,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			id: table.id,
 			label: table.label,
 			description: table.description,
+			imageUrl: table.imageUrl,
 			capacity: table.capacity,
 			policy: {
 				bookingMode: policy.bookingMode,
@@ -123,12 +141,17 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			price: Number(item.price),
 		})),
 	}));
+	const initialReservationDateTime = getMinimumDateTime(
+		setting.advanceBookingHours,
+	);
 
 	return (
 		<TableReservationFlow
 			restaurantName={restaurant.name}
 			restaurantSlug={restaurant.slug}
 			logoUrl={restaurant.logoUrl}
+			phone={restaurant.phone}
+			whatsappNumber={restaurant.whatsappNumber}
 			currency={restaurant.currency}
 			setting={{
 				bookingDescription: setting.bookingDescription,
@@ -138,6 +161,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
 				maxPartySize: setting.maxPartySize,
 				cancellationPolicy: setting.cancellationPolicy,
 			}}
+			initialReservationDateTime={initialReservationDateTime}
 			tables={tables}
 			categories={categories}
 		/>

@@ -2,8 +2,11 @@
 
 import {
 	ArrowRight,
+	Banknote,
 	Check,
+	CreditCard,
 	Flame,
+	Landmark,
 	Loader2,
 	Lock,
 	Mail,
@@ -12,10 +15,8 @@ import {
 	Phone,
 	Plus,
 	ShoppingBag,
-	Sparkles,
-	Star,
+	Truck,
 	User,
-	UserRoundPlus,
 	Users,
 	Utensils,
 } from "lucide-react";
@@ -42,7 +43,7 @@ type CheckoutFlowProps = {
 	bannerItems: BannerItem[];
 	slug: string;
 	currency: string;
-	dineInPaymentPolicy: "PAY_BEFORE_SERVICE" | "PAY_AFTER_SERVICE";
+	dineInPaymentPolicy: "PAY_BEFORE_SERVICE" | "PAY_AFTER_SERVICE" | "FLEXIBLE";
 	enabledOrderTypes: Record<CheckoutOrderType, boolean>;
 	existingOrderId?: string;
 };
@@ -69,9 +70,33 @@ const orderTypes: Array<{
 		value: "DELIVERY",
 		label: "Delivery",
 		description: "We deliver to you",
-		icon: Sparkles,
+		icon: Truck,
 	},
 ];
+
+const dineInPaymentOptions = [
+	{
+		id: "cash",
+		label: "Cash",
+		description: "Pay with cash in house",
+		value: "CASH",
+		icon: Banknote,
+	},
+	{
+		id: "pos",
+		label: "POS",
+		description: "Pay with card at the counter",
+		value: "TRANSFER_OR_CARD",
+		icon: CreditCard,
+	},
+	{
+		id: "transfer",
+		label: "Transfer",
+		description: "Send a bank transfer",
+		value: "TRANSFER_OR_CARD",
+		icon: Landmark,
+	},
+] as const;
 
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
@@ -87,9 +112,9 @@ export function CheckoutFlow({
 	bannerItems,
 	slug,
 	currency,
-	dineInPaymentPolicy,
 	enabledOrderTypes,
 	existingOrderId,
+	dineInPaymentPolicy,
 }: CheckoutFlowProps) {
 	const allItems = useCart((state) => state.items);
 	const appendOrderId = useCart((state) => state.appendOrderId);
@@ -97,9 +122,6 @@ export function CheckoutFlow({
 	const setQuantity = useCart((state) => state.setQuantity);
 	const [type, setType] = useState<CheckoutOrderType>("PICKUP");
 	const [orderFor, setOrderFor] = useState<"SELF" | "SOMEONE_ELSE">("SELF");
-	const [dineInServiceMode, setDineInServiceMode] = useState<
-		"SELF_SERVED" | "SERVED_BY_WAITER"
-	>("SELF_SERVED");
 
 	// Auto-fetch customer details
 	const [customerName, setCustomerName] = useState("");
@@ -110,12 +132,33 @@ export function CheckoutFlow({
 	const [fetchingProfile, setFetchingProfile] = useState(false);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	function clearContactDetails() {
+		if (debounceRef.current) clearTimeout(debounceRef.current);
+		setCustomerName("");
+		setCustomerPhone("");
+		setCustomerEmail("");
+		setDeliveryAddress("");
+		setAutoFetched(false);
+		setFetchingProfile(false);
+	}
+
+	function handleOrderForChange(nextOrderFor: "SELF" | "SOMEONE_ELSE") {
+		if (nextOrderFor === orderFor) return;
+		setOrderFor(nextOrderFor);
+		clearContactDetails();
+	}
+
 	const handlePhoneChange = useCallback(
 		(phone: string) => {
 			setCustomerPhone(phone);
 			setAutoFetched(false);
 
 			if (debounceRef.current) clearTimeout(debounceRef.current);
+
+			if (orderFor !== "SELF") {
+				setFetchingProfile(false);
+				return;
+			}
 
 			const trimmed = phone.replace(/\s+/g, "").trim();
 			if (trimmed.length < 10) {
@@ -153,7 +196,7 @@ export function CheckoutFlow({
 				}
 			}, 600);
 		},
-		[customerName, customerEmail, deliveryAddress, slug],
+		[customerName, customerEmail, deliveryAddress, orderFor, slug],
 	);
 	const availableOrderTypes = useMemo(
 		() =>
@@ -175,6 +218,13 @@ export function CheckoutFlow({
 		: availableOrderTypes.some((entry) => entry.value === type)
 			? type
 			: (availableOrderTypes[0]?.value ?? "PICKUP");
+	const isOrderingForSomeoneElse =
+		orderFor === "SOMEONE_ELSE" && !orderIdToAppend;
+	const isDineInForSomeoneElse =
+		selectedType === "DINE_IN" && isOrderingForSomeoneElse;
+	const contactDetailsRequired =
+		isOrderingForSomeoneElse ||
+		(selectedType !== "DINE_IN" && !orderIdToAppend);
 	const heroBanner = bannerItems[0];
 	const serializedItems = useMemo(
 		() =>
@@ -205,8 +255,8 @@ export function CheckoutFlow({
 
 	const submitLabel = orderIdToAppend
 		? "Add items to order"
-		: selectedType === "DINE_IN" && dineInPaymentPolicy === "PAY_AFTER_SERVICE"
-			? "Place order"
+		: selectedType === "DINE_IN"
+			? "Place dine-in order"
 			: "Submit order for review";
 
 	return (
@@ -239,7 +289,7 @@ export function CheckoutFlow({
 							unoptimized
 						/>
 					) : null}
-					<div className="absolute inset-0 bg-gradient-to-r from-emerald-950 via-emerald-950/80 to-transparent" />
+					<div className="absolute inset-0 bg-linear-to-r from-emerald-950 via-emerald-950/80 to-transparent" />
 					<div className="relative min-h-[150px] p-5 md:min-h-[180px] md:p-10">
 						<div className="flex items-center gap-4">
 							{logoUrl ? (
@@ -261,13 +311,6 @@ export function CheckoutFlow({
 									<h1 className="truncate text-2xl font-black md:text-3xl">
 										{name}
 									</h1>
-									<span className="inline-flex items-center gap-1 text-sm font-bold">
-										<Star
-											className="size-4 fill-yellow-300 text-yellow-300"
-											aria-hidden="true"
-										/>
-										4.8 (230+)
-									</span>
 								</div>
 								<div className="mt-4 flex flex-wrap gap-4 text-sm font-medium md:text-semibold">
 									<span className="inline-flex items-center gap-2">
@@ -307,13 +350,13 @@ export function CheckoutFlow({
 						action={createOrderAction}
 						className="rounded-[1.4rem] border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)] md:rounded-[1.75rem] md:p-7"
 					>
-						<input type="hidden" name="slug" value={slug} />
-						<input type="hidden" name="items" value={serializedItems} />
+						<input type="hidden" name="slug" value={slug ?? ""} />
+						<input type="hidden" name="items" value={serializedItems ?? "[]"} />
 						{orderIdToAppend ? (
 							<input
 								type="hidden"
 								name="existingOrderId"
-								value={orderIdToAppend}
+								value={orderIdToAppend ?? ""}
 							/>
 						) : null}
 						{orderIdToAppend ? (
@@ -406,7 +449,7 @@ export function CheckoutFlow({
 								<div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
 									<button
 										type="button"
-										onClick={() => setOrderFor("SELF")}
+										onClick={() => handleOrderForChange("SELF")}
 										className={cn(
 											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
 											orderFor === "SELF"
@@ -419,7 +462,7 @@ export function CheckoutFlow({
 									</button>
 									<button
 										type="button"
-										onClick={() => setOrderFor("SOMEONE_ELSE")}
+										onClick={() => handleOrderForChange("SOMEONE_ELSE")}
 										className={cn(
 											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
 											orderFor === "SOMEONE_ELSE"
@@ -431,44 +474,185 @@ export function CheckoutFlow({
 										For somebody
 									</button>
 								</div>
-								<input type="hidden" name="orderFor" value={orderFor} />
+								<input
+									type="hidden"
+									name="orderFor"
+									value={orderFor ?? "SELF"}
+								/>
 							</section>
 						) : null}
 
-						{/* ── "For somebody else" fields ── */}
-						{orderFor === "SOMEONE_ELSE" && !orderIdToAppend ? (
-							<section className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-								<div className="flex items-center gap-2 text-sm font-black text-emerald-800">
-									<UserRoundPlus className="size-4" />
-									Recipient details
-								</div>
-								<div className="mt-3 grid gap-4 md:grid-cols-2">
+						<section className="mt-7">
+							{!orderIdToAppend && !isDineInForSomeoneElse ? (
+								<h3 className="text-lg font-black">
+									{isOrderingForSomeoneElse
+										? "Recipient information"
+										: "Your details"}
+								</h3>
+							) : null}
+
+							{(selectedType === "DINE_IN" || orderIdToAppend) &&
+							!isOrderingForSomeoneElse ? (
+								<p className="mt-1 text-sm font-bold text-slate-500">
+									Optional for dine-in orders.
+								</p>
+							) : null}
+							{isOrderingForSomeoneElse ? (
+								<>
+									<input
+										type="hidden"
+										name="receiverName"
+										value={customerName ?? ""}
+									/>
+									<input
+										type="hidden"
+										name="receiverPhone"
+										value={customerPhone ?? ""}
+									/>
+								</>
+							) : null}
+							{autoFetched ? (
+								<p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+									<Check className="size-3.5" />
+									Details loaded from your previous order
+								</p>
+							) : null}
+							{!isDineInForSomeoneElse ? (
+								<div className="mt-4 grid gap-4 md:grid-cols-2">
 									<label className="grid gap-2">
-										<span className="text-sm font-black text-slate-700">
-											Recipient name
+										<span className="text-sm font-medium text-slate-600">
+											{isOrderingForSomeoneElse
+												? "Recipient name"
+												: "Full name"}
 										</span>
-										<input
-											name="receiverName"
-											required
-											placeholder="Enter recipient's name"
-											className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
-										/>
+										<span className="relative">
+											<User className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+											<input
+												name="customerName"
+												value={customerName ?? ""}
+												onChange={(e) => setCustomerName(e.target.value ?? "")}
+												required={contactDetailsRequired}
+												placeholder={
+													isOrderingForSomeoneElse
+														? "Enter recipient's name"
+														: "Enter your full name"
+												}
+												className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+											/>
+										</span>
 									</label>
 									<label className="grid gap-2">
-										<span className="text-sm font-black text-slate-700">
-											Recipient phone
+										<span className="text-sm font-medium text-slate-600">
+											{isOrderingForSomeoneElse
+												? "Recipient phone"
+												: "Phone number"}
+										</span>
+										<span className="relative">
+											<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+											<input
+												name="customerPhone"
+												value={customerPhone ?? ""}
+												onChange={(e) =>
+													handlePhoneChange(e.target.value ?? "")
+												}
+												required={contactDetailsRequired}
+												placeholder={
+													isOrderingForSomeoneElse
+														? "Enter recipient's phone"
+														: "Enter your phone number"
+												}
+												className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+											/>
+											{fetchingProfile ? (
+												<Loader2 className="-translate-y-1/2 absolute top-1/2 right-4 size-4 animate-spin text-emerald-600" />
+											) : null}
+										</span>
+									</label>
+								</div>
+							) : null}
+							{isOrderingForSomeoneElse && !isDineInForSomeoneElse ? (
+								<label key="receiverAltPhone" className="mt-4 grid gap-2">
+									<span className="text-sm font-medium text-slate-600">
+										Receiver second phone (optional)
+									</span>
+									<span className="relative">
+										<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+										<input
+											name="receiverAltPhone"
+											type="tel"
+											placeholder="Enter another number to reach the receiver"
+											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+										/>
+									</span>
+								</label>
+							) : !isOrderingForSomeoneElse ? (
+								<label key="customerEmail" className="mt-4 grid gap-2">
+									<span className="text-sm font-medium text-slate-600">
+										Email address (optional)
+									</span>
+									<span className="relative">
+										<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+										<input
+											name="customerEmail"
+											value={customerEmail ?? ""}
+											onChange={(e) => setCustomerEmail(e.target.value ?? "")}
+											type="email"
+											placeholder="Enter your email address"
+											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+										/>
+									</span>
+								</label>
+							) : null}
+							{isOrderingForSomeoneElse ? (
+								<div className="mt-4 grid gap-4">
+									<label className="grid gap-2">
+										<span className="text-sm font-medium text-slate-600">
+											Sender phone (your number)
 										</span>
 										<input
-											name="receiverPhone"
+											name="senderPhone"
 											required
 											type="tel"
-											placeholder="Enter recipient's phone"
+											placeholder="Enter your phone number"
 											className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
 										/>
 									</label>
-									{selectedType === "DINE_IN" ? (
-										<label className="grid gap-2 md:col-span-2">
-											<span className="text-sm font-black text-slate-700">
+									{isDineInForSomeoneElse ? (
+										<label className="grid gap-2">
+											<span className="text-sm font-medium text-slate-600">
+												Sender table number (your table)
+											</span>
+											<input
+												name="senderTableNumber"
+												required
+												placeholder="Table 4"
+												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+											/>
+										</label>
+									) : null}
+									{!isDineInForSomeoneElse ? (
+										<label className="grid gap-2">
+											<span className="text-sm font-medium text-slate-600">
+												Sender email (optional)
+											</span>
+											<span className="relative">
+												<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+												<input
+													name="customerEmail"
+													value={customerEmail ?? ""}
+													onChange={(e) =>
+														setCustomerEmail(e.target.value ?? "")
+													}
+													type="email"
+													placeholder="Enter your email address"
+													className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+												/>
+											</span>
+										</label>
+									) : null}
+									{selectedType === "DINE_IN" && !isDineInForSomeoneElse ? (
+										<label className="mt-4 grid gap-2">
+											<span className="text-sm font-medium text-slate-600">
 												Seat number (optional)
 											</span>
 											<input
@@ -477,97 +661,18 @@ export function CheckoutFlow({
 												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
 											/>
 										</label>
-									) : (
-										<label className="grid gap-2 md:col-span-2">
-											<span className="text-sm font-black text-slate-700">
-												Sender phone (your number)
-											</span>
-											<input
-												name="senderPhone"
-												required
-												type="tel"
-												placeholder="Enter your phone number"
-												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
-											/>
-										</label>
-									)}
+									) : null}
 								</div>
-							</section>
-						) : null}
-
-						<section className="mt-7">
-							<h3 className="text-lg font-black">Contact information</h3>
-							{selectedType === "DINE_IN" || orderIdToAppend ? (
-								<p className="mt-1 text-sm font-bold text-slate-500">
-									Optional for dine-in orders.
-								</p>
 							) : null}
-							{autoFetched ? (
-								<p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
-									<Check className="size-3.5" />
-									Details loaded from your previous order
-								</p>
-							) : null}
-							<div className="mt-4 grid gap-4 md:grid-cols-2">
-								<label className="grid gap-2">
-									<span className="text-sm font-medium text-slate-600">
-										Full name
-									</span>
-									<span className="relative">
-										<User className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
-										<input
-											name="customerName"
-											value={customerName}
-											onChange={(e) => setCustomerName(e.target.value)}
-											required={selectedType !== "DINE_IN" && !orderIdToAppend}
-											placeholder="Enter your full name"
-											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
-										/>
-									</span>
-								</label>
-								<label className="grid gap-2">
-									<span className="text-sm font-medium text-slate-600">
-										Phone number
-									</span>
-									<span className="relative">
-										<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
-										<input
-											name="customerPhone"
-											value={customerPhone}
-											onChange={(e) => handlePhoneChange(e.target.value)}
-											required={selectedType !== "DINE_IN" && !orderIdToAppend}
-											placeholder="Enter your phone number"
-											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
-										/>
-										{fetchingProfile ? (
-											<Loader2 className="-translate-y-1/2 absolute top-1/2 right-4 size-4 animate-spin text-emerald-600" />
-										) : null}
-									</span>
-								</label>
-							</div>
-							<label className="mt-4 grid gap-2">
-								<span className="text-sm font-medium text-slate-600">
-									Email address (optional)
-								</span>
-								<span className="relative">
-									<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
-									<input
-										name="customerEmail"
-										value={customerEmail}
-										onChange={(e) => setCustomerEmail(e.target.value)}
-										type="email"
-										placeholder="Enter your email address"
-										className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
-									/>
-								</span>
-							</label>
 						</section>
 
 						{selectedType === "DINE_IN" && !orderIdToAppend ? (
-							<section className="mt-5 grid gap-4 md:grid-cols-2">
+							<section className="mt-5 grid gap-4">
 								<label className="grid gap-2">
 									<span className="text-sm font-black text-slate-700">
-										Table number
+										{isOrderingForSomeoneElse
+											? "Receiver table number"
+											: "Table number"}
 									</span>
 									<input
 										name="tableNumber"
@@ -576,89 +681,46 @@ export function CheckoutFlow({
 										className="min-h-12 rounded-xl border border-slate-200 px-3 text-semibold outline-none focus:border-emerald-700"
 									/>
 								</label>
-								<label className="grid gap-2">
-									<span className="text-sm font-black text-slate-700">
-										Payment method
-									</span>
-									<select
-										name="dineInPaymentMethod"
-										className="min-h-12 rounded-xl border border-slate-200 px-3 text-semibold outline-none focus:border-emerald-700"
-									>
-										<option value="CASH">Cash</option>
-										<option value="TRANSFER_OR_CARD">Transfer/Card</option>
-									</select>
-								</label>
-								<div className="grid gap-2 md:col-span-2">
-									<span className="text-sm font-black text-slate-700">
-										Service
-									</span>
-									<div className="grid gap-3 sm:grid-cols-2">
-										<label
-											className={cn(
-												"grid cursor-pointer gap-1 rounded-xl border border-slate-200 px-4 py-3",
-												dineInServiceMode === "SELF_SERVED" &&
-													"border-emerald-700 bg-emerald-50",
-											)}
-										>
-											<input
-												type="radio"
-												name="dineInServiceMode"
-												value="SELF_SERVED"
-												checked={dineInServiceMode === "SELF_SERVED"}
-												onChange={() => setDineInServiceMode("SELF_SERVED")}
-												className="sr-only"
-											/>
-											<span className="text-sm font-black text-slate-900">
-												Self-served
-											</span>
-											<span className="text-xs font-bold text-slate-500">
-												Default for customers ordering at the table.
-											</span>
-										</label>
-										<label
-											className={cn(
-												"grid cursor-pointer gap-1 rounded-xl border border-slate-200 px-4 py-3",
-												dineInServiceMode === "SERVED_BY_WAITER" &&
-													"border-emerald-700 bg-emerald-50",
-											)}
-										>
-											<input
-												type="radio"
-												name="dineInServiceMode"
-												value="SERVED_BY_WAITER"
-												checked={dineInServiceMode === "SERVED_BY_WAITER"}
-												onChange={() =>
-													setDineInServiceMode("SERVED_BY_WAITER")
-												}
-												className="sr-only"
-											/>
-											<span className="text-sm font-black text-slate-900">
-												Served by
-											</span>
-											<span className="text-xs font-bold text-slate-500">
-												Use when a waiter is attending this table.
-											</span>
-										</label>
-									</div>
-								</div>
-								{dineInServiceMode === "SERVED_BY_WAITER" ? (
-									<label className="grid gap-2 md:col-span-2">
-										<span className="text-sm font-black text-slate-700">
-											Waiter name
-										</span>
-										<input
-											name="waiterName"
-											required
-											placeholder="Enter waiter name"
-											className="min-h-12 rounded-xl border border-slate-200 px-3 text-semibold outline-none focus:border-emerald-700"
-										/>
-									</label>
+								{dineInPaymentPolicy !== "FLEXIBLE" &&
+								!isDineInForSomeoneElse ? (
+									<>
+										<fieldset className="grid gap-3 border-0 p-0">
+											<legend className="text-sm font-black text-slate-700">
+												In-house payment
+											</legend>
+											<div className="grid gap-3 sm:grid-cols-3">
+												{dineInPaymentOptions.map((option) => {
+													const Icon = option.icon;
+
+													return (
+														<label key={option.id} className="cursor-pointer">
+															<input
+																type="radio"
+																name="dineInPaymentMethod"
+																value={option.value}
+																defaultChecked={option.id === "cash"}
+																className="peer sr-only"
+															/>
+															<span className="grid min-h-28 gap-2 rounded-xl border border-slate-200 bg-white p-4 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-50 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300">
+																<span className="flex items-center gap-2 text-sm font-black text-slate-950">
+																	<Icon className="size-4 text-emerald-700" />
+																	{option.label}
+																</span>
+																<span className="text-xs font-bold leading-5 text-slate-500">
+																	{option.description}
+																</span>
+															</span>
+														</label>
+													);
+												})}
+											</div>
+										</fieldset>
+										<p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+											Staff or admin will confirm the in-house payment before
+											the order is processed.
+										</p>
+									</>
 								) : null}
-								<p className="text-sm font-bold text-slate-500 md:col-span-2">
-									{dineInPaymentPolicy === "PAY_AFTER_SERVICE"
-										? "Payment is collected after service."
-										: "Payment is required before service."}
-								</p>
 							</section>
 						) : null}
 
@@ -666,15 +728,22 @@ export function CheckoutFlow({
 							<section className="mt-5 grid gap-4">
 								<label className="grid gap-2">
 									<span className="text-sm font-black text-slate-700">
-										Delivery address
+										{isOrderingForSomeoneElse
+											? "Recipient delivery address (required)"
+											: "Delivery address (required)"}
 									</span>
 									<textarea
 										name="deliveryAddress"
-										required
+										required={selectedType === "DELIVERY"}
+										aria-required={selectedType === "DELIVERY"}
 										rows={3}
-										value={deliveryAddress}
-										onChange={(e) => setDeliveryAddress(e.target.value)}
-										placeholder="Enter your delivery address"
+										value={deliveryAddress ?? ""}
+										onChange={(e) => setDeliveryAddress(e.target.value ?? "")}
+										placeholder={
+											isOrderingForSomeoneElse
+												? "Enter recipient's delivery address"
+												: "Enter your delivery address"
+										}
 										className="rounded-xl border border-slate-200 px-3 py-3 text-semibold outline-none focus:border-emerald-700"
 									/>
 								</label>
@@ -738,7 +807,7 @@ export function CheckoutFlow({
 										key={item.id}
 										className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-4"
 									>
-										<div className="relative size-[4.5rem] overflow-hidden rounded-xl bg-emerald-50">
+										<div className="relative size-18 overflow-hidden rounded-xl bg-emerald-50">
 											{item.imageUrl ? (
 												<Image
 													src={item.imageUrl}
@@ -814,21 +883,6 @@ export function CheckoutFlow({
 								<span className="text-emerald-800">
 									{formatMoney(total, currency)}
 								</span>
-							</div>
-
-							<div className="rounded-xl bg-emerald-50 p-4">
-								<div className="flex gap-3">
-									<Sparkles className="size-7 shrink-0 text-emerald-700" />
-									<div>
-										<p className="text-sm font-black text-emerald-800">
-											You are saving {formatMoney(200, currency)} on this order!
-										</p>
-										<p className="mt-1 text-sm font-medium text-slate-600">
-											Free delivery on orders over{" "}
-											{formatMoney(10000, currency)}
-										</p>
-									</div>
-								</div>
 							</div>
 						</div>
 

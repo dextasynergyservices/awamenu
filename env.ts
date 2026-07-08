@@ -20,10 +20,15 @@ export const env = createEnv({
 		QSTASH_TOKEN: z.string().min(1).optional(),
 		QSTASH_CURRENT_SIGNING_KEY: z.string().min(1).optional(),
 		QSTASH_NEXT_SIGNING_KEY: z.string().min(1).optional(),
+		UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+		UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
+		VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+		VAPID_EMAIL: z.string().email().optional(),
 	},
 	client: {
 		NEXT_PUBLIC_APP_URL: z.string().url(),
 		NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL: z.string().url().optional(),
+		NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().min(1).optional(),
 	},
 	runtimeEnv: {
 		BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
@@ -46,6 +51,11 @@ export const env = createEnv({
 		QSTASH_TOKEN: process.env.QSTASH_TOKEN,
 		QSTASH_CURRENT_SIGNING_KEY: process.env.QSTASH_CURRENT_SIGNING_KEY,
 		QSTASH_NEXT_SIGNING_KEY: process.env.QSTASH_NEXT_SIGNING_KEY,
+		UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+		UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+		VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
+		VAPID_EMAIL: process.env.VAPID_EMAIL,
+		NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
 	},
 	skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
 });

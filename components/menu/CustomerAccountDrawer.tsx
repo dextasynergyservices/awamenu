@@ -28,10 +28,17 @@ type CustomerOrder = {
 	type: string;
 	status: string;
 	statusNote: string | null;
+	cancellationNote: string | null;
 	paymentStatus: string;
 	total: string;
 	createdAt: string;
-	restaurant: { name: string; slug: string; currency: string };
+	restaurant: {
+		name: string;
+		slug: string;
+		currency: string;
+		phone: string | null;
+		address: string | null;
+	};
 	items: Array<{
 		id: string;
 		name: string;
@@ -80,12 +87,24 @@ type CustomerAccountDrawerProps = {
 
 const SESSION_KEY = "awamenu-customer-session";
 
+type CustomerSession = {
+	identityType: IdentityType;
+	identifier: string;
+};
+
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
 		style: "currency",
 		currency,
 		maximumFractionDigits: 0,
 	}).format(value);
+}
+
+function orderStatusLabel(
+	order: Pick<CustomerOrder, "status" | "cancellationNote">,
+) {
+	if (order.status === "CANCELLED" && order.cancellationNote) return "DECLINED";
+	return order.status.replaceAll("_", " ");
 }
 
 function formatDate(value: string) {
@@ -118,26 +137,35 @@ export function CustomerAccountDrawer({
 	const [error, setError] = useState("");
 
 	useEffect(() => {
-		const stored = window.localStorage.getItem(SESSION_KEY);
-		if (!stored) return;
+		let active = true;
+		const timeoutId = window.setTimeout(() => {
+			const stored = window.localStorage.getItem(SESSION_KEY);
+			if (!stored || !active) return;
 
-		try {
-			const session = JSON.parse(stored) as {
-				identityType: IdentityType;
-				identifier: string;
-			};
-			setIdentityType(session.identityType);
-			setIdentifier(session.identifier);
-			getCustomerHubDataAction({
-				restaurantSlug,
-				identityType: session.identityType,
-				identifier: session.identifier,
-			})
-				.then((data) => setHubData(data as CustomerHubData))
-				.catch(() => window.localStorage.removeItem(SESSION_KEY));
-		} catch {
-			window.localStorage.removeItem(SESSION_KEY);
-		}
+			try {
+				const session = JSON.parse(stored) as CustomerSession;
+				if (!active) return;
+
+				setIdentityType(session.identityType);
+				setIdentifier(session.identifier);
+				getCustomerHubDataAction({
+					restaurantSlug,
+					identityType: session.identityType,
+					identifier: session.identifier,
+				})
+					.then((data) => {
+						if (active) setHubData(data as CustomerHubData);
+					})
+					.catch(() => window.localStorage.removeItem(SESSION_KEY));
+			} catch {
+				window.localStorage.removeItem(SESSION_KEY);
+			}
+		}, 0);
+
+		return () => {
+			active = false;
+			window.clearTimeout(timeoutId);
+		};
 	}, [restaurantSlug]);
 
 	async function handleRequestOtp(event: React.FormEvent<HTMLFormElement>) {
@@ -249,7 +277,6 @@ export function CustomerAccountDrawer({
 									data={hubData}
 									identifier={identifier}
 									activeTab={activeTab}
-									setActiveTab={setActiveTab}
 									onLogout={handleLogout}
 									onSelectOrder={setSelectedOrder}
 									onProfileSaved={(profile) =>
@@ -401,7 +428,6 @@ function CustomerHub({
 	data,
 	identifier,
 	activeTab,
-	setActiveTab: _setActiveTab,
 	onLogout,
 	onSelectOrder,
 	onProfileSaved,
@@ -409,7 +435,6 @@ function CustomerHub({
 	data: CustomerHubData;
 	identifier: string;
 	activeTab: ActiveTab;
-	setActiveTab: (tab: ActiveTab) => void;
 	onLogout: () => void;
 	onSelectOrder: (order: CustomerOrder) => void;
 	onProfileSaved: (profile: CustomerHubData["profile"]) => void;
@@ -460,16 +485,11 @@ function OrdersPanel({
 	const PAGE_SIZE = 5;
 	const [page, setPage] = useState(0);
 	const totalPages = Math.max(1, Math.ceil(data.orders.length / PAGE_SIZE));
+	const currentPage = Math.min(page, totalPages - 1);
 	const pagedOrders = data.orders.slice(
-		page * PAGE_SIZE,
-		page * PAGE_SIZE + PAGE_SIZE,
+		currentPage * PAGE_SIZE,
+		currentPage * PAGE_SIZE + PAGE_SIZE,
 	);
-
-	useEffect(() => {
-		if (page >= totalPages) {
-			setPage(Math.max(0, totalPages - 1));
-		}
-	}, [page, totalPages]);
 
 	return (
 		<div className="grid gap-3">
@@ -498,7 +518,7 @@ function OrdersPanel({
 							</div>
 							<div className="flex flex-wrap gap-2">
 								<Pill>{order.type.replaceAll("_", " ")}</Pill>
-								<Pill>{order.status.replaceAll("_", " ")}</Pill>
+								<Pill>{orderStatusLabel(order)}</Pill>
 								<Pill>{order.paymentStatus}</Pill>
 							</div>
 						</button>
@@ -509,18 +529,20 @@ function OrdersPanel({
 							<button
 								type="button"
 								onClick={() => setPage((p) => Math.max(0, p - 1))}
-								disabled={page === 0}
+								disabled={currentPage === 0}
 								className="min-h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 disabled:opacity-40"
 							>
 								Previous
 							</button>
 							<p className="text-xs font-semibold text-slate-500">
-								{page + 1} / {totalPages}
+								{currentPage + 1} / {totalPages}
 							</p>
 							<button
 								type="button"
-								onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-								disabled={page >= totalPages - 1}
+								onClick={() =>
+									setPage(() => Math.min(totalPages - 1, currentPage + 1))
+								}
+								disabled={currentPage >= totalPages - 1}
 								className="min-h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 disabled:opacity-40"
 							>
 								Next
@@ -717,13 +739,22 @@ function CustomerOrderModal({
 					</button>
 				</div>
 				<div className="mt-4 grid grid-cols-2 gap-3">
-					<SummaryCard
-						label="Status"
-						value={order.status.replaceAll("_", " ")}
-					/>
+					<SummaryCard label="Status" value={orderStatusLabel(order)} />
 					<SummaryCard label="Payment" value={order.paymentStatus} />
 				</div>
-				{order.statusNote ? (
+				{order.status === "CANCELLED" && order.cancellationNote ? (
+					<div className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-900">
+						<p className="text-xs font-black uppercase tracking-wide text-red-700">
+							Decline reason
+						</p>
+						<p className="mt-1">{order.cancellationNote}</p>
+						<div className="mt-3 grid gap-1 rounded-xl bg-white/70 p-3 text-sm font-bold leading-6">
+							<p>Phone: {order.restaurant.phone ?? "Not provided"}</p>
+							<p>Address: {order.restaurant.address ?? "Not provided"}</p>
+						</div>
+					</div>
+				) : null}
+				{order.status !== "CANCELLED" && order.statusNote ? (
 					<div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
 						{order.statusNote}
 					</div>

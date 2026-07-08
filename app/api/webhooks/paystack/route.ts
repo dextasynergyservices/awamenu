@@ -4,6 +4,7 @@ import {
 	OnboardingStatus,
 	OrderStatus,
 	PaymentStatus,
+	ReservationStatus,
 	SubscriptionStatus,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
@@ -12,6 +13,7 @@ import { sendSubscriptionConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyNewOrder } from "@/lib/order-notifications";
 import { verifyPaystackWebhook } from "@/lib/payments";
+import { scheduleReservationExpiry } from "@/lib/qstash";
 
 type PaystackWebhook = {
 	event?: string;
@@ -97,6 +99,7 @@ export async function POST(request: Request) {
 				id: true,
 				restaurantId: true,
 				preOrderId: true,
+				expiresAt: true,
 				reservationPaymentStatus: true,
 				customerName: true,
 				restaurant: { select: { slug: true } },
@@ -111,11 +114,18 @@ export async function POST(request: Request) {
 		}
 
 		if (reservation.reservationPaymentStatus !== PaymentStatus.PAID) {
+			const qstashMessageId = await scheduleReservationExpiry({
+				reservationId: reservation.id,
+				expiresAt: reservation.expiresAt,
+			});
+
 			await db.reservation.update({
 				where: { id: reservation.id },
 				data: {
+					status: ReservationStatus.ACTIVE,
 					reservationPaymentStatus: PaymentStatus.PAID,
 					reservationPaymentRef: payload.data?.reference,
+					qstashMessageId,
 				},
 			});
 
@@ -123,6 +133,7 @@ export async function POST(request: Request) {
 				await db.order.update({
 					where: { id: reservation.preOrderId },
 					data: {
+						status: OrderStatus.CONFIRMED,
 						paymentStatus: PaymentStatus.PAID,
 						paymentProvider: "paystack",
 						paymentRef: payload.data?.reference,

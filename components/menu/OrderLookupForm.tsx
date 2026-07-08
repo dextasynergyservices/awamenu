@@ -14,17 +14,17 @@ export function OrderLookupForm({
 	compact = false,
 }: OrderLookupFormProps) {
 	const router = useRouter();
-	const [orderId, setOrderId] = useState("");
+	const [trackingCode, setTrackingCode] = useState("");
 
 	return (
 		<form
 			onSubmit={(event) => {
 				event.preventDefault();
-				const normalizedOrderId = orderId.replace(/^#/, "").trim();
-				if (!normalizedOrderId) return;
+				const normalizedCode = trackingCode.replace(/^#/, "").trim();
+				if (!normalizedCode) return;
 
 				router.push(
-					`/${restaurantSlug}/order/${encodeURIComponent(normalizedOrderId)}`,
+					`/${restaurantSlug}/track/${encodeURIComponent(normalizedCode)}`,
 				);
 			}}
 			className={
@@ -37,16 +37,16 @@ export function OrderLookupForm({
 				htmlFor={`order-lookup-${compact ? "desktop" : "mobile"}`}
 				className="text-sm font-black text-slate-700"
 			>
-				Track your order
+				Track your order or reservation
 			</label>
 			<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
 				<span className="relative">
 					<ReceiptText className="-translate-y-1/2 absolute top-1/2 left-3 size-4 text-slate-400" />
 					<input
 						id={`order-lookup-${compact ? "desktop" : "mobile"}`}
-						value={orderId}
-						onChange={(event) => setOrderId(event.target.value)}
-						placeholder="Enter order ID"
+						value={trackingCode}
+						onChange={(event) => setTrackingCode(event.target.value)}
+						placeholder="Enter tracking code"
 						className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-10 text-base font-bold outline-none focus:border-emerald-700"
 					/>
 				</span>

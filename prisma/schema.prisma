@@ -47,6 +47,7 @@ enum OrderType {
 }
 
 enum OrderStatus {
+  PENDING_APPROVAL
   PENDING_PAYMENT
   CONFIRMED
   PREPARING
@@ -68,6 +69,13 @@ enum DineInPaymentMethod {
   TRANSFER_OR_CARD
 }
 
+enum PaymentMethod {
+  CASH
+  POS
+  TRANSFER
+  PAYSTACK
+}
+
 enum DineInServiceMode {
   SELF_SERVED
   SERVED_BY_WAITER
@@ -76,13 +84,18 @@ enum DineInServiceMode {
 enum PaymentPolicy {
   PAY_BEFORE_SERVICE
   PAY_AFTER_SERVICE
+  FLEXIBLE
 }
 
 enum ReservationStatus {
+  PENDING_APPROVAL
+  APPROVED
   ACTIVE
   CHECKED_IN
+  COMPLETED
   EXPIRED
   CANCELLED
+  DECLINED
 }
 
 // ─── Table Booking Configuration Enums ───────────────
@@ -208,11 +221,19 @@ model StaffMember {
 
   name     String
   staffId  String  @unique
-  pinHash  String
+  pinHash  String? // Optional — staff login is ID-only
   isActive Boolean @default(true)
+
+  // Per-staff permission overrides (null = inherit restaurant default)
+  canHandleDineIn        Boolean?
+  canHandlePickup        Boolean?
+  canHandleDelivery      Boolean?
+  canRecordCashPayment   Boolean?
+  canApproveReservations Boolean?
 
   orders            Order[]            @relation("AttendingStaff")
   pushSubscriptions PushSubscription[] // VAPID Web Push subscriptions for staff
+  orderEvents       OrderEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -304,6 +325,17 @@ model Restaurant {
 
   dineInPaymentPolicy PaymentPolicy @default(PAY_BEFORE_SERVICE)
 
+  // ─── Staff Permission Defaults ──────────────────────
+  // Global defaults for all staff. Individual staff can override.
+  staffDefaultDineIn              Boolean @default(true)
+  staffDefaultPickup              Boolean @default(false)
+  staffDefaultDelivery            Boolean @default(false)
+  staffDefaultCashPayment         Boolean @default(true)
+  staffDefaultApproveReservations Boolean @default(false)
+
+  staffDashboardPassword      String? // Master password for the shared staff dashboard
+  staffDashboardAutoLockHours Int     @default(24) // Hours before session auto-locks
+
   isActive Boolean @default(true)
 
   primaryColor   String?
@@ -324,12 +356,27 @@ model Restaurant {
   staff              StaffMember[]
   ratings            Rating[]
   notifications      Notification[] // All notifications for this restaurant
+  bankAccounts       RestaurantBankAccount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([ownerId])
+}
+
+model RestaurantBankAccount {
+  id            String     @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  accountName   String
+  accountNumber String
+  bankName      String
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([restaurantId])
 }
 
 // ─── Menu ─────────────────────────────────────────────
@@ -416,20 +463,24 @@ model Order {
   attendingStaffId String?
   attendingStaff   StaffMember? @relation("AttendingStaff", fields: [attendingStaffId], references: [id])
 
-  deliveryAddress String?
-  deliveryNotes   String?
-  statusNote      String?
-  orderFor        String? // "SELF" | "SOMEONE_ELSE"
-  senderPhone     String?
-  receiverPhone   String?
-  receiverName    String?
-  seatNumber      String?
-  deliveryFee     Decimal @default(0) @db.Decimal(10, 2)
+  deliveryAddress   String?
+  deliveryNotes     String?
+  statusNote        String?
+  orderFor          String? // "SELF" | "SOMEONE_ELSE"
+  senderPhone       String?
+  senderTableNumber String?
+  receiverPhone     String?
+  receiverAltPhone  String?
+  receiverName      String?
+  seatNumber        String?
+  deliveryFee       Decimal @default(0) @db.Decimal(10, 2)
 
   subtotal Decimal @db.Decimal(10, 2)
   total    Decimal @db.Decimal(10, 2)
 
-  items OrderItem[]
+  items    OrderItem[]
+  payments OrderPayment[]
+  events   OrderEvent[]
 
   whatsappNotified   Boolean   @default(false)
   whatsappNotifiedAt DateTime?
@@ -466,6 +517,19 @@ model OrderItem {
   @@index([orderId])
 }
 
+model OrderPayment {
+  id           String        @id @default(cuid())
+  orderId      String
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount       Decimal       @db.Decimal(10, 2)
+  method       PaymentMethod
+  reference    String? // E.g., Paystack ref, bank transfer ref
+  recordedById String? // ID of staff or admin who recorded this
+  createdAt    DateTime      @default(now())
+
+  @@index([orderId])
+}
+
 // ─── Tables & Reservations ────────────────────────────
 
 model ReservationSetting {
@@ -496,6 +560,7 @@ model TableSeat {
 
   label       String
   description String?
+  imageUrl    String?
   capacity    Int     @default(2)
   isActive    Boolean @default(true)
   sortOrder   Int     @default(0)
@@ -527,9 +592,12 @@ model Reservation {
   startsAt  DateTime
   endsAt    DateTime?
   expiresAt DateTime
-  status    ReservationStatus @default(ACTIVE)
+  status    ReservationStatus @default(PENDING_APPROVAL)
 
   qstashMessageId String?
+  approvedAt      DateTime?
+  declinedAt      DateTime?
+  declineReason   String?
 
   effectiveBookingMode   TableBookingMode
   effectivePaymentTiming TablePaymentTiming
@@ -713,4 +781,20 @@ model ScanEvent {
   country      String?
 
   @@index([restaurantId, scannedAt])
+}
+
+// ─── Order Events ─────────────────────────────────────
+
+model OrderEvent {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description String
+  staffId     String?
+  staff       StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  isAutomatic Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+
+  @@index([orderId])
+  @@index([staffId])
 }

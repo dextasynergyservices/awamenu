@@ -19,6 +19,8 @@ import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyNewOrder } from "@/lib/order-notifications";
 import { initiateOrderPayment } from "@/lib/payments";
+import { getStaffSession } from "@/lib/staff-auth";
+import { verifyStaffAction } from "./staff.actions";
 
 const checkoutItemSchema = z.object({
 	id: z.string().cuid(),
@@ -41,6 +43,9 @@ const orderForSchema = z.preprocess(
 	z.enum(["SELF", "SOMEONE_ELSE"]),
 );
 
+const DEFAULT_DECLINE_REASON =
+	"Sorry, we cannot accept this order right now. Please contact the restaurant for more details.";
+
 const createOrderSchema = z
 	.object({
 		slug: z.string().min(1),
@@ -57,7 +62,9 @@ const createOrderSchema = z
 		deliveryNotes: optionalString(240),
 		orderFor: orderForSchema,
 		senderPhone: optionalString(40),
+		senderTableNumber: optionalString(40),
 		receiverPhone: optionalString(40),
+		receiverAltPhone: optionalString(40),
 		receiverName: optionalString(100),
 		seatNumber: optionalString(40),
 		items: z.array(checkoutItemSchema).min(1),
@@ -68,7 +75,8 @@ const createOrderSchema = z
 		}
 
 		if (input.orderFor === "SOMEONE_ELSE") {
-			if (!input.receiverName) {
+			const isDineIn = input.type === OrderType.DINE_IN;
+			if (!isDineIn && !input.receiverName) {
 				ctx.addIssue({
 					code: "custom",
 					path: ["receiverName"],
@@ -76,7 +84,10 @@ const createOrderSchema = z
 				});
 			}
 
-			if (!input.receiverPhone || input.receiverPhone.length < 3) {
+			if (
+				!isDineIn &&
+				(!input.receiverPhone || input.receiverPhone.length < 3)
+			) {
 				ctx.addIssue({
 					code: "custom",
 					path: ["receiverPhone"],
@@ -84,7 +95,7 @@ const createOrderSchema = z
 				});
 			}
 
-			if (input.type !== OrderType.DINE_IN && !input.senderPhone) {
+			if (!input.senderPhone) {
 				ctx.addIssue({
 					code: "custom",
 					path: ["senderPhone"],
@@ -130,7 +141,9 @@ export async function createOrderAction(formData: FormData) {
 		deliveryNotes: formData.get("deliveryNotes") || undefined,
 		orderFor: formData.get("orderFor") || undefined,
 		senderPhone: formData.get("senderPhone") || undefined,
+		senderTableNumber: formData.get("senderTableNumber") || undefined,
 		receiverPhone: formData.get("receiverPhone") || undefined,
+		receiverAltPhone: formData.get("receiverAltPhone") || undefined,
 		receiverName: formData.get("receiverName") || undefined,
 		seatNumber: formData.get("seatNumber") || undefined,
 		items: JSON.parse(String(formData.get("items") ?? "[]")),
@@ -255,9 +268,19 @@ export async function createOrderAction(formData: FormData) {
 		redirect(`/${restaurant.slug}/order/${existingOrder.id}`);
 	}
 
-	const requiresOnlinePayment =
-		input.type !== OrderType.DINE_IN ||
-		restaurant.dineInPaymentPolicy === PaymentPolicy.PAY_BEFORE_SERVICE;
+	const recipientDetails =
+		input.orderFor === "SOMEONE_ELSE"
+			? {
+					orderFor: input.orderFor,
+					senderPhone: input.senderPhone,
+					senderTableNumber: input.senderTableNumber,
+					receiverPhone: input.receiverPhone,
+					receiverAltPhone: input.receiverAltPhone,
+					receiverName: input.receiverName,
+					seatNumber:
+						input.type === OrderType.DINE_IN ? input.seatNumber : undefined,
+				}
+			: { orderFor: input.orderFor };
 	const order = await db.order.create({
 		data: {
 			restaurantId: restaurant.id,
@@ -265,18 +288,18 @@ export async function createOrderAction(formData: FormData) {
 			customerPhone,
 			customerEmail: input.customerEmail,
 			type: input.type,
-			status: requiresOnlinePayment
-				? OrderStatus.PENDING_PAYMENT
-				: OrderStatus.CONFIRMED,
+			status: OrderStatus.PENDING_APPROVAL,
 			paymentStatus: PaymentStatus.PENDING,
 			tableNumber: input.tableNumber,
 			dineInPaymentPolicy:
 				input.type === OrderType.DINE_IN
-					? restaurant.dineInPaymentPolicy
+					? input.orderFor === "SOMEONE_ELSE"
+						? PaymentPolicy.PAY_BEFORE_SERVICE
+						: restaurant.dineInPaymentPolicy
 					: undefined,
 			dineInPaymentMethod:
 				input.type === OrderType.DINE_IN
-					? (input.dineInPaymentMethod ?? DineInPaymentMethod.CASH)
+					? input.dineInPaymentMethod
 					: undefined,
 			dineInServiceMode:
 				input.type === OrderType.DINE_IN
@@ -290,19 +313,7 @@ export async function createOrderAction(formData: FormData) {
 			deliveryAddress:
 				input.type === OrderType.DELIVERY ? input.deliveryAddress : undefined,
 			deliveryNotes: input.deliveryNotes,
-			orderFor: input.orderFor,
-			senderPhone:
-				input.orderFor === "SOMEONE_ELSE" && input.type !== OrderType.DINE_IN
-					? input.senderPhone
-					: undefined,
-			receiverPhone:
-				input.orderFor === "SOMEONE_ELSE" ? input.receiverPhone : undefined,
-			receiverName:
-				input.orderFor === "SOMEONE_ELSE" ? input.receiverName : undefined,
-			seatNumber:
-				input.orderFor === "SOMEONE_ELSE" && input.type === OrderType.DINE_IN
-					? input.seatNumber
-					: undefined,
+			...recipientDetails,
 			deliveryFee,
 			subtotal,
 			total,
@@ -311,11 +322,6 @@ export async function createOrderAction(formData: FormData) {
 			},
 		},
 	});
-
-	if (!requiresOnlinePayment) {
-		await notifyNewOrder(order.id);
-		redirect(`/${restaurant.slug}/order/${order.id}`);
-	}
 
 	await notifyNewOrder(order.id);
 	redirect(`/${restaurant.slug}/order/${order.id}`);
@@ -328,7 +334,7 @@ export async function initiateOrderPaymentAction(formData: FormData) {
 		where: {
 			id: orderId,
 			restaurant: { slug, isActive: true },
-			status: OrderStatus.CONFIRMED,
+			status: { in: [OrderStatus.CONFIRMED, OrderStatus.PENDING_PAYMENT] },
 			paymentStatus: PaymentStatus.PENDING,
 		},
 		select: {
@@ -347,6 +353,31 @@ export async function initiateOrderPaymentAction(formData: FormData) {
 		amountKobo: Math.round(Number(order.total) * 100),
 	});
 	redirect(authorizationUrl);
+}
+
+export async function selectInHousePaymentAction(formData: FormData) {
+	const orderId = z.string().cuid().parse(formData.get("orderId"));
+	const slug = z.string().min(1).parse(formData.get("slug"));
+	const method = z
+		.nativeEnum(DineInPaymentMethod)
+		.parse(formData.get("method"));
+
+	const order = await db.order.findFirstOrThrow({
+		where: {
+			id: orderId,
+			restaurant: { slug, isActive: true },
+			status: { in: [OrderStatus.CONFIRMED, OrderStatus.PENDING_PAYMENT] },
+			paymentStatus: PaymentStatus.PENDING,
+		},
+		select: { id: true, restaurant: { select: { slug: true } } },
+	});
+
+	await db.order.update({
+		where: { id: order.id },
+		data: { dineInPaymentMethod: method },
+	});
+
+	revalidatePath(`/${order.restaurant.slug}/order/${order.id}`);
 }
 
 const updateOrderStatusSchema = z.object({
@@ -403,6 +434,7 @@ export async function updateOrderStatusAction(formData: FormData) {
 			paymentStatus: true,
 			type: true,
 			dineInPaymentPolicy: true,
+			dineInPaymentMethod: true,
 		},
 	});
 
@@ -412,6 +444,8 @@ export async function updateOrderStatusAction(formData: FormData) {
 
 	const paymentRequiredBeforePreparation =
 		order.type !== OrderType.DINE_IN ||
+		(Boolean(order.dineInPaymentMethod) &&
+			order.dineInPaymentPolicy !== PaymentPolicy.FLEXIBLE) ||
 		order.dineInPaymentPolicy === PaymentPolicy.PAY_BEFORE_SERVICE;
 	if (
 		paymentRequiredBeforePreparation &&
@@ -443,11 +477,70 @@ export async function updateOrderStatusAction(formData: FormData) {
 	revalidatePath(`/${restaurant.slug}/order/${input.orderId}`);
 }
 
+export async function acceptOrderAction(formData: FormData) {
+	const staffSession = await getStaffSession();
+	const user = staffSession ? null : await requireUser();
+	const orderId = z.string().cuid().parse(formData.get("orderId"));
+	const slug = z.string().min(1).parse(formData.get("slug"));
+
+	const restaurant = await db.restaurant.findFirstOrThrow({
+		where: staffSession
+			? { slug, id: staffSession.restaurantId }
+			: { slug, ownerId: user?.id },
+		select: { id: true, slug: true },
+	});
+
+	const order = await db.order.findUniqueOrThrow({
+		where: { id: orderId, restaurantId: restaurant.id },
+		select: {
+			id: true,
+			status: true,
+			type: true,
+			dineInPaymentPolicy: true,
+			dineInPaymentMethod: true,
+		},
+	});
+
+	if (order.status !== OrderStatus.PENDING_APPROVAL) {
+		throw new Error("Only pending orders can be accepted.");
+	}
+
+	const requiresOnlinePayment = order.type !== OrderType.DINE_IN;
+	const requiresInHousePaymentConfirmation =
+		order.type === OrderType.DINE_IN && !!order.dineInPaymentMethod;
+
+	const nextStatus =
+		requiresOnlinePayment || requiresInHousePaymentConfirmation
+			? OrderStatus.PENDING_PAYMENT
+			: OrderStatus.CONFIRMED;
+
+	await db.order.update({
+		where: { id: order.id },
+		data: { status: nextStatus },
+	});
+
+	await dispatchNotification({
+		restaurantId: restaurant.id,
+		type: NotificationType.ORDER_STATUS_CHANGED,
+		audience: NotificationAudience.BOTH,
+		title: "Order accepted",
+		body: `Order #${order.id.slice(-6).toUpperCase()} was accepted`,
+		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
+		metadata: { orderId: order.id, status: nextStatus },
+	});
+
+	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
+	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
+}
+
 export async function cancelOrderAction(formData: FormData) {
 	const user = await requireUser();
 	const orderId = z.string().cuid().parse(formData.get("orderId"));
 	const slug = z.string().min(1).parse(formData.get("slug"));
 	const password = z.string().min(1).parse(formData.get("password"));
+	const cancellationNote =
+		optionalString(500).parse(formData.get("cancellationNote")) ??
+		DEFAULT_DECLINE_REASON;
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug, ownerId: user.id },
 		select: { id: true, slug: true },
@@ -472,16 +565,23 @@ export async function cancelOrderAction(formData: FormData) {
 		where: { id: orderId, restaurantId: restaurant.id },
 		data: {
 			status: OrderStatus.CANCELLED,
+			statusNote: null,
 			cancelledById: user.id,
 			cancelledAt: new Date(),
+			cancellationNote,
 		},
 	});
 	await dispatchNotification({
 		restaurantId: restaurant.id,
 		type: NotificationType.ORDER_CANCELLED,
 		audience: NotificationAudience.BOTH,
-		title: "Order cancelled",
-		body: `Order #${orderId.slice(-6).toUpperCase()} was cancelled`,
+		title:
+			order.status === OrderStatus.PENDING_PAYMENT
+				? "Order declined"
+				: "Order cancelled",
+		body: `Order #${orderId.slice(-6).toUpperCase()} was ${
+			order.status === OrderStatus.PENDING_PAYMENT ? "declined" : "cancelled"
+		}`,
 		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${orderId}`,
 		metadata: { orderId },
 	});
@@ -507,24 +607,27 @@ export async function markOrderPaidAction(formData: FormData) {
 			id: true,
 			total: true,
 			dineInPaymentMethod: true,
+			dineInPaymentPolicy: true,
 			status: true,
 			type: true,
 		},
 	});
 
 	if (order.status === OrderStatus.CANCELLED) {
-		throw new Error("Cancelled orders cannot be marked paid.");
+		throw new Error("Cancelled orders cannot have payment confirmed.");
 	}
 
 	if (order.type !== OrderType.DINE_IN) {
-		throw new Error(
-			"Only dine-in pay-after-service orders can be marked paid.",
-		);
+		throw new Error("Only dine-in orders can have in-house payment confirmed.");
 	}
 
 	await db.order.update({
 		where: { id: order.id },
 		data: {
+			status:
+				order.status === OrderStatus.PENDING_PAYMENT
+					? OrderStatus.CONFIRMED
+					: order.status,
 			paymentStatus: PaymentStatus.PAID,
 			dineInAmountPaid: order.total,
 			dineInPaidMethod: order.dineInPaymentMethod ?? DineInPaymentMethod.CASH,
@@ -537,11 +640,143 @@ export async function markOrderPaidAction(formData: FormData) {
 		type: NotificationType.PAYMENT_RECEIVED,
 		audience: NotificationAudience.ADMIN,
 		title: "Payment recorded",
-		body: `Order #${order.id.slice(-6).toUpperCase()} was marked paid`,
+		body: `Order #${order.id.slice(-6).toUpperCase()} payment was confirmed`,
 		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
 		metadata: { orderId: order.id },
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
 	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
+	revalidatePath(`/staff/${restaurant.slug}`);
+}
+
+const splitPaymentSchema = z.object({
+	orderId: z.string().min(1),
+	slug: z.string().min(1),
+	cashAmount: z.coerce.number().min(0).default(0),
+	posAmount: z.coerce.number().min(0).default(0),
+	transferAmount: z.coerce.number().min(0).default(0),
+});
+
+export async function recordSplitPaymentAction(formData: FormData) {
+	const input = splitPaymentSchema.parse({
+		orderId: formData.get("orderId"),
+		slug: formData.get("slug"),
+		cashAmount: formData.get("cashAmount"),
+		posAmount: formData.get("posAmount"),
+		transferAmount: formData.get("transferAmount"),
+	});
+
+	const pinStr = formData.get("pin")?.toString();
+
+	let recordedById: string | undefined;
+	let restaurant: { id: string; slug: string };
+
+	if (pinStr) {
+		const { staff, restaurant: res } = await verifyStaffAction(
+			input.slug,
+			pinStr,
+		);
+		recordedById = staff.id;
+		restaurant = res;
+	} else {
+		const user = await requireUser();
+		restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug: input.slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+		recordedById = user.id;
+	}
+
+	const order = await db.order.findUniqueOrThrow({
+		where: { id: input.orderId, restaurantId: restaurant.id },
+		select: { id: true, total: true, status: true, type: true },
+	});
+
+	if (order.status === OrderStatus.CANCELLED) {
+		throw new Error("Cancelled orders cannot have payment confirmed.");
+	}
+
+	const totalInput = input.cashAmount + input.posAmount + input.transferAmount;
+
+	if (totalInput < Number(order.total)) {
+		throw new Error(
+			`Total payment (${totalInput}) is less than order total (${order.total}).`,
+		);
+	}
+	const payments: Array<{
+		method: "CASH" | "POS" | "TRANSFER";
+		amount: number;
+		recordedById: string | undefined;
+	}> = [];
+
+	if (input.cashAmount > 0) {
+		payments.push({
+			method: "CASH" as const,
+			amount: input.cashAmount,
+			recordedById,
+		});
+	}
+	if (input.posAmount > 0) {
+		payments.push({
+			method: "POS" as const,
+			amount: input.posAmount,
+			recordedById,
+		});
+	}
+	if (input.transferAmount > 0) {
+		payments.push({
+			method: "TRANSFER" as const,
+			amount: input.transferAmount,
+			recordedById,
+		});
+	}
+
+	await db.$transaction(async (tx) => {
+		for (const payment of payments) {
+			await tx.orderPayment.create({
+				data: {
+					orderId: order.id,
+					method: payment.method,
+					amount: payment.amount,
+					recordedById: payment.recordedById,
+				},
+			});
+		}
+
+		await tx.order.update({
+			where: { id: order.id },
+			data: {
+				status:
+					order.status === OrderStatus.PENDING_PAYMENT
+						? OrderStatus.CONFIRMED
+						: order.status,
+				paymentStatus: PaymentStatus.PAID,
+				dineInAmountPaid: totalInput,
+				dineInPaymentRecordedAt: new Date(),
+				events: {
+					create: {
+						staffId: pinStr ? recordedById : undefined,
+						description: pinStr
+							? `Recorded split payment of ₦${totalInput.toLocaleString()}`
+							: `Admin recorded split payment of ₦${totalInput.toLocaleString()}`,
+					},
+				},
+			},
+		});
+	});
+
+	await dispatchNotification({
+		restaurantId: restaurant.id,
+		type: NotificationType.PAYMENT_RECEIVED,
+		audience: NotificationAudience.ADMIN,
+		title: "Payment recorded",
+		body: `Order #${order.id.slice(-6).toUpperCase()} payment was confirmed via split payment`,
+		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
+		metadata: { orderId: order.id },
+	});
+
+	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
+	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
+	revalidatePath(`/staff/${restaurant.slug}`);
 }

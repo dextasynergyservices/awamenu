@@ -128,7 +128,7 @@ export function BannerManager({
 						{currentBannerItems.map((banner, index) => (
 							<div
 								key={banner.id ?? banner.url}
-								className="group w-[78vw] shrink-0 snap-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm md:w-[17rem] lg:w-[18rem] xl:w-[19rem]"
+								className="group w-[78vw] shrink-0 snap-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm md:w-68 lg:w-[18rem] xl:w-76"
 							>
 								<div className="relative h-32 bg-emerald-50">
 									<Image
@@ -140,7 +140,7 @@ export function BannerManager({
 										unoptimized
 									/>
 									{banner.title || banner.subtitle ? (
-										<div className="absolute inset-0 flex items-center bg-gradient-to-r from-emerald-950/80 via-emerald-950/20 to-transparent p-4 text-white">
+										<div className="absolute inset-0 flex items-center bg-linear-to-r from-emerald-950/80 via-emerald-950/20 to-transparent p-4 text-white">
 											<div>
 												{banner.title ? (
 													<p className="line-clamp-2 text-lg font-semibold leading-tight md:font-black">
@@ -269,7 +269,7 @@ export function BannerManager({
 								</form>
 							</div>
 						))}
-						<label className="grid h-36 w-[78vw] shrink-0 snap-start cursor-pointer place-items-center rounded-xl border border-emerald-200 border-dashed bg-emerald-50/30 text-center text-emerald-700 md:w-[17rem] lg:w-[18rem] xl:w-[19rem]">
+						<label className="grid h-36 w-[78vw] shrink-0 snap-start cursor-pointer place-items-center rounded-xl border border-emerald-200 border-dashed bg-emerald-50/30 text-center text-emerald-700 md:w-68 lg:w-72 xl:w-76">
 							<span>
 								<span className="mx-auto grid size-10 place-items-center rounded-full border border-emerald-300 bg-white">
 									<Plus className="size-5" aria-hidden="true" />

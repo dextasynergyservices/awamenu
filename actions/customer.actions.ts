@@ -49,10 +49,17 @@ function serializeOrder(order: {
 	type: string;
 	status: string;
 	statusNote: string | null;
+	cancellationNote: string | null;
 	paymentStatus: string;
 	total: unknown;
 	createdAt: Date;
-	restaurant: { name: string; slug: string; currency: string };
+	restaurant: {
+		name: string;
+		slug: string;
+		currency: string;
+		phone: string | null;
+		address: string | null;
+	};
 	items: Array<{
 		id: string;
 		name: string;
@@ -194,10 +201,19 @@ export async function getCustomerHubDataAction(input: unknown) {
 				type: true,
 				status: true,
 				statusNote: true,
+				cancellationNote: true,
 				paymentStatus: true,
 				total: true,
 				createdAt: true,
-				restaurant: { select: { name: true, slug: true, currency: true } },
+				restaurant: {
+					select: {
+						name: true,
+						slug: true,
+						currency: true,
+						phone: true,
+						address: true,
+					},
+				},
 				items: {
 					select: {
 						id: true,

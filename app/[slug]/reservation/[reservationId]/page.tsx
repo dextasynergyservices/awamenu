@@ -1,7 +1,10 @@
 import { PaymentStatus, ReservationStatus } from "@prisma/client";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
+import { payReservationAction } from "@/actions/reservation.actions";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
+import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
+import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
 import { verifyReservationPaymentReference } from "@/lib/payments";
 
@@ -27,6 +30,22 @@ function formatDateTime(date: Date) {
 	}).format(date);
 }
 
+function statusClass(status: ReservationStatus) {
+	switch (status) {
+		case ReservationStatus.PENDING_APPROVAL:
+			return "bg-yellow-50 text-yellow-800";
+		case ReservationStatus.APPROVED:
+		case ReservationStatus.ACTIVE:
+		case ReservationStatus.CHECKED_IN:
+			return "bg-emerald-50 text-emerald-800";
+		case ReservationStatus.DECLINED:
+		case ReservationStatus.CANCELLED:
+			return "bg-red-50 text-red-800";
+		default:
+			return "bg-slate-100 text-slate-700";
+	}
+}
+
 export default async function ReservationStatusPage({
 	params,
 	searchParams,
@@ -34,17 +53,17 @@ export default async function ReservationStatusPage({
 	const { slug, reservationId } = await params;
 	const { reference, trxref } = (await searchParams) ?? {};
 	const paystackReference = reference ?? trxref;
-
-	if (paystackReference) {
-		await verifyReservationPaymentReference({
-			reservationId,
-			reference: paystackReference,
-		});
-	}
+	const cleanReservationId = decodeURIComponent(reservationId)
+		.replace(/^#/, "")
+		.trim();
 
 	const reservation = await db.reservation.findFirst({
 		where: {
-			id: reservationId,
+			OR: [
+				{ id: cleanReservationId },
+				{ id: cleanReservationId.toLowerCase() },
+				{ id: { endsWith: cleanReservationId.toLowerCase() } },
+			],
 			restaurant: { slug, isActive: true },
 		},
 		select: {
@@ -57,9 +76,19 @@ export default async function ReservationStatusPage({
 			reservationPaymentStatus: true,
 			reservationAmountPaid: true,
 			specialRequests: true,
+			declineReason: true,
 			createdAt: true,
 			table: { select: { label: true, capacity: true } },
-			restaurant: { select: { name: true, slug: true, currency: true } },
+			restaurant: {
+				select: {
+					name: true,
+					slug: true,
+					currency: true,
+					phone: true,
+					address: true,
+					whatsappNumber: true,
+				},
+			},
 			preOrder: {
 				select: {
 					id: true,
@@ -78,10 +107,67 @@ export default async function ReservationStatusPage({
 		},
 	});
 
-	if (!reservation) notFound();
+	if (!reservation) {
+		const order = await db.order.findFirst({
+			where: {
+				restaurant: { slug, isActive: true },
+				OR: [
+					{ id: cleanReservationId },
+					{ id: cleanReservationId.toLowerCase() },
+					{ id: { endsWith: cleanReservationId.toLowerCase() } },
+				],
+			},
+			select: { id: true },
+		});
+
+		if (order) {
+			const searchParamsObj = await searchParams;
+			const searchParamsString = searchParamsObj
+				? new URLSearchParams(searchParamsObj).toString()
+				: "";
+			const queryString = searchParamsString ? `?${searchParamsString}` : "";
+			redirect(`/${slug}/order/${order.id}${queryString}`);
+		}
+
+		return (
+			<TrackingUnavailable
+				restaurantSlug={slug}
+				trackingCode={cleanReservationId}
+				type="reservation"
+			/>
+		);
+	}
+
+	if (reservationId !== reservation.id) {
+		const searchParamsObj = await searchParams;
+		const searchParamsString = searchParamsObj
+			? new URLSearchParams(searchParamsObj).toString()
+			: "";
+		const queryString = searchParamsString ? `?${searchParamsString}` : "";
+		redirect(`/${slug}/reservation/${reservation.id}${queryString}`);
+	}
+
+	if (paystackReference) {
+		await verifyReservationPaymentReference({
+			reservationId: reservation.id,
+			reference: paystackReference,
+		});
+	}
+
+	const amountDue = Number(reservation.reservationAmountPaid ?? 0);
+	const canPay =
+		reservation.status === ReservationStatus.APPROVED &&
+		reservation.reservationPaymentStatus !== PaymentStatus.PAID &&
+		amountDue > 0;
+	const contactNumber =
+		reservation.restaurant.whatsappNumber ?? reservation.restaurant.phone;
+	const declineReason =
+		reservation.declineReason ??
+		"This table is not available for the selected time. Please contact the restaurant so we can help you choose another table.";
 
 	return (
 		<main className="min-h-screen bg-[#f6faf7] px-4 py-5 text-slate-950">
+			<ReservationStatusPoller />
 			<div className="mx-auto max-w-2xl">
 				<Link
 					href={`/${reservation.restaurant.slug}`}
@@ -102,7 +188,6 @@ export default async function ReservationStatusPage({
 							orderCode: `#${reservation.id.slice(-6).toUpperCase()}`,
 							receiptTitle: "Reservation receipt",
 							trackingLabel: "Reservation code",
-							copyLabel: "Copy reservation code",
 							totalLabel: "Amount paid",
 							itemsLabel: "Food for your table",
 							restaurantName: reservation.restaurant.name,
@@ -142,8 +227,10 @@ export default async function ReservationStatusPage({
 					</p>
 
 					<div className="mt-5 grid grid-cols-2 gap-3">
-						<div className="rounded-2xl bg-emerald-50 p-4">
-							<p className="text-sm font-bold text-emerald-800">Status</p>
+						<div
+							className={`rounded-2xl p-4 ${statusClass(reservation.status)}`}
+						>
+							<p className="text-sm font-bold">Status</p>
 							<p className="mt-1 text-lg font-black">
 								{reservation.status.replace("_", " ")}
 							</p>
@@ -155,6 +242,55 @@ export default async function ReservationStatusPage({
 							</p>
 						</div>
 					</div>
+
+					{reservation.status === ReservationStatus.PENDING_APPROVAL ? (
+						<p className="mt-5 rounded-2xl bg-yellow-50 p-4 text-sm font-bold leading-6 text-yellow-900">
+							Your table request is pending. Please wait for admin to confirm
+							that this table is free before making payment.
+						</p>
+					) : null}
+
+					{canPay ? (
+						<div className="mt-5 rounded-2xl bg-emerald-50 p-4">
+							<p className="text-sm font-bold leading-6 text-emerald-900">
+								Admin has approved this table. Complete your online payment to
+								reserve it.
+							</p>
+							<form action={payReservationAction} className="mt-3">
+								<input
+									type="hidden"
+									name="slug"
+									value={reservation.restaurant.slug}
+								/>
+								<input
+									type="hidden"
+									name="reservationId"
+									value={reservation.id}
+								/>
+								<button
+									type="submit"
+									className="min-h-12 w-full rounded-2xl bg-emerald-700 px-5 text-sm font-black text-white"
+								>
+									Pay {formatMoney(amountDue, reservation.restaurant.currency)}
+								</button>
+							</form>
+						</div>
+					) : null}
+
+					{reservation.status === ReservationStatus.DECLINED ? (
+						<div className="mt-5 rounded-2xl bg-red-50 p-4 text-sm font-bold leading-6 text-red-900">
+							<p className="font-black">This table is not available.</p>
+							<p className="mt-2">{declineReason}</p>
+							{contactNumber || reservation.restaurant.address ? (
+								<div className="mt-3 grid gap-1 text-red-800">
+									{contactNumber ? <p>Call or chat: {contactNumber}</p> : null}
+									{reservation.restaurant.address ? (
+										<p>Address: {reservation.restaurant.address}</p>
+									) : null}
+								</div>
+							) : null}
+						</div>
+					) : null}
 
 					<div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600">
 						<div className="flex justify-between gap-3">

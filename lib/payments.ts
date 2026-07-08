@@ -3,11 +3,13 @@ import {
 	OnboardingStatus,
 	OrderStatus,
 	PaymentStatus,
+	ReservationStatus,
 	SubscriptionStatus,
 } from "@prisma/client";
 import { env, requireEnv } from "@/env";
 import { db } from "@/lib/db";
 import { notifyNewOrder } from "@/lib/order-notifications";
+import { scheduleReservationExpiry } from "@/lib/qstash";
 
 type PaystackSubscriptionParams = {
 	userId: string;
@@ -206,17 +208,30 @@ export async function verifyReservationPaymentReference(
 
 	const reservation = await db.reservation.findUnique({
 		where: { id: params.reservationId },
-		select: { id: true, reservationPaymentStatus: true, preOrderId: true },
+		select: {
+			id: true,
+			status: true,
+			expiresAt: true,
+			reservationPaymentStatus: true,
+			preOrderId: true,
+		},
 	});
 
 	if (!reservation) return false;
 	if (reservation.reservationPaymentStatus === PaymentStatus.PAID) return true;
 
+	const qstashMessageId = await scheduleReservationExpiry({
+		reservationId: reservation.id,
+		expiresAt: reservation.expiresAt,
+	});
+
 	await db.reservation.update({
 		where: { id: params.reservationId },
 		data: {
+			status: ReservationStatus.ACTIVE,
 			reservationPaymentStatus: PaymentStatus.PAID,
 			reservationPaymentRef: payload.data.reference ?? params.reference,
+			qstashMessageId,
 		},
 	});
 
@@ -224,6 +239,7 @@ export async function verifyReservationPaymentReference(
 		await db.order.update({
 			where: { id: reservation.preOrderId },
 			data: {
+				status: OrderStatus.CONFIRMED,
 				paymentStatus: PaymentStatus.PAID,
 				paymentProvider: "paystack",
 				paymentRef: payload.data.reference ?? params.reference,

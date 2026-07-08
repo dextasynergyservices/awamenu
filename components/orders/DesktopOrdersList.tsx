@@ -6,21 +6,21 @@ import {
 	ChevronRight,
 	Clock3,
 	Eye,
-	FileText,
 	MapPin,
-	Printer,
 	ReceiptText,
 	Send,
 	ShoppingBag,
 	User,
 	X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { OrderActionForm } from "@/components/orders/OrderActionForm";
 import {
-	cancelOrderAction,
-	markOrderPaidAction,
-	updateOrderStatusAction,
-} from "@/actions/order.actions";
+	type OrderEventDTO,
+	OrderTimelineModal,
+} from "@/components/orders/OrderTimeline";
+import { ReceiptActions } from "@/components/orders/ReceiptActions";
+import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
 import { SubmitButton } from "@/components/ui/action-button";
 import { cn } from "@/lib/utils";
 
@@ -36,12 +36,18 @@ type Order = {
 	id: string;
 	customerName: string;
 	customerPhone: string;
+	customerEmail: string | null;
 	type: string;
 	status: string;
 	statusNote: string | null;
+	cancellationNote: string | null;
 	paymentStatus: string;
 	tableNumber: string | null;
 	tableLabel: string | null;
+	orderFor?: string | null;
+	senderPhone?: string | null;
+	receiverPhone?: string | null;
+	senderTableNumber?: string | null;
 	deliveryAddress: string | null;
 	deliveryNotes: string | null;
 	dineInPaymentPolicy: string | null;
@@ -51,21 +57,35 @@ type Order = {
 	total: string;
 	createdAt: string;
 	items: OrderItem[];
+	payments: Array<{
+		amount: string | number;
+		method: string;
+	}>;
+	events: OrderEventDTO[];
+	attendingStaff: { name: string; staffId: string | null } | null;
 };
 
 type DesktopOrdersListProps = {
 	orders: Order[];
 	currency: string;
 	slug: string;
+	restaurantName: string;
 };
 
-const statusOptions = [
-	"CONFIRMED",
-	"PREPARING",
-	"READY",
-	"DELIVERED",
-	"COMPLETED",
-];
+function getStatusOptions(type: string) {
+	if (type === "DINE_IN" || type === "TABLE_RESERVATION") {
+		return ["CONFIRMED", "PREPARING", "READY", "COMPLETED"];
+	}
+	return ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+}
+
+function getStatusOptionLabel(status: string, type: string) {
+	if (type === "PICKUP" && status === "DELIVERED") return "COLLECTED";
+	return status.replaceAll("_", " ");
+}
+
+const DEFAULT_DECLINE_REASON =
+	"Sorry, we cannot accept this order right now. Please contact the restaurant for more details.";
 
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
@@ -106,6 +126,15 @@ function statusBadgeClass(status: string) {
 	return "bg-slate-50 text-slate-700";
 }
 
+function orderStatusLabel(
+	order: Pick<Order, "status" | "cancellationNote" | "type">,
+) {
+	if (order.status === "CANCELLED" && order.cancellationNote) return "DECLINED";
+	if (order.type === "PICKUP" && order.status === "DELIVERED")
+		return "COLLECTED";
+	return order.status.replaceAll("_", " ");
+}
+
 function paymentBadgeClass(status: string) {
 	return status === "PAID"
 		? "bg-emerald-50 text-emerald-700"
@@ -119,9 +148,9 @@ function typeBadgeClass(type: string) {
 	return "bg-slate-50 text-slate-700";
 }
 
-function getInitialSelectedStatus(status: string) {
+function getInitialSelectedStatus(status: string, type: string) {
 	if (status === "PENDING_PAYMENT") return "CONFIRMED";
-	if (statusOptions.includes(status)) return status;
+	if (getStatusOptions(type).includes(status)) return status;
 	return "CONFIRMED";
 }
 
@@ -156,6 +185,17 @@ function getStatusSteps(type: string) {
 		];
 	}
 
+	if (type === "PICKUP") {
+		return [
+			{ value: "PENDING_PAYMENT", label: "Pending" },
+			{ value: "CONFIRMED", label: "Confirmed" },
+			{ value: "PREPARING", label: "Preparing" },
+			{ value: "READY", label: "Ready" },
+			{ value: "DELIVERED", label: "Collected" },
+			{ value: "COMPLETED", label: "Completed" },
+		];
+	}
+
 	return [
 		{ value: "PENDING_PAYMENT", label: "Pending" },
 		{ value: "CONFIRMED", label: "Confirmed" },
@@ -184,8 +224,13 @@ export function DesktopOrdersList({
 	orders,
 	currency,
 	slug,
+	restaurantName,
 }: DesktopOrdersListProps) {
-	const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+	const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+	const selectedOrder = selectedOrderId
+		? (orders.find((order) => order.id === selectedOrderId) ?? null)
+		: null;
+	const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
 
 	return (
 		<>
@@ -194,7 +239,7 @@ export function DesktopOrdersList({
 					<button
 						key={order.id}
 						type="button"
-						onClick={() => setSelectedOrder(order)}
+						onClick={() => setSelectedOrderId(order.id)}
 						className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-4 rounded-2xl border border-slate-100 bg-white px-5 py-4 text-left shadow-[0_10px_30px_rgba(15,23,42,0.03)] transition hover:border-emerald-100 hover:shadow-[0_14px_34px_rgba(15,23,42,0.05)] focus:outline-none focus:ring-2 focus:ring-emerald-100"
 					>
 						<span className="grid size-12 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700">
@@ -219,6 +264,11 @@ export function DesktopOrdersList({
 							<span className="mt-2 block truncate text-sm font-semibold text-slate-600">
 								{order.customerName} · {order.customerPhone}
 							</span>
+							{order.customerEmail ? (
+								<span className="mt-1 block truncate text-sm font-semibold text-slate-500">
+									{order.customerEmail}
+								</span>
+							) : null}
 							{order.type === "DELIVERY" && order.deliveryAddress ? (
 								<span className="mt-1 block truncate text-sm font-semibold text-slate-600">
 									Delivery: {order.deliveryAddress}
@@ -226,7 +276,10 @@ export function DesktopOrdersList({
 							) : null}
 							{order.type === "DINE_IN" ? (
 								<span className="mt-1 block truncate text-sm font-semibold text-slate-600">
-									Table: {order.tableLabel ?? order.tableNumber ?? "Not set"}
+									{order.orderFor === "SOMEONE_ELSE"
+										? "Receiver Table: "
+										: "Table: "}
+									{order.tableLabel ?? order.tableNumber ?? "Not set"}
 								</span>
 							) : null}
 						</span>
@@ -237,7 +290,7 @@ export function DesktopOrdersList({
 							<span
 								className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${statusBadgeClass(order.status)}`}
 							>
-								{order.status.replaceAll("_", " ")}
+								{orderStatusLabel(order)}
 							</span>
 							<span className="mt-2 flex items-center justify-end gap-1 text-xs font-semibold text-slate-500">
 								<Clock3 className="size-3.5" aria-hidden="true" />
@@ -257,7 +310,20 @@ export function DesktopOrdersList({
 					order={selectedOrder}
 					currency={currency}
 					slug={slug}
-					onClose={() => setSelectedOrder(null)}
+					restaurantName={restaurantName}
+					onClose={() => setSelectedOrderId(null)}
+					onOpenSplitPayment={() => setIsSplitPaymentModalOpen(true)}
+				/>
+			) : null}
+
+			{selectedOrder ? (
+				<SplitPaymentModal
+					isOpen={isSplitPaymentModalOpen}
+					orderId={selectedOrder.id}
+					total={Number(selectedOrder.total)}
+					currency={currency}
+					slug={slug}
+					onClose={() => setIsSplitPaymentModalOpen(false)}
 				/>
 			) : null}
 		</>
@@ -268,15 +334,53 @@ function OrderDetailsModal({
 	order,
 	currency,
 	slug,
+	restaurantName,
 	onClose,
+	onOpenSplitPayment,
 }: {
 	order: Order;
 	currency: string;
 	slug: string;
+	restaurantName: string;
 	onClose: () => void;
+	onOpenSplitPayment: () => void;
 }) {
-	const selectedDefaultStatus = getInitialSelectedStatus(order.status);
-	const [selectedStatus, setSelectedStatus] = useState(selectedDefaultStatus);
+	return (
+		<OrderDetailsModalContent
+			key={`${order.id}:${order.status}:${order.statusNote ?? ""}:${order.paymentStatus}`}
+			order={order}
+			currency={currency}
+			slug={slug}
+			restaurantName={restaurantName}
+			onClose={onClose}
+			onOpenSplitPayment={onOpenSplitPayment}
+		/>
+	);
+}
+
+function OrderDetailsModalContent({
+	order,
+	currency,
+	slug,
+	restaurantName,
+	onClose,
+	onOpenSplitPayment,
+}: {
+	order: Order;
+	currency: string;
+	slug: string;
+	restaurantName: string;
+	onClose: () => void;
+	onOpenSplitPayment: () => void;
+}) {
+	const [showTimeline, setShowTimeline] = useState(false);
+	const selectedDefaultStatus = getInitialSelectedStatus(
+		order.status,
+		order.type,
+	);
+	const [selectedStatus, setSelectedStatus] = useState(() =>
+		getInitialSelectedStatus(order.status, order.type),
+	);
 	const [statusNote, setStatusNote] = useState(
 		order.statusNote ?? getDefaultStatusNote(selectedDefaultStatus),
 	);
@@ -299,23 +403,15 @@ function OrderDetailsModal({
 	const canUpdateStatus = order.status !== "CANCELLED";
 	const canCancel =
 		order.status !== "CANCELLED" && order.status !== "COMPLETED";
+	const isAwaitingAcceptance = order.status === "PENDING_PAYMENT";
 	const canMarkPaid =
 		order.type === "DINE_IN" &&
 		order.paymentStatus === "PENDING" &&
-		order.dineInPaymentPolicy === "PAY_AFTER_SERVICE" &&
 		order.status !== "CANCELLED";
 	const orderLink =
 		typeof window === "undefined"
 			? ""
 			: `${window.location.origin}/${slug}/order/${order.id}`;
-
-	useEffect(() => {
-		const nextStatus = getInitialSelectedStatus(order.status);
-		setSelectedStatus(nextStatus);
-		setStatusNote(order.statusNote ?? getDefaultStatusNote(nextStatus));
-		setWhatsappMessage(getDefaultWhatsAppMessage(order, nextStatus));
-		setPreviewOpen(false);
-	}, [order]);
 
 	function handleStatusChange(value: string) {
 		setSelectedStatus(value);
@@ -334,14 +430,14 @@ function OrderDetailsModal({
 	}
 
 	return (
-		<div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/45 p-5 backdrop-blur-[2px]">
+		<div className="fixed inset-0 z-100 grid place-items-center bg-slate-950/45 p-5 backdrop-blur-[2px]">
 			<button
 				type="button"
 				aria-label="Close order details"
 				className="absolute inset-0 cursor-default"
 				onClick={onClose}
 			/>
-			<section className="relative z-10 grid max-h-[88vh] w-full max-w-[53rem] overflow-hidden rounded-[1rem] bg-white shadow-2xl">
+			<section className="relative z-10 grid max-h-[88vh] w-full max-w-212 overflow-hidden rounded-[1rem] bg-white shadow-2xl">
 				<header className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-4 px-7 pb-4 pt-6">
 					<div className="min-w-0">
 						<div className="flex flex-wrap items-center gap-2">
@@ -371,7 +467,7 @@ function OrderDetailsModal({
 						<span
 							className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${statusBadgeClass(order.status)}`}
 						>
-							{order.status.replaceAll("_", " ")}
+							{orderStatusLabel(order)}
 						</span>
 					</div>
 					<button
@@ -392,6 +488,9 @@ function OrderDetailsModal({
 						>
 							<p>{order.customerName}</p>
 							<p>{order.customerPhone || "No phone provided"}</p>
+							{order.orderFor === "SOMEONE_ELSE" && order.senderPhone ? (
+								<p>Sender Phone: {order.senderPhone}</p>
+							) : null}
 							{order.type === "DINE_IN" ? (
 								<p>
 									{order.dineInServiceMode === "SERVED_BY_WAITER"
@@ -401,7 +500,10 @@ function OrderDetailsModal({
 							) : null}
 						</InfoCard>
 
-						{order.deliveryAddress || order.tableLabel || order.tableNumber ? (
+						{order.deliveryAddress ||
+						order.tableLabel ||
+						order.tableNumber ||
+						order.senderTableNumber ? (
 							<InfoCard
 								icon={<MapPin className="size-4" />}
 								title={
@@ -410,13 +512,34 @@ function OrderDetailsModal({
 										: "Delivery Address"
 								}
 							>
-								<p>
-									{order.type === "DINE_IN"
-										? (order.tableLabel ?? order.tableNumber ?? "Not set")
-										: order.deliveryAddress}
-								</p>
-								{order.deliveryNotes ? <p>{order.deliveryNotes}</p> : null}
+								{order.type === "DINE_IN" ? (
+									<>
+										<p>
+											{order.orderFor === "SOMEONE_ELSE"
+												? "Receiver Table: "
+												: "Table: "}
+											{order.tableLabel ?? order.tableNumber ?? "Not set"}
+										</p>
+										{order.orderFor === "SOMEONE_ELSE" &&
+										order.senderTableNumber ? (
+											<p>Sender Table: {order.senderTableNumber}</p>
+										) : null}
+									</>
+								) : (
+									<p>{order.deliveryAddress}</p>
+								)}
 							</InfoCard>
+						) : null}
+
+						{order.deliveryNotes ? (
+							<div className="rounded-2xl bg-amber-50 border border-amber-100 p-4">
+								<p className="text-xs font-black uppercase tracking-wider text-amber-700">
+									Order Note
+								</p>
+								<p className="mt-1 text-sm font-bold text-amber-900">
+									{order.deliveryNotes}
+								</p>
+							</div>
 						) : null}
 
 						<div className="rounded-2xl border border-slate-100 p-4">
@@ -474,6 +597,19 @@ function OrderDetailsModal({
 								/>
 							</div>
 						</div>
+
+						{order.events ? (
+							<div className="rounded-2xl bg-slate-50 p-4">
+								<button
+									type="button"
+									onClick={() => setShowTimeline(true)}
+									className="flex w-full items-center justify-between text-sm font-black text-slate-950"
+								>
+									View Order Timeline
+									<ChevronRight className="size-4 text-slate-500" />
+								</button>
+							</div>
+						) : null}
 					</div>
 
 					<div className="grid content-start gap-4">
@@ -487,9 +623,9 @@ function OrderDetailsModal({
 								orderType={order.type}
 								createdAt={order.createdAt}
 							/>
-							<form
+							<OrderActionForm
 								id={statusFormId}
-								action={updateOrderStatusAction}
+								actionKind="updateStatus"
 								className="mt-4 grid gap-3"
 							>
 								<input type="hidden" name="slug" value={slug} />
@@ -503,9 +639,9 @@ function OrderDetailsModal({
 										disabled={!canUpdateStatus}
 										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-600 disabled:bg-slate-50"
 									>
-										{statusOptions.map((status) => (
+										{getStatusOptions(order.type).map((status) => (
 											<option key={status} value={status}>
-												{status.replaceAll("_", " ")}
+												{getStatusOptionLabel(status, order.type)}
 											</option>
 										))}
 									</select>
@@ -530,7 +666,7 @@ function OrderDetailsModal({
 								>
 									Update Status
 								</SubmitButton>
-							</form>
+							</OrderActionForm>
 						</div>
 
 						<div className="rounded-2xl border border-slate-100 p-4">
@@ -590,37 +726,44 @@ function OrderDetailsModal({
 						</div>
 
 						<div className="rounded-2xl border border-slate-100 p-4">
-							<div className="mb-3 flex items-center gap-2 text-sm font-black text-slate-800">
-								<User className="size-4 text-slate-500" />
-								Actions
-							</div>
-							<div className="grid grid-cols-2 gap-3">
-								<ActionButton
-									icon={<Printer className="size-4" />}
-									label="Print Receipt"
-									helper="Download or print receipt"
-									onClick={() => window.print()}
-								/>
-								<ActionButton
-									icon={<FileText className="size-4" />}
-									label="Print Invoice"
-									helper="Download or print invoice"
-									onClick={() => window.print()}
-								/>
+							<div className="mb-3 flex items-center justify-between gap-2 text-sm font-black text-slate-800">
+								<span className="flex items-center gap-2">
+									<User className="size-4 text-slate-500" />
+									Actions
+								</span>
+								<div className="flex justify-end gap-2 text-sm scale-[0.8] origin-right">
+									<ReceiptActions
+										receipt={{
+											orderId: order.id,
+											orderCode: `#${order.id.slice(-6).toUpperCase()}`,
+											restaurantName: restaurantName,
+											customerName: order.customerName,
+											status: order.status,
+											paymentStatus: order.paymentStatus,
+											orderType: order.type,
+											total: Number(order.total),
+											currency: currency,
+											createdAt: order.createdAt,
+											items: order.items.map((i) => ({
+												name: i.name,
+												qty: i.qty,
+												unitPrice: Number(i.unitPrice),
+												notes: i.notes,
+											})),
+											payments: order.payments,
+										}}
+									/>
+								</div>
 							</div>
 							<div className="mt-3 grid gap-2">
 								{canMarkPaid ? (
-									<form action={markOrderPaidAction}>
-										<input type="hidden" name="slug" value={slug} />
-										<input type="hidden" name="orderId" value={order.id} />
-										<SubmitButton
-											loadingText="Recording..."
-											successText="Paid"
-											className="min-h-10 w-full rounded-xl bg-yellow-300 px-4 text-sm font-black text-emerald-950"
-										>
-											Mark cash paid
-										</SubmitButton>
-									</form>
+									<button
+										type="button"
+										onClick={onOpenSplitPayment}
+										className="min-h-10 w-full rounded-xl bg-yellow-300 px-4 text-sm font-black text-emerald-950 hover:bg-yellow-400"
+									>
+										Confirm payment received
+									</button>
 								) : null}
 								<button
 									type="button"
@@ -628,7 +771,7 @@ function OrderDetailsModal({
 									onClick={() => setCancelOpen(true)}
 									className="min-h-10 rounded-xl border border-red-100 bg-white px-4 text-sm font-black text-red-600 disabled:opacity-50"
 								>
-									Cancel order
+									{isAwaitingAcceptance ? "Decline order" : "Cancel order"}
 								</button>
 							</div>
 						</div>
@@ -659,9 +802,24 @@ function OrderDetailsModal({
 				<CancelOrderModal
 					slug={slug}
 					orderId={order.id}
+					isDecline={isAwaitingAcceptance}
 					onClose={() => setCancelOpen(false)}
 				/>
 			) : null}
+
+			{showTimeline && (
+				<OrderTimelineModal
+					events={order.events || []}
+					fallback={{
+						createdAt: order.createdAt,
+						status: order.status,
+						paymentStatus: order.paymentStatus,
+						paymentMethod: order.dineInPaymentMethod,
+						attendingStaff: order.attendingStaff,
+					}}
+					onClose={() => setShowTimeline(false)}
+				/>
+			)}
 		</div>
 	);
 }
@@ -790,47 +948,50 @@ function SummaryLine({
 	);
 }
 
-function ActionButton({
-	icon,
-	label,
-	helper,
-	onClick,
-}: {
-	icon: React.ReactNode;
-	label: string;
-	helper: string;
-	onClick: () => void;
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 text-left"
-		>
-			<span className="text-slate-500">{icon}</span>
-			<span className="min-w-0">
-				<span className="block text-sm font-black text-slate-800">{label}</span>
-				<span className="block truncate text-xs font-semibold text-slate-500">
-					{helper}
-				</span>
-			</span>
-		</button>
-	);
-}
+// function _ActionButton({
+// 	icon,
+// 	label,
+// 	helper,
+// 	onClick,
+// }: {
+// 	icon: React.ReactNode;
+// 	label: string;
+// 	helper: string;
+// 	onClick: () => void;
+// }) {
+// 	return (
+// 		<button
+// 			type="button"
+// 			onClick={onClick}
+// 			className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 text-left"
+// 		>
+// 			<span className="text-slate-500">{icon}</span>
+// 			<span className="min-w-0">
+// 				<span className="block text-sm font-black text-slate-800">{label}</span>
+// 				<span className="block truncate text-xs font-semibold text-slate-500">
+// 					{helper}
+// 				</span>
+// 			</span>
+// 		</button>
+// 	);
+// }
 
 function CancelOrderModal({
 	slug,
 	orderId,
+	isDecline,
 	onClose,
 }: {
 	slug: string;
 	orderId: string;
+	isDecline: boolean;
 	onClose: () => void;
 }) {
 	return (
-		<div className="fixed inset-0 z-[130] grid place-items-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
-			<form
-				action={cancelOrderAction}
+		<div className="fixed inset-0 z-130 grid place-items-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+			<OrderActionForm
+				actionKind="cancel"
+				onSuccess={onClose}
 				className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl"
 			>
 				<input type="hidden" name="slug" value={slug} />
@@ -842,10 +1003,12 @@ function CancelOrderModal({
 						</span>
 						<div>
 							<h2 className="text-sm font-black text-slate-950">
-								Are you sure?
+								{isDecline ? "Decline order?" : "Cancel order?"}
 							</h2>
 							<p className="mt-1 text-xs font-bold text-slate-500">
-								This order will be cancelled and locked.
+								{isDecline
+									? "The customer will see this order as declined."
+									: "This order will be cancelled and locked."}
 							</p>
 						</div>
 					</div>
@@ -858,6 +1021,18 @@ function CancelOrderModal({
 						<X className="size-4" aria-hidden="true" />
 					</button>
 				</div>
+
+				<label className="mt-4 block text-xs font-black text-slate-700">
+					{isDecline ? "Decline reason" : "Cancellation reason"}
+					<textarea
+						name="cancellationNote"
+						required
+						rows={4}
+						maxLength={500}
+						defaultValue={DEFAULT_DECLINE_REASON}
+						className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100"
+					/>
+				</label>
 
 				<label className="mt-4 block text-xs font-black text-slate-700">
 					Admin password
@@ -879,15 +1054,14 @@ function CancelOrderModal({
 						Keep order
 					</button>
 					<SubmitButton
-						loadingText="Cancelling..."
-						successText="Cancelled"
-						onSuccess={onClose}
+						loadingText={isDecline ? "Declining..." : "Cancelling..."}
+						successText={isDecline ? "Declined" : "Cancelled"}
 						className="h-10 rounded-xl bg-red-600 px-4 text-sm font-black text-white"
 					>
-						Cancel order
+						{isDecline ? "Decline order" : "Cancel order"}
 					</SubmitButton>
 				</div>
-			</form>
+			</OrderActionForm>
 		</div>
 	);
 }

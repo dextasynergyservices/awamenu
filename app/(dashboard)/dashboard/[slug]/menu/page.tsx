@@ -5,7 +5,6 @@ import { CategoryManager } from "@/components/admin/CategoryManager";
 import { MenuEditor } from "@/components/admin/MenuEditor";
 import { MobileMenuBuilder } from "@/components/admin/MobileMenuBuilder";
 import { PlanLimitBanner } from "@/components/admin/PlanLimitBanner";
-import { requireUser } from "@/lib/auth-guards";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
 
@@ -20,10 +19,9 @@ function isWithinLimit(current: number, max: number) {
 export default async function MenuBuilderPage({
 	params,
 }: MenuBuilderPageProps) {
-	const user = await requireUser();
 	const { slug } = await params;
 	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug, ownerId: user.id },
+		where: { slug },
 		select: {
 			id: true,
 			name: true,

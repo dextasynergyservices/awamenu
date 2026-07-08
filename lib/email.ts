@@ -45,3 +45,15 @@ export async function sendOrderConfirmationEmail(input: {
 		text: `Your order #${input.orderId.slice(-6).toUpperCase()} from ${input.restaurantName} is confirmed. Total: ${input.total}. Track it here: ${input.orderUrl}`,
 	});
 }
+
+export async function sendPasswordResetOtpEmail(input: {
+	to: string;
+	otp: string;
+}) {
+	await getResendClient().emails.send({
+		from: requireEnv("RESEND_FROM_EMAIL"),
+		to: input.to,
+		subject: "AwaMenu - Your Password Reset Code",
+		text: `Your password reset code is: ${input.otp}\n\nThis code is valid for 15 minutes. If you did not request a password reset, you can safely ignore this email.`,
+	});
+}

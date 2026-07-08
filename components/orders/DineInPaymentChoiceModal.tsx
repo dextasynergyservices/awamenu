@@ -1,0 +1,293 @@
+"use client";
+
+import {
+	ArrowLeft,
+	Banknote,
+	Building,
+	CheckCircle2,
+	Copy,
+	CreditCard,
+	Landmark,
+	X,
+} from "lucide-react";
+import { useState, useTransition } from "react";
+import {
+	initiateOrderPaymentAction,
+	selectInHousePaymentAction,
+} from "@/actions/order.actions";
+
+type BankAccount = {
+	id: string;
+	accountName: string;
+	accountNumber: string;
+	bankName: string;
+};
+
+type Props = {
+	orderId: string;
+	slug: string;
+	total: number;
+	currency: string;
+	isOpen: boolean;
+	onClose: () => void;
+	bankAccounts?: BankAccount[];
+};
+
+export function DineInPaymentChoiceModal({
+	orderId,
+	slug,
+	total,
+	currency,
+	isOpen,
+	onClose,
+	bankAccounts = [],
+}: Props) {
+	const [isPending, startTransition] = useTransition();
+	const [view, setView] = useState<
+		"methods" | "transfers" | "transfer_details"
+	>("methods");
+	const [selectedAccount, setSelectedAccount] = useState<BankAccount | null>(
+		null,
+	);
+	const [copied, setCopied] = useState(false);
+
+	if (!isOpen) return null;
+
+	const currencySymbol = currency === "NGN" ? "₦" : currency;
+
+	function handleSelectInHouse(method: "CASH" | "TRANSFER_OR_CARD") {
+		const fd = new FormData();
+		fd.set("orderId", orderId);
+		fd.set("slug", slug);
+		fd.set("method", method);
+		startTransition(async () => {
+			await selectInHousePaymentAction(fd);
+			onClose();
+		});
+	}
+
+	return (
+		<div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+			<button
+				type="button"
+				onClick={onClose}
+				className="absolute inset-0 cursor-default"
+				aria-label="Close"
+			/>
+			<div className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+				<div className="flex items-center justify-between border-b border-slate-100 p-5">
+					<div className="flex items-center gap-3">
+						{view !== "methods" && (
+							<button
+								type="button"
+								onClick={() => {
+									if (view === "transfer_details") {
+										setView("transfers");
+									} else {
+										setView("methods");
+									}
+								}}
+								className="grid size-8 place-items-center rounded-xl text-slate-500 hover:bg-slate-100"
+							>
+								<ArrowLeft className="size-5" />
+							</button>
+						)}
+						<h3 className="text-xl font-black text-slate-950">
+							{view === "methods"
+								? "Select Payment Method"
+								: view === "transfers"
+									? "Transfer Options"
+									: "Transfer Details"}
+						</h3>
+					</div>
+					<button
+						type="button"
+						onClick={onClose}
+						className="grid size-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-100"
+					>
+						<X className="size-5" />
+					</button>
+				</div>
+
+				<div className="p-5">
+					<p className="text-sm font-medium text-slate-600 mb-5">
+						How would you like to pay your total of{" "}
+						<strong className="text-slate-950 font-black">
+							{currencySymbol}
+							{total.toLocaleString()}
+						</strong>
+						?
+					</p>
+
+					{view === "methods" && (
+						<div className="grid gap-3">
+							<button
+								type="button"
+								disabled={isPending}
+								onClick={() => handleSelectInHouse("CASH")}
+								className="flex items-center gap-4 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:bg-emerald-50 hover:border-emerald-200 disabled:opacity-50"
+							>
+								<div className="grid size-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+									<Banknote className="size-5" />
+								</div>
+								<div>
+									<p className="font-black text-slate-950">Cash</p>
+									<p className="text-sm text-slate-500">
+										Pay cash to our staff
+									</p>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								disabled={isPending}
+								onClick={() => handleSelectInHouse("TRANSFER_OR_CARD")}
+								className="flex items-center gap-4 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:bg-emerald-50 hover:border-emerald-200 disabled:opacity-50"
+							>
+								<div className="grid size-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+									<CreditCard className="size-5" />
+								</div>
+								<div>
+									<p className="font-black text-slate-950">POS Terminal</p>
+									<p className="text-sm text-slate-500">
+										Pay with your card in house
+									</p>
+								</div>
+							</button>
+
+							<button
+								type="button"
+								disabled={isPending}
+								onClick={() => setView("transfers")}
+								className="flex items-center gap-4 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:bg-emerald-50 hover:border-emerald-200 disabled:opacity-50"
+							>
+								<div className="grid size-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+									<Landmark className="size-5" />
+								</div>
+								<div>
+									<p className="font-black text-slate-950">Bank Transfer</p>
+									<p className="text-sm text-slate-500">
+										Transfer to our local accounts or pay online
+									</p>
+								</div>
+							</button>
+						</div>
+					)}
+
+					{view === "transfers" && (
+						<div className="grid gap-3">
+							{bankAccounts.map((account) => (
+								<button
+									key={account.id}
+									type="button"
+									disabled={isPending}
+									onClick={() => {
+										setSelectedAccount(account);
+										setView("transfer_details");
+									}}
+									className="flex items-center gap-4 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:bg-emerald-50 hover:border-emerald-200 disabled:opacity-50"
+								>
+									<div className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600">
+										<Building className="size-5" />
+									</div>
+									<div className="overflow-hidden">
+										<p className="font-black text-slate-950 truncate">
+											{account.bankName}
+										</p>
+									</div>
+								</button>
+							))}
+
+							<form action={initiateOrderPaymentAction}>
+								<input type="hidden" name="slug" value={slug} />
+								<input type="hidden" name="orderId" value={orderId} />
+								<button
+									type="submit"
+									disabled={isPending}
+									className="flex w-full items-center gap-4 rounded-2xl border border-emerald-600 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100 disabled:opacity-50"
+								>
+									<div className="grid size-10 place-items-center rounded-xl bg-emerald-600 text-white">
+										<Landmark className="size-5" />
+									</div>
+									<div>
+										<p className="font-black text-emerald-950">
+											Pay with Paystack
+										</p>
+										<p className="text-sm text-emerald-700">
+											Pay online securely using your card or bank
+										</p>
+									</div>
+								</button>
+							</form>
+						</div>
+					)}
+
+					{view === "transfer_details" && selectedAccount && (
+						<div className="grid gap-5">
+							<div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+								<div className="mb-4">
+									<p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+										Bank Name
+									</p>
+									<p className="font-black text-slate-950 text-lg">
+										{selectedAccount.bankName}
+									</p>
+								</div>
+								<div className="mb-4">
+									<p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+										Account Number
+									</p>
+									<div className="flex items-center gap-3">
+										<p className="font-mono font-black text-slate-950 text-2xl tracking-widest">
+											{selectedAccount.accountNumber}
+										</p>
+										<button
+											type="button"
+											title="Copy account number"
+											className="grid size-8 place-items-center rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+											onClick={() => {
+												navigator.clipboard.writeText(
+													selectedAccount.accountNumber,
+												);
+												setCopied(true);
+												setTimeout(() => setCopied(false), 2000);
+											}}
+										>
+											{copied ? (
+												<CheckCircle2 className="size-4" />
+											) : (
+												<Copy className="size-4" />
+											)}
+										</button>
+									</div>
+								</div>
+								<div>
+									<p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+										Account Name
+									</p>
+									<p className="font-bold text-slate-950">
+										{selectedAccount.accountName}
+									</p>
+								</div>
+							</div>
+
+							<div className="bg-amber-50 text-amber-900 text-sm font-bold p-4 rounded-xl border border-amber-200">
+								Please make sure to transfer the exact amount above. After
+								sending, click the button below and wait for staff confirmation.
+							</div>
+
+							<button
+								type="button"
+								disabled={isPending}
+								onClick={() => handleSelectInHouse("TRANSFER_OR_CARD")}
+								className="mt-2 inline-flex min-h-14 w-full items-center justify-center rounded-xl bg-emerald-700 px-5 text-sm font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.18)] disabled:opacity-50 transition-all hover:bg-emerald-800"
+							>
+								{isPending ? "Confirming..." : "I have sent the money"}
+							</button>
+						</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
