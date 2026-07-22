@@ -87,16 +87,13 @@ export function BannerManager({
 
 	return (
 		<section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-100 bg-white p-4">
-			<div className="flex items-start justify-between gap-3">
-				<div>
-					<h2 className="text-xl font-black text-slate-950">Banner Images</h2>
-					<p className="mt-1 text-sm font-medium text-slate-500 md:text-sm">
-						Add banner images and the text shown on each public menu banner.
-					</p>
-				</div>
-				<span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700 md:text-xs md:font-black">
-					{currentBannerItems.length} saved
-				</span>
+			<div>
+				<h2 className="text-sm md:text-xl font-black text-slate-950">
+					Banner Images
+				</h2>
+				<p className="mt-1 text-xs md:text-sm font-medium text-slate-500">
+					Add banner images and the text shown on each public menu banner.
+				</p>
 			</div>
 
 			<div className="mt-4 grid min-w-0 max-w-full gap-4 overflow-hidden">
@@ -128,7 +125,7 @@ export function BannerManager({
 						{currentBannerItems.map((banner, index) => (
 							<div
 								key={banner.id ?? banner.url}
-								className="group w-[78vw] shrink-0 snap-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm md:w-68 lg:w-[18rem] xl:w-76"
+								className="group w-68 shrink-0 snap-start overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm lg:w-[18rem] xl:w-76"
 							>
 								<div className="relative h-32 bg-emerald-50">
 									<Image
@@ -140,19 +137,17 @@ export function BannerManager({
 										unoptimized
 									/>
 									{banner.title || banner.subtitle ? (
-										<div className="absolute inset-0 flex items-center bg-linear-to-r from-emerald-950/80 via-emerald-950/20 to-transparent p-4 text-white">
-											<div>
-												{banner.title ? (
-													<p className="line-clamp-2 text-lg font-semibold leading-tight md:font-black">
-														{banner.title}
-													</p>
-												) : null}
-												{banner.subtitle ? (
-													<p className="mt-1 line-clamp-2 text-sm font-medium text-white/85 md:text-xs">
-														{banner.subtitle}
-													</p>
-												) : null}
-											</div>
+										<div className="absolute inset-x-0 bottom-0 bg-emerald-950/70 p-3 text-white">
+											{banner.title ? (
+												<p className="line-clamp-2 text-sm font-semibold leading-tight md:font-black">
+													{banner.title}
+												</p>
+											) : null}
+											{banner.subtitle ? (
+												<p className="mt-1 line-clamp-2 text-xs font-medium text-white/85">
+													{banner.subtitle}
+												</p>
+											) : null}
 										</div>
 									) : null}
 									{banner.id ? (
@@ -215,7 +210,7 @@ export function BannerManager({
 									) : null}
 									<input type="hidden" name="imageUrl" value={banner.url} />
 									<input type="hidden" name="isActive" value="on" />
-									<label className="grid gap-1 text-sm font-medium text-slate-500 md:text-xs md:font-black">
+									<label className="grid gap-1 text-xs font-medium text-slate-500 md:font-black">
 										Title
 										<textarea
 											name="title"
@@ -232,7 +227,7 @@ export function BannerManager({
 											className="min-h-16 resize-none rounded-lg border border-slate-200 px-2 py-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
 										/>
 									</label>
-									<label className="grid gap-1 text-sm font-medium text-slate-500 md:text-xs md:font-black">
+									<label className="grid gap-1 text-xs font-medium text-slate-500 md:font-black">
 										Subtitle
 										<textarea
 											name="subtitle"
@@ -260,7 +255,7 @@ export function BannerManager({
 										<SubmitButton
 											loadingText={banner.id ? "Saving..." : "Creating..."}
 											successText={banner.id ? "Saved" : "Created"}
-											className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-base font-medium text-white md:text-sm md:font-black"
+											className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-xs font-medium text-white md:text-sm md:font-black"
 										>
 											<Check className="size-4" aria-hidden="true" />
 											Save
@@ -269,12 +264,12 @@ export function BannerManager({
 								</form>
 							</div>
 						))}
-						<label className="grid h-36 w-[78vw] shrink-0 snap-start cursor-pointer place-items-center rounded-xl border border-emerald-200 border-dashed bg-emerald-50/30 text-center text-emerald-700 md:w-68 lg:w-72 xl:w-76">
+						<label className="grid h-36 w-68 shrink-0 cursor-pointer place-items-center rounded-xl border border-emerald-200 border-dashed bg-emerald-50/30 text-center text-emerald-700 lg:w-72 xl:w-76">
 							<span>
 								<span className="mx-auto grid size-10 place-items-center rounded-full border border-emerald-300 bg-white">
 									<Plus className="size-5" aria-hidden="true" />
 								</span>
-								<span className="mt-3 block text-base font-medium md:text-sm md:font-black">
+								<span className="mt-3 block text-sm font-black">
 									{isUploading ? "Uploading..." : "Add banner"}
 								</span>
 							</span>

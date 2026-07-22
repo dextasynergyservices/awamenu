@@ -781,227 +781,231 @@ function StaffOrderDetailsModal({
 	}
 
 	return (
-		<div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm">
-			{/* Close overlay */}
-			<button
-				type="button"
-				className="absolute inset-0 w-full h-full cursor-default"
-				onClick={onClose}
-				aria-label="Close"
-			/>
+		<>
+			<div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-slate-950/40 backdrop-blur-sm sm:p-4">
+				{/* Close overlay */}
+				<button
+					type="button"
+					className="absolute inset-0 w-full h-full cursor-default"
+					onClick={onClose}
+					aria-label="Close"
+				/>
 
-			<div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
-				{/* Header */}
-				<div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5 md:p-4">
-					<h2 className="text-sm font-black text-slate-950 md:text-base">
-						Order Details
-					</h2>
-					<button
-						type="button"
-						onClick={onClose}
-						className="grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-					>
-						<X className="size-4" />
-					</button>
-				</div>
-
-				{/* Content */}
-				<div className="flex-1 overflow-y-auto px-3 py-3 md:p-4">
-					<div className="mb-5">
-						<div className="flex items-center gap-1.5 mb-1">
-							<span className="text-sm font-black text-slate-950 md:text-base">
-								#{order.id.slice(-6).toUpperCase()}
-							</span>
-							<span
-								className={cn(
-									"inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-black",
-									config.color,
-								)}
-							>
-								<config.icon className="size-3" />
-								{config.label}
-							</span>
-							<span
-								className={cn(
-									"inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-black",
-									isPaid
-										? "bg-emerald-50 text-emerald-700"
-										: "bg-amber-50 text-amber-700",
-								)}
-							>
-								{isPaid ? "Paid" : "Unpaid"}
-							</span>
-						</div>
-						<p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider md:text-xs">
-							{order.customerName} •{" "}
-							{order.tableNumber
-								? `Table ${order.tableNumber}`
-								: order.customerPhone}
-						</p>
+				<div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-300 rounded-t-2xl sm:rounded-2xl max-h-[90vh]">
+					{/* Header */}
+					<div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5 md:p-4">
+						<h2 className="text-sm font-black text-slate-950 md:text-base">
+							Order Details
+						</h2>
+						<button
+							type="button"
+							onClick={onClose}
+							className="grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+						>
+							<X className="size-4" />
+						</button>
 					</div>
 
-					<div className="mb-6">
-						<h3 className="text-xs font-black text-slate-950 mb-2 md:text-sm md:mb-3">
-							Items
-						</h3>
-						<div className="grid gap-2 md:gap-3">
-							{order.items.map((item) => (
-								<div
-									key={item.id}
-									className="flex justify-between text-xs md:text-sm"
+					{/* Content */}
+					<div className="flex-1 overflow-y-auto px-3 py-3 md:p-4">
+						<div className="mb-5">
+							<div className="flex items-center gap-1.5 mb-1">
+								<span className="text-sm font-black text-slate-950 md:text-base">
+									#{order.id.slice(-6).toUpperCase()}
+								</span>
+								<span
+									className={cn(
+										"inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-black",
+										config.color,
+									)}
 								>
-									<div className="font-semibold text-slate-700">
-										<span className="font-black text-slate-950 mr-2">
-											{item.qty}x
-										</span>
-										{item.name}
-										{item.notes && (
-											<div className="text-xs text-slate-400 mt-0.5 ml-6">
-												{item.notes}
-											</div>
-										)}
-									</div>
-									<div className="font-black text-slate-900">
-										{formatMoney(item.unitPrice * item.qty, currency)}
-									</div>
-								</div>
-							))}
+									<config.icon className="size-3" />
+									{config.label}
+								</span>
+								<span
+									className={cn(
+										"inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-black",
+										isPaid
+											? "bg-emerald-50 text-emerald-700"
+											: "bg-amber-50 text-amber-700",
+									)}
+								>
+									{isPaid ? "Paid" : "Unpaid"}
+								</span>
+							</div>
+							<p className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider md:text-xs">
+								{order.customerName} •{" "}
+								{order.tableNumber
+									? `Table ${order.tableNumber}`
+									: order.customerPhone}
+							</p>
 						</div>
-					</div>
 
-					<div className="mb-5 border-t border-slate-100 pt-3">
-						<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1.5 md:text-xs md:mb-2">
-							<span>Subtotal</span>
-							<span>{formatMoney(order.subtotal, currency)}</span>
+						<div className="mb-6">
+							<h3 className="text-xs font-black text-slate-950 mb-2 md:text-sm md:mb-3">
+								Items
+							</h3>
+							<div className="grid gap-2 md:gap-3">
+								{order.items.map((item) => (
+									<div
+										key={item.id}
+										className="flex justify-between text-xs md:text-sm"
+									>
+										<div className="font-semibold text-slate-700 min-w-0">
+											<span className="font-black text-slate-950 mr-2 shrink-0">
+												{item.qty}x
+											</span>
+											<span className="break-words">{item.name}</span>
+											{item.notes && (
+												<div className="text-xs text-slate-400 mt-0.5 ml-6 break-words">
+													{item.notes}
+												</div>
+											)}
+										</div>
+										<div className="font-black text-slate-900 shrink-0 ml-2">
+											{formatMoney(item.unitPrice * item.qty, currency)}
+										</div>
+									</div>
+								))}
+							</div>
 						</div>
-						<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1.5 md:text-xs md:mb-2">
-							<span>Delivery Fee</span>
-							<span>
-								{order.total > order.subtotal
-									? formatMoney(order.total - order.subtotal, currency)
-									: "NO"}
-							</span>
-						</div>
-						<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-2 md:text-xs md:mb-3">
-							<span>Discount</span>
-							<span>NO</span>
-						</div>
-						<div className="flex justify-between text-xs font-black text-slate-950 md:text-sm">
-							<span>Total</span>
-							<span>{formatMoney(order.total, currency)}</span>
-						</div>
-					</div>
 
-					<div className="border-t border-slate-100 pt-3">
-						<h3 className="text-[11px] font-black text-slate-950 mb-1.5 md:text-xs md:mb-2">
-							Order Information
-						</h3>
-						<div className="grid gap-1.5 text-[11px] md:gap-2 md:text-xs">
-							<div className="flex justify-between">
-								<span className="font-semibold text-slate-500">Order Time</span>
-								<span className="font-black text-slate-700">
-									{formatOrderTime(order.createdAt)}
+						<div className="mb-5 border-t border-slate-100 pt-3">
+							<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1.5 md:text-xs md:mb-2">
+								<span>Subtotal</span>
+								<span>{formatMoney(order.subtotal, currency)}</span>
+							</div>
+							<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1.5 md:text-xs md:mb-2">
+								<span>Delivery Fee</span>
+								<span>
+									{order.total > order.subtotal
+										? formatMoney(order.total - order.subtotal, currency)
+										: "NO"}
 								</span>
 							</div>
-							<div className="flex justify-between">
-								<span className="font-semibold text-slate-500">
-									Payment Method
-								</span>
-								<span className="font-black text-slate-700">
-									{order.dineInPaymentMethod ||
-										(isPaid ? "Online" : "Cash / Transfer")}
-								</span>
+							<div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-2 md:text-xs md:mb-3">
+								<span>Discount</span>
+								<span>NO</span>
 							</div>
-							<div className="flex justify-between">
-								<span className="font-semibold text-slate-500">
-									Customer Phone
-								</span>
-								<span className="font-black text-slate-700">
-									{order.customerPhone || "N/A"}
-								</span>
+							<div className="flex justify-between text-xs font-black text-slate-950 md:text-sm">
+								<span>Total</span>
+								<span>{formatMoney(order.total, currency)}</span>
 							</div>
-							{order.deliveryAddress && (
+						</div>
+
+						<div className="border-t border-slate-100 pt-3">
+							<h3 className="text-[11px] font-black text-slate-950 mb-1.5 md:text-xs md:mb-2">
+								Order Information
+							</h3>
+							<div className="grid gap-1.5 text-[11px] md:gap-2 md:text-xs">
 								<div className="flex justify-between">
 									<span className="font-semibold text-slate-500">
-										Delivery Address
+										Order Time
 									</span>
-									<span className="font-black text-slate-700 text-right max-w-[55%]">
-										{order.deliveryAddress}
+									<span className="font-black text-slate-700">
+										{formatOrderTime(order.createdAt)}
 									</span>
+								</div>
+								<div className="flex justify-between">
+									<span className="font-semibold text-slate-500">
+										Payment Method
+									</span>
+									<span className="font-black text-slate-700">
+										{order.dineInPaymentMethod ||
+											(isPaid ? "Online" : "Cash / Transfer")}
+									</span>
+								</div>
+								<div className="flex justify-between">
+									<span className="font-semibold text-slate-500">
+										Customer Phone
+									</span>
+									<span className="font-black text-slate-700">
+										{order.customerPhone || "N/A"}
+									</span>
+								</div>
+								{order.deliveryAddress && (
+									<div className="flex justify-between gap-2">
+										<span className="font-semibold text-slate-500 shrink-0">
+											Delivery Address
+										</span>
+										<span className="font-black text-slate-700 text-right max-w-[60%] break-words">
+											{order.deliveryAddress}
+										</span>
+									</div>
+								)}
+							</div>
+							{order.deliveryNotes && (
+								<div className="mt-3 rounded-xl bg-amber-50 border border-amber-100 p-3">
+									<p className="text-xs font-black text-amber-700 mb-1">
+										Order Note
+									</p>
+									<p className="text-sm font-semibold text-amber-900 break-words">
+										{order.deliveryNotes}
+									</p>
 								</div>
 							)}
 						</div>
-						{order.deliveryNotes && (
-							<div className="mt-3 rounded-xl bg-amber-50 border border-amber-100 p-3">
-								<p className="text-xs font-black text-amber-700 mb-1">
-									Order Note
-								</p>
-								<p className="text-sm font-semibold text-amber-900">
-									{order.deliveryNotes}
-								</p>
-							</div>
+
+						<div className="px-3 md:px-4 pb-2">
+							<ReceiptActions
+								size="sm"
+								hideDownload
+								hideShare
+								receipt={{
+									orderId: order.id,
+									orderCode: `#${order.id.slice(-6).toUpperCase()}`,
+									restaurantName: "Receipt", // Using generic name for staff print since restaurantName is not directly accessible here unless passed down
+									customerName: order.customerName,
+									status: order.status,
+									paymentStatus: order.paymentStatus,
+									orderType: order.type,
+									total: order.total,
+									currency: currency,
+									createdAt: order.createdAt,
+									items: order.items.map((i) => ({
+										name: i.name,
+										qty: i.qty,
+										unitPrice: i.unitPrice,
+										notes: i.notes,
+									})),
+								}}
+							/>
+						</div>
+					</div>
+
+					{/* Footer */}
+					<div className="border-t border-slate-100 p-2.5 md:p-3 flex flex-col gap-1.5 bg-white">
+						{error && (
+							<p className="text-[10px] font-bold text-red-600">{error}</p>
 						)}
-					</div>
-
-					<div className="px-3 md:px-4 pb-2">
-						<ReceiptActions
-							size="sm"
-							hideDownload
-							hideShare
-							receipt={{
-								orderId: order.id,
-								orderCode: `#${order.id.slice(-6).toUpperCase()}`,
-								restaurantName: "Receipt", // Using generic name for staff print since restaurantName is not directly accessible here unless passed down
-								customerName: order.customerName,
-								status: order.status,
-								paymentStatus: order.paymentStatus,
-								orderType: order.type,
-								total: order.total,
-								currency: currency,
-								createdAt: order.createdAt,
-								items: order.items.map((i) => ({
-									name: i.name,
-									qty: i.qty,
-									unitPrice: i.unitPrice,
-									notes: i.notes,
-								})),
-							}}
-						/>
-					</div>
-				</div>
-
-				{/* Footer */}
-				<div className="border-t border-slate-100 p-2.5 md:p-3 flex flex-col gap-1.5 bg-white">
-					{error && (
-						<p className="text-[10px] font-bold text-red-600">{error}</p>
-					)}
-					{nextLabel && (
+						{nextLabel && (
+							<button
+								type="button"
+								onClick={handleActionClick}
+								disabled={isPending}
+								className="h-8 w-full rounded-md bg-emerald-700 text-[11px] font-black text-white hover:bg-emerald-800 transition-colors disabled:opacity-50"
+							>
+								{isPending ? "Updating..." : nextLabel}
+							</button>
+						)}
+						{canRecordPayment && (
+							<button
+								type="button"
+								onClick={() => setPaymentOpen(true)}
+								className="h-8 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 text-[11px] font-black text-emerald-700 hover:bg-emerald-100 transition-colors"
+							>
+								<CreditCard className="size-3" />
+								Record Payment
+							</button>
+						)}
 						<button
 							type="button"
-							onClick={handleActionClick}
-							disabled={isPending}
-							className="h-8 w-full rounded-md bg-emerald-700 text-[11px] font-black text-white hover:bg-emerald-800 transition-colors disabled:opacity-50"
+							onClick={onClose}
+							className="h-8 w-full rounded-md border border-slate-200 bg-white text-[11px] font-black text-slate-700 hover:bg-slate-50 transition-colors"
 						>
-							{isPending ? "Updating..." : nextLabel}
+							Close Details
 						</button>
-					)}
-					{canRecordPayment && (
-						<button
-							type="button"
-							onClick={() => setPaymentOpen(true)}
-							className="h-8 w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 text-[11px] font-black text-emerald-700 hover:bg-emerald-100 transition-colors"
-						>
-							<CreditCard className="size-3" />
-							Record Payment
-						</button>
-					)}
-					<button
-						type="button"
-						onClick={onClose}
-						className="h-8 w-full rounded-md border border-slate-200 bg-white text-[11px] font-black text-slate-700 hover:bg-slate-50 transition-colors"
-					>
-						Close Details
-					</button>
+					</div>
 				</div>
 			</div>
 
@@ -1026,6 +1030,6 @@ function StaffOrderDetailsModal({
 					onClose={() => setPromptingPin(false)}
 				/>
 			) : null}
-		</div>
+		</>
 	);
 }

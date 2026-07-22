@@ -1,32 +1,53 @@
-import { PaymentPolicy } from "@prisma/client";
 import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
-import { updateRestaurantSettingsAction } from "@/actions/restaurant.actions";
 import { AdminAccountSettings } from "@/components/admin/AdminAccountSettings";
 import { BankAccountsManager } from "@/components/admin/BankAccountsManager";
-import { SubmitButton } from "@/components/ui/action-button";
+import { QRDownload } from "@/components/admin/QRDownload";
+import { RestaurantBrandingForm } from "@/components/admin/RestaurantBrandingForm";
+import { RestaurantInfoForm } from "@/components/admin/RestaurantInfoForm";
+import { RestaurantSettingsForm } from "@/components/admin/RestaurantSettingsForm";
+import { SubscriptionDetailsCard } from "@/components/admin/SubscriptionDetailsCard";
+import { env } from "@/env";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { verifySubscriptionPaymentReference } from "@/lib/payments";
 
 export default async function SettingsPage({
 	params,
+	searchParams,
 }: {
 	params: Promise<{ slug: string }>;
+	searchParams: Promise<{ reference?: string; trxref?: string }>;
 }) {
 	const user = await requireUser();
 	const { slug } = await params;
+	const { reference, trxref } = await searchParams;
+	const paymentReference = reference ?? trxref;
 
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug, ownerId: user.id },
 		select: {
 			id: true,
 			name: true,
+			description: true,
+			phone: true,
+			address: true,
+			currency: true,
+			timezone: true,
 			slug: true,
+			logoUrl: true,
+			coverUrl: true,
+			primaryColor: true,
+			fontFamily: true,
+			activeTemplate: true,
 			dineInPaymentPolicy: true,
 			staffDashboardPassword: true,
 			staffDashboardAutoLockHours: true,
 			bankAccounts: {
 				orderBy: { createdAt: "asc" },
+			},
+			subscription: {
+				include: { plan: true },
 			},
 		},
 	});
@@ -35,159 +56,87 @@ export default async function SettingsPage({
 		redirect("/dashboard");
 	}
 
+	if (paymentReference && restaurant.subscription?.planId) {
+		await verifySubscriptionPaymentReference({
+			reference: paymentReference,
+			userId: user.id,
+			planId: restaurant.subscription.planId,
+		});
+
+		// Remove reference from URL so we don't re-verify on refresh
+		redirect(`/dashboard/${restaurant.slug}/settings`);
+	}
+
+	const qrUrl = `${env.NEXT_PUBLIC_APP_URL}/${restaurant.slug}`;
+
 	return (
-		<div className="grid max-w-2xl gap-5 md:gap-8">
-			<div className="min-w-0 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-				<div className="flex items-center gap-3 border-b border-slate-100 p-5 md:p-6">
-					<div className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-						<Settings className="size-5" />
+		<div className="mx-auto w-full max-w-6xl pb-12">
+			<div className="mb-4 flex flex-col items-start justify-between gap-3 sm:mb-8 sm:flex-row sm:items-center">
+				<div className="flex items-center gap-2 sm:gap-4">
+					<div className="grid size-8 shrink-0 place-items-center rounded-lg bg-blue-100 text-blue-700 sm:size-12 sm:rounded-2xl">
+						<Settings className="size-4 sm:size-6" />
 					</div>
 					<div>
-						<h2 className="text-xl font-black text-slate-950">
-							Restaurant Settings
-						</h2>
-						<p className="text-sm font-medium text-slate-500">
-							Configure your dining policies and preferences.
+						<h1 className="text-sm font-bold tracking-tight text-slate-950 sm:text-3xl sm:font-black">
+							Settings
+						</h1>
+						<p className="text-xs font-medium text-slate-500 sm:mt-1 sm:text-sm">
+							Manage your restaurant preferences and account settings.
 						</p>
 					</div>
 				</div>
-
-				<div className="p-5 md:p-6">
-					<form action={updateRestaurantSettingsAction} className="grid gap-6">
-						<input type="hidden" name="slug" value={restaurant.slug} />
-
-						<fieldset className="grid gap-3">
-							<legend className="text-sm font-black text-slate-950">
-								Dine-In Payment Policy
-							</legend>
-							<p className="text-sm text-slate-500 mb-2">
-								Choose when customers are required to pay for their dine-in
-								orders.
-							</p>
-
-							<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
-								<input
-									type="radio"
-									name="dineInPaymentPolicy"
-									value={PaymentPolicy.PAY_BEFORE_SERVICE}
-									defaultChecked={
-										restaurant.dineInPaymentPolicy ===
-										PaymentPolicy.PAY_BEFORE_SERVICE
-									}
-									className="mt-1"
-								/>
-								<div>
-									<p className="font-bold text-slate-950">Pay Before Service</p>
-									<p className="mt-1 text-sm text-slate-500">
-										Payment must be completed before the order is processed.
-									</p>
-								</div>
-							</label>
-
-							<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
-								<input
-									type="radio"
-									name="dineInPaymentPolicy"
-									value={PaymentPolicy.PAY_AFTER_SERVICE}
-									defaultChecked={
-										restaurant.dineInPaymentPolicy ===
-										PaymentPolicy.PAY_AFTER_SERVICE
-									}
-									className="mt-1"
-								/>
-								<div>
-									<p className="font-bold text-slate-950">Pay After Service</p>
-									<p className="mt-1 text-sm text-slate-500">
-										Customers pay after eating. Kitchen starts immediately.
-									</p>
-								</div>
-							</label>
-
-							<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
-								<input
-									type="radio"
-									name="dineInPaymentPolicy"
-									value={PaymentPolicy.FLEXIBLE}
-									defaultChecked={
-										restaurant.dineInPaymentPolicy === PaymentPolicy.FLEXIBLE
-									}
-									className="mt-1"
-								/>
-								<div>
-									<p className="font-bold text-slate-950">
-										Flexible (Pay Now or Later)
-									</p>
-									<p className="mt-1 text-sm text-slate-500">
-										Customers can choose to pay immediately or pay after eating.
-									</p>
-								</div>
-							</label>
-						</fieldset>
-
-						<fieldset className="grid gap-3 pt-6 border-t border-slate-100">
-							<legend className="text-sm font-black text-slate-950">
-								Staff Dashboard Access
-							</legend>
-							<p className="text-sm text-slate-500 mb-2">
-								Set a single password that staff members will use to access the
-								shared staff dashboard on their devices.
-							</p>
-
-							<div className="grid gap-4 sm:grid-cols-2 max-w-lg mt-4">
-								<div>
-									<label
-										htmlFor="staffDashboardPassword"
-										className="block text-xs font-bold text-slate-700 mb-1.5"
-									>
-										Master Password
-									</label>
-									<input
-										type="text"
-										id="staffDashboardPassword"
-										name="staffDashboardPassword"
-										defaultValue={restaurant.staffDashboardPassword ?? ""}
-										placeholder="e.g. AwaStaff2026"
-										className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 focus:outline-none"
-									/>
-								</div>
-
-								<div>
-									<label
-										htmlFor="staffDashboardAutoLockHours"
-										className="block text-xs font-bold text-slate-700 mb-1.5"
-									>
-										Auto-Lock Timer (Hours)
-									</label>
-									<input
-										type="number"
-										id="staffDashboardAutoLockHours"
-										name="staffDashboardAutoLockHours"
-										min="1"
-										max="720"
-										defaultValue={restaurant.staffDashboardAutoLockHours ?? 24}
-										className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 focus:outline-none"
-									/>
-								</div>
-							</div>
-						</fieldset>
-
-						<SubmitButton
-							loadingText="Saving..."
-							successText="Settings Saved"
-							className="mt-2 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-5 text-sm font-black text-white sm:w-auto sm:justify-self-end"
-						>
-							Save Settings
-						</SubmitButton>
-					</form>
+				<div className="w-full shrink-0 sm:w-auto">
+					<QRDownload restaurantName={restaurant.name} qrUrl={qrUrl} />
 				</div>
 			</div>
 
-			<BankAccountsManager
-				slug={restaurant.slug}
-				bankAccounts={restaurant.bankAccounts}
-			/>
+			<div className="grid gap-3 md:grid-cols-2 md:items-start md:gap-8">
+				{/* Column 1 */}
+				<div className="grid gap-3 md:gap-8">
+					<RestaurantInfoForm
+						slug={restaurant.slug}
+						name={restaurant.name}
+						description={restaurant.description}
+						phone={restaurant.phone}
+						address={restaurant.address}
+						currency={restaurant.currency}
+						timezone={restaurant.timezone}
+					/>
 
-			<AdminAccountSettings />
+					<RestaurantBrandingForm
+						restaurantId={restaurant.id}
+						slug={restaurant.slug}
+						logoUrl={restaurant.logoUrl}
+						primaryColor={restaurant.primaryColor}
+						activeTemplate={restaurant.activeTemplate}
+					/>
+
+					<BankAccountsManager
+						slug={restaurant.slug}
+						bankAccounts={restaurant.bankAccounts}
+					/>
+				</div>
+
+				{/* Column 2 */}
+				<div className="grid gap-3 md:gap-8">
+					<SubscriptionDetailsCard
+						planName={restaurant.subscription?.plan?.name}
+						status={restaurant.subscription?.status}
+						currentPeriodEnd={restaurant.subscription?.currentPeriodEnd ?? null}
+						hasCard={!!restaurant.subscription?.paystackCustomerCode}
+						slug={restaurant.slug}
+					/>
+
+					<RestaurantSettingsForm
+						slug={restaurant.slug}
+						dineInPaymentPolicy={restaurant.dineInPaymentPolicy}
+						staffDashboardPassword={restaurant.staffDashboardPassword}
+						staffDashboardAutoLockHours={restaurant.staffDashboardAutoLockHours}
+					/>
+
+					<AdminAccountSettings />
+				</div>
+			</div>
 		</div>
 	);
 }

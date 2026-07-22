@@ -1,5 +1,6 @@
 import { format } from "date-fns";
-import { CheckCircle2, Cpu, UserCircle2, X } from "lucide-react";
+import { CheckCircle2, Cpu, UserCircle2 } from "lucide-react";
+import { Dialog, DialogBody, DialogHeader } from "@/components/ui/Dialog";
 
 export type OrderEventDTO = {
 	id: string;
@@ -91,7 +92,7 @@ export function OrderTimeline({
 				}
 			>
 				{showHeader && (
-					<h3 className="mb-4 text-sm font-black text-slate-800">
+					<h3 className="mb-4 text-xs md:text-sm font-black text-slate-800">
 						Order Timeline
 					</h3>
 				)}
@@ -115,7 +116,7 @@ export function OrderTimeline({
 					Order Timeline
 				</h3>
 			)}
-			<div className="relative space-y-6 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+			<div className="relative space-y-6 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-linear-to-b before:from-transparent before:via-slate-200 before:to-transparent">
 				{displayEvents.map((event) => (
 					<div
 						key={event.id}
@@ -123,11 +124,11 @@ export function OrderTimeline({
 					>
 						<div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-100 text-slate-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
 							{event.isAutomatic ? (
-								<Cpu className="size-4" />
+								<Cpu className="size-3.5" />
 							) : event.staff ? (
-								<UserCircle2 className="size-4" />
+								<UserCircle2 className="size-3.5" />
 							) : (
-								<CheckCircle2 className="size-4" />
+								<CheckCircle2 className="size-3.5" />
 							)}
 						</div>
 
@@ -140,7 +141,7 @@ export function OrderTimeline({
 											? `${event.staff.name} ${event.staff.staffId ? `(#${event.staff.staffId})` : ""}`
 											: "System"}
 								</p>
-								<time className="text-[10px] font-semibold text-slate-500">
+								<time className="text-xs font-semibold text-slate-500">
 									{format(new Date(event.createdAt), "MMM d, h:mm a")}
 								</time>
 							</div>
@@ -173,26 +174,17 @@ export function OrderTimelineModal({
 	onClose,
 }: OrderTimelineModalProps) {
 	return (
-		<div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
-			<div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col">
-				<div className="flex items-center justify-between border-b border-slate-100 p-4 shrink-0">
-					<h2 className="text-sm font-black text-slate-950">Order Timeline</h2>
-					<button
-						type="button"
-						onClick={onClose}
-						className="grid size-8 place-items-center rounded-full text-slate-500 hover:bg-slate-100"
-					>
-						<X className="size-4" />
-					</button>
-				</div>
-				<div className="p-4 overflow-y-auto min-h-32">
-					<OrderTimeline
-						events={events}
-						fallback={fallback}
-						showHeader={false}
-					/>
-				</div>
-			</div>
-		</div>
+		<Dialog
+			open
+			onOpenChange={(next) => {
+				if (!next) onClose();
+			}}
+			size="md"
+		>
+			<DialogHeader title="Order Timeline" bordered className="p-4" />
+			<DialogBody className="min-h-32 p-4">
+				<OrderTimeline events={events} fallback={fallback} showHeader={false} />
+			</DialogBody>
+		</Dialog>
 	);
 }

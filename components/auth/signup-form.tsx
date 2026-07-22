@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { verifyTurnstileAction } from "@/actions/turnstile.actions";
+import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { LoadingButton } from "@/components/ui/action-button";
 import { authClient } from "@/lib/auth-client";
 
@@ -12,6 +14,7 @@ export function SignupForm() {
 	const [isSuccess, setIsSuccess] = useState(false);
 	const [isPending, startTransition] = useTransition();
 	const selectedPlan = searchParams.get("plan");
+	const turnstileTokenRef = useRef("");
 
 	return (
 		<form
@@ -27,6 +30,15 @@ export function SignupForm() {
 				startTransition(async () => {
 					setError(null);
 					setIsSuccess(false);
+
+					const { success } = await verifyTurnstileAction(
+						turnstileTokenRef.current,
+					);
+					if (!success) {
+						setError("Verification failed. Please try again.");
+						return;
+					}
+
 					const result = await authClient.signUp.email({
 						name,
 						email,
@@ -75,6 +87,11 @@ export function SignupForm() {
 					autoComplete="new-password"
 				/>
 			</label>
+			<TurnstileWidget
+				onToken={(token) => {
+					turnstileTokenRef.current = token;
+				}}
+			/>
 			{error ? <p className="text-sm text-red-600">{error}</p> : null}
 			<LoadingButton
 				type="submit"

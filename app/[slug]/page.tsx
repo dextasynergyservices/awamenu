@@ -5,10 +5,15 @@ import { BannerSlider } from "@/components/menu/BannerSlider";
 import { CartDrawer } from "@/components/menu/CartDrawer";
 import { DesktopPublicMenu } from "@/components/menu/DesktopPublicMenu";
 import { OrderLookupForm } from "@/components/menu/OrderLookupForm";
-import { PublicMenuContent } from "@/components/menu/PublicMenuContent";
+import {
+	type MenuGridTemplate,
+	PublicMenuContent,
+} from "@/components/menu/PublicMenuContent";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
+import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 type PublicMenuPageProps = {
 	params: Promise<{ slug: string }>;
@@ -47,8 +52,11 @@ export default async function PublicMenuPage({
 			currency: true,
 			whatsappNumber: true,
 			tableReservationEnabled: true,
+			activeTemplate: true,
 			subscription: {
 				select: {
+					status: true,
+					currentPeriodEnd: true,
 					plan: {
 						select: { removeAwamenuBranding: true },
 					},
@@ -91,6 +99,10 @@ export default async function PublicMenuPage({
 
 	if (!restaurant) notFound();
 
+	if (!isSubscriptionActive(restaurant.subscription)) {
+		return <SubscriptionInactive restaurantName={restaurant.name} />;
+	}
+
 	const categories = restaurant.categories.map((category) => ({
 		...category,
 		items: category.items.map((item) => ({
@@ -101,6 +113,17 @@ export default async function PublicMenuPage({
 	const showAwamenuBranding =
 		!restaurant.subscription?.plan.removeAwamenuBranding;
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);
+	const validTemplates: MenuGridTemplate[] = [
+		"classic",
+		"grid",
+		"compact",
+		"magazine",
+	];
+	const template = validTemplates.includes(
+		restaurant.activeTemplate as MenuGridTemplate,
+	)
+		? (restaurant.activeTemplate as MenuGridTemplate)
+		: "classic";
 
 	return (
 		<main className="min-h-screen bg-white text-slate-950">
@@ -119,6 +142,7 @@ export default async function PublicMenuPage({
 					categories={categories}
 					restaurantSlug={slug}
 					currency={restaurant.currency}
+					template={template}
 				/>
 			</div>
 

@@ -23,6 +23,7 @@ import {
 	cancelReservationExpiry,
 	scheduleReservationExpiry,
 } from "@/lib/qstash";
+import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { resolveEffectivePolicy } from "@/lib/reservation-policy";
 
 const reservationItemSchema = z.object({
@@ -307,6 +308,9 @@ export async function createReservationAction(formData: FormData) {
 	if (Number.isNaN(startsAt.getTime())) {
 		throw new Error("Choose a valid reservation date and time.");
 	}
+
+	const clientIp = await getClientIp();
+	await enforceRateLimit("reservation", `${clientIp}:${input.slug}`);
 
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: {

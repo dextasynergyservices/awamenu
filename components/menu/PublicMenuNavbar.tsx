@@ -17,7 +17,7 @@ export function PublicMenuNavbar({
 }: PublicMenuNavbarProps) {
 	if (mode === "mobile") {
 		return (
-			<header className="bg-[radial-gradient(circle_at_15%_0%,#0b6b4b_0,#003f2f_40%,#002d25_100%)] text-white md:hidden">
+			<header className="bg-[radial-gradient(circle_at_15%_0%,var(--color-emerald-700)_0,var(--color-emerald-900)_40%,var(--color-emerald-950)_100%)] text-white md:hidden">
 				<div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-5">
 					<div className="flex items-center justify-between gap-3">
 						<div className="flex min-w-0 items-center gap-3">
@@ -29,10 +29,10 @@ export function PublicMenuNavbar({
 								size={56}
 							/>
 							<div className="min-w-0">
-								<h1 className="truncate text-xl font-semibold md:text-3xl">
+								<h1 className="truncate text-sm font-semibold md:text-3xl">
 									{name}
 								</h1>
-								<p className="mt-1 flex items-center gap-2 text-sm font-semibold text-emerald-300 md:text-base">
+								<p className="mt-1 flex items-center gap-2 text-xs font-semibold text-emerald-300 md:text-base">
 									<span className="size-2.5 rounded-full bg-emerald-400" />
 									Open now
 								</p>

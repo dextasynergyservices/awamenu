@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { lookupCustomerByPhoneAction } from "@/actions/customer.actions";
 import { createOrderAction } from "@/actions/order.actions";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
+import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { SubmitButton } from "@/components/ui/action-button";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 import type { BannerItem } from "@/lib/banners";
@@ -276,8 +277,9 @@ export function CheckoutFlow({
 				/>
 			</div>
 
-			<main className="mx-auto max-w-7xl px-4 py-5 md:px-6 md:py-7">
-				<section className="relative overflow-hidden rounded-[1.4rem] bg-emerald-950 text-white md:rounded-[1.75rem]">
+			<main className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-4 sm:py-5 md:py-7">
+				{/* Hero Banner */}
+				<section className="relative overflow-hidden rounded-2xl sm:rounded-[1.4rem] md:rounded-[1.75rem] bg-emerald-950 text-white">
 					{heroBanner ? (
 						<Image
 							src={heroBanner.url}
@@ -290,51 +292,51 @@ export function CheckoutFlow({
 						/>
 					) : null}
 					<div className="absolute inset-0 bg-linear-to-r from-emerald-950 via-emerald-950/80 to-transparent" />
-					<div className="relative min-h-[150px] p-5 md:min-h-[180px] md:p-10">
-						<div className="flex items-center gap-4">
+					<div className="relative min-h-[120px] sm:min-h-[150px] md:min-h-[180px] p-4 sm:p-5 md:p-10">
+						<div className="flex items-center gap-3 sm:gap-4">
 							{logoUrl ? (
 								<Image
 									src={logoUrl}
 									alt={`${name} logo`}
-									width={72}
-									height={72}
-									className="size-14 rounded-2xl object-cover md:size-16"
+									width={56}
+									height={56}
+									className="size-12 sm:size-14 md:size-16 rounded-2xl object-cover"
 									unoptimized
 								/>
 							) : (
-								<div className="grid size-14 place-items-center rounded-2xl bg-yellow-300 text-2xl font-black text-emerald-950 md:size-16">
+								<div className="grid size-12 sm:size-14 md:size-16 place-items-center rounded-2xl bg-yellow-300 text-2xl font-black text-emerald-950">
 									{name.charAt(0).toUpperCase()}
 								</div>
 							)}
 							<div className="min-w-0">
-								<div className="flex flex-wrap items-center gap-3">
-									<h1 className="truncate text-2xl font-black md:text-3xl">
+								<div className="flex flex-wrap items-center gap-2 sm:gap-3">
+									<h1 className="truncate text-sm sm:text-2xl md:text-3xl font-black">
 										{name}
 									</h1>
 								</div>
-								<div className="mt-4 flex flex-wrap gap-4 text-sm font-medium md:text-semibold">
-									<span className="inline-flex items-center gap-2">
-										<Flame className="size-4 text-yellow-300" />
+								<div className="mt-2 sm:mt-4 flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm md:text-base font-medium">
+									<span className="inline-flex items-center gap-1.5 sm:gap-2">
+										<Flame className="size-3 sm:size-4 text-yellow-300" />
 										25-35 mins
 									</span>
-									<span className="inline-flex items-center gap-2">
-										<MapPin className="size-4 text-yellow-300" />
+									<span className="inline-flex items-center gap-1.5 sm:gap-2">
+										<MapPin className="size-3 sm:size-4 text-yellow-300" />
 										3.2 km away
 									</span>
-									<span className="inline-flex items-center gap-2">
-										<ShoppingBag className="size-4 text-yellow-300" />
+									<span className="inline-flex items-center gap-1.5 sm:gap-2">
+										<ShoppingBag className="size-3 sm:size-4 text-yellow-300" />
 										Burgers & Drinks
 									</span>
 								</div>
 								{heroBanner?.title || heroBanner?.subtitle ? (
-									<div className="mt-5 max-w-xl">
+									<div className="mt-3 sm:mt-5 max-w-xl">
 										{heroBanner.title ? (
-											<p className="text-xl font-black md:text-2xl">
+											<p className="text-sm sm:text-xl md:text-2xl font-black">
 												{heroBanner.title}
 											</p>
 										) : null}
 										{heroBanner.subtitle ? (
-											<p className="mt-1 text-sm font-medium text-white/85 md:text-semibold">
+											<p className="mt-1 text-xs sm:text-sm md:text-base font-medium text-white/85">
 												{heroBanner.subtitle}
 											</p>
 										) : null}
@@ -345,10 +347,12 @@ export function CheckoutFlow({
 					</div>
 				</section>
 
-				<div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_26rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
+				{/* Main Grid */}
+				<div className="mt-4 sm:mt-5 grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_26rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
+					{/* Checkout Form */}
 					<form
 						action={createOrderAction}
-						className="rounded-[1.4rem] border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.06)] md:rounded-[1.75rem] md:p-7"
+						className="rounded-2xl sm:rounded-[1.4rem] md:rounded-[1.75rem] border border-slate-200 bg-white p-4 sm:p-5 md:p-7 shadow-[0_20px_60px_rgba(15,23,42,0.06)]"
 					>
 						<input type="hidden" name="slug" value={slug ?? ""} />
 						<input type="hidden" name="items" value={serializedItems ?? "[]"} />
@@ -364,43 +368,46 @@ export function CheckoutFlow({
 						) : null}
 
 						<div>
-							<h2 className="text-3xl font-black">Checkout</h2>
-							<p className="mt-2 text-semibold font-medium text-slate-500">
+							<h2 className="text-sm sm:text-2xl md:text-3xl font-black">
+								Checkout
+							</h2>
+							<p className="mt-1 sm:mt-2 text-xs sm:text-base font-medium text-slate-500">
 								Review your order and provide your details.
 							</p>
 						</div>
 
-						<div className="my-7 grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-3 text-xs font-black text-slate-500 md:gap-4">
-							<span className="inline-flex items-center gap-2 text-emerald-800">
-								<span className="grid size-8 place-items-center rounded-full bg-emerald-700 text-white">
+						{/* Steps indicator */}
+						<div className="my-5 sm:my-7 grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4 text-xs sm:text-sm font-black text-slate-500">
+							<span className="inline-flex items-center gap-1.5 sm:gap-2 text-emerald-800">
+								<span className="grid size-7 sm:size-8 place-items-center rounded-full bg-emerald-700 text-white text-xs sm:text-sm">
 									1
 								</span>
-								Details
+								<span className="hidden xs:inline">Details</span>
 							</span>
 							<span className="h-px bg-slate-200" />
-							<span className="inline-flex items-center gap-2">
-								<span className="grid size-8 place-items-center rounded-full bg-slate-200 text-slate-500">
+							<span className="inline-flex items-center gap-1.5 sm:gap-2">
+								<span className="grid size-7 sm:size-8 place-items-center rounded-full bg-slate-200 text-slate-500 text-xs sm:text-sm">
 									2
 								</span>
-								Payment
+								<span className="hidden xs:inline">Payment</span>
 							</span>
 							<span className="h-px bg-slate-200" />
-							<span className="inline-flex items-center gap-2">
-								<span className="grid size-8 place-items-center rounded-full bg-slate-200 text-slate-500">
+							<span className="inline-flex items-center gap-1.5 sm:gap-2">
+								<span className="grid size-7 sm:size-8 place-items-center rounded-full bg-slate-200 text-slate-500 text-xs sm:text-sm">
 									3
 								</span>
-								Confirm
+								<span className="hidden xs:inline">Confirm</span>
 							</span>
 						</div>
 
 						{orderIdToAppend ? (
-							<div className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+							<div className="rounded-2xl bg-emerald-50 p-4 text-xs font-bold text-emerald-800">
 								These items will be added to your existing dine-in order.
 							</div>
 						) : (
 							<section>
-								<h3 className="text-lg font-black">Order type</h3>
-								<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+								<h3 className="text-sm sm:text-lg font-black">Order type</h3>
+								<div className="mt-3 sm:mt-4 grid grid-cols-1 xs:grid-cols-2 xl:grid-cols-4 gap-3">
 									{availableOrderTypes.map((entry) => {
 										const Icon = entry.icon;
 										const checked = selectedType === entry.value;
@@ -408,7 +415,7 @@ export function CheckoutFlow({
 											<label
 												key={entry.value}
 												className={cn(
-													"relative grid min-h-20 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition-colors",
+													"relative grid min-h-[76px] sm:min-h-20 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 transition-colors",
 													checked &&
 														"border-emerald-700 bg-emerald-50 shadow-[0_10px_25px_rgba(4,120,87,0.08)]",
 												)}
@@ -421,18 +428,21 @@ export function CheckoutFlow({
 													onChange={() => setType(entry.value)}
 													className="sr-only"
 												/>
-												<Icon className="size-7 text-slate-700" />
+												<Icon className="size-4 sm:size-7 text-slate-700" />
 												<span className="min-w-0">
 													<span className="block text-sm font-black">
 														{entry.label}
 													</span>
-													<span className="mt-1 block text-xs font-medium text-slate-500">
+													<span className="mt-0.5 sm:mt-1 block text-xs font-medium text-slate-500">
 														{entry.description}
 													</span>
 												</span>
 												{checked ? (
-													<span className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-emerald-700 text-white">
-														<Check className="size-4" aria-hidden="true" />
+													<span className="absolute top-2 right-2 grid size-5 sm:size-6 place-items-center rounded-full bg-emerald-700 text-white">
+														<Check
+															className="size-3.5 sm:size-4"
+															aria-hidden="true"
+														/>
 													</span>
 												) : null}
 											</label>
@@ -442,35 +452,37 @@ export function CheckoutFlow({
 							</section>
 						)}
 
-						{/* ── Order for Self / Someone Else toggle ── */}
+						{/* Order for Self / Someone Else toggle */}
 						{!orderIdToAppend ? (
-							<section className="mt-7">
-								<h3 className="text-lg font-black">Who is this order for?</h3>
-								<div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
+							<section className="mt-6 sm:mt-7">
+								<h3 className="text-sm sm:text-lg font-black">
+									Who is this order for?
+								</h3>
+								<div className="mt-2 sm:mt-3 grid grid-cols-2 gap-1.5 sm:gap-2 rounded-2xl bg-slate-50 p-1">
 									<button
 										type="button"
 										onClick={() => handleOrderForChange("SELF")}
 										className={cn(
-											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
+											"inline-flex min-h-[44px] sm:min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition-colors sm:text-sm",
 											orderFor === "SELF"
 												? "bg-white text-emerald-700 shadow-sm"
 												: "text-slate-500 hover:text-slate-700",
 										)}
 									>
-										<User className="size-4" />
+										<User className="size-3.5 sm:size-4" />
 										For myself
 									</button>
 									<button
 										type="button"
 										onClick={() => handleOrderForChange("SOMEONE_ELSE")}
 										className={cn(
-											"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors",
+											"inline-flex min-h-[44px] sm:min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition-colors sm:text-sm",
 											orderFor === "SOMEONE_ELSE"
 												? "bg-white text-emerald-700 shadow-sm"
 												: "text-slate-500 hover:text-slate-700",
 										)}
 									>
-										<Users className="size-4" />
+										<Users className="size-3.5 sm:size-4" />
 										For somebody
 									</button>
 								</div>
@@ -482,9 +494,10 @@ export function CheckoutFlow({
 							</section>
 						) : null}
 
-						<section className="mt-7">
+						{/* Customer / recipient details */}
+						<section className="mt-6 sm:mt-7">
 							{!orderIdToAppend && !isDineInForSomeoneElse ? (
-								<h3 className="text-lg font-black">
+								<h3 className="text-sm sm:text-lg font-black">
 									{isOrderingForSomeoneElse
 										? "Recipient information"
 										: "Your details"}
@@ -493,7 +506,7 @@ export function CheckoutFlow({
 
 							{(selectedType === "DINE_IN" || orderIdToAppend) &&
 							!isOrderingForSomeoneElse ? (
-								<p className="mt-1 text-sm font-bold text-slate-500">
+								<p className="mt-1 text-xs font-bold text-slate-500">
 									Optional for dine-in orders.
 								</p>
 							) : null}
@@ -518,15 +531,15 @@ export function CheckoutFlow({
 								</p>
 							) : null}
 							{!isDineInForSomeoneElse ? (
-								<div className="mt-4 grid gap-4 md:grid-cols-2">
-									<label className="grid gap-2">
-										<span className="text-sm font-medium text-slate-600">
+								<div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+									<label className="grid gap-1.5 sm:gap-2">
+										<span className="text-xs font-medium text-slate-600">
 											{isOrderingForSomeoneElse
 												? "Recipient name"
 												: "Full name"}
 										</span>
 										<span className="relative">
-											<User className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+											<User className="-translate-y-1/2 absolute top-1/2 left-3 sm:left-4 size-4 text-slate-400" />
 											<input
 												name="customerName"
 												value={customerName ?? ""}
@@ -537,18 +550,18 @@ export function CheckoutFlow({
 														? "Enter recipient's name"
 														: "Enter your full name"
 												}
-												className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+												className="min-h-[44px] sm:min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 sm:pr-4 pl-9 sm:pl-11 text-base outline-none focus:border-emerald-700"
 											/>
 										</span>
 									</label>
-									<label className="grid gap-2">
-										<span className="text-sm font-medium text-slate-600">
+									<label className="grid gap-1.5 sm:gap-2">
+										<span className="text-xs font-medium text-slate-600">
 											{isOrderingForSomeoneElse
 												? "Recipient phone"
 												: "Phone number"}
 										</span>
 										<span className="relative">
-											<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+											<Phone className="-translate-y-1/2 absolute top-1/2 left-3 sm:left-4 size-4 text-slate-400" />
 											<input
 												name="customerPhone"
 												value={customerPhone ?? ""}
@@ -561,52 +574,58 @@ export function CheckoutFlow({
 														? "Enter recipient's phone"
 														: "Enter your phone number"
 												}
-												className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+												className="min-h-[44px] sm:min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 sm:pr-4 pl-9 sm:pl-11 text-base outline-none focus:border-emerald-700"
 											/>
 											{fetchingProfile ? (
-												<Loader2 className="-translate-y-1/2 absolute top-1/2 right-4 size-4 animate-spin text-emerald-600" />
+												<Loader2 className="-translate-y-1/2 absolute top-1/2 right-3 sm:right-4 size-4 animate-spin text-emerald-600" />
 											) : null}
 										</span>
 									</label>
 								</div>
 							) : null}
 							{isOrderingForSomeoneElse && !isDineInForSomeoneElse ? (
-								<label key="receiverAltPhone" className="mt-4 grid gap-2">
-									<span className="text-sm font-medium text-slate-600">
+								<label
+									key="receiverAltPhone"
+									className="mt-3 sm:mt-4 grid gap-1.5 sm:gap-2"
+								>
+									<span className="text-xs font-medium text-slate-600">
 										Receiver second phone (optional)
 									</span>
 									<span className="relative">
-										<Phone className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+										<Phone className="-translate-y-1/2 absolute top-1/2 left-3 sm:left-4 size-4 text-slate-400" />
 										<input
 											name="receiverAltPhone"
 											type="tel"
 											placeholder="Enter another number to reach the receiver"
-											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+											className="min-h-[44px] sm:min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 sm:pr-4 pl-9 sm:pl-11 text-base outline-none focus:border-emerald-700"
 										/>
 									</span>
 								</label>
 							) : !isOrderingForSomeoneElse ? (
-								<label key="customerEmail" className="mt-4 grid gap-2">
-									<span className="text-sm font-medium text-slate-600">
+								<label
+									key="customerEmail"
+									className="mt-3 sm:mt-4 grid gap-1.5 sm:gap-2"
+								>
+									<span className="text-xs font-medium text-slate-600">
 										Email address (optional)
 									</span>
 									<span className="relative">
-										<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+										<Mail className="-translate-y-1/2 absolute top-1/2 left-3 sm:left-4 size-4 text-slate-400" />
 										<input
 											name="customerEmail"
 											value={customerEmail ?? ""}
 											onChange={(e) => setCustomerEmail(e.target.value ?? "")}
 											type="email"
 											placeholder="Enter your email address"
-											className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+											className="min-h-[44px] sm:min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 sm:pr-4 pl-9 sm:pl-11 text-base outline-none focus:border-emerald-700"
 										/>
 									</span>
 								</label>
 							) : null}
 							{isOrderingForSomeoneElse ? (
-								<div className="mt-4 grid gap-4">
-									<label className="grid gap-2">
-										<span className="text-sm font-medium text-slate-600">
+								<div className="mt-3 sm:mt-4 grid gap-3 sm:gap-4">
+									<label className="grid gap-1.5 sm:gap-2">
+										<span className="text-xs font-medium text-slate-600">
 											Sender phone (your number)
 										</span>
 										<input
@@ -614,29 +633,29 @@ export function CheckoutFlow({
 											required
 											type="tel"
 											placeholder="Enter your phone number"
-											className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+											className="min-h-[44px] sm:min-h-12 rounded-xl border border-slate-200 bg-white px-3 sm:px-4 text-base outline-none focus:border-emerald-700"
 										/>
 									</label>
 									{isDineInForSomeoneElse ? (
-										<label className="grid gap-2">
-											<span className="text-sm font-medium text-slate-600">
+										<label className="grid gap-1.5 sm:gap-2">
+											<span className="text-xs font-medium text-slate-600">
 												Sender table number (your table)
 											</span>
 											<input
 												name="senderTableNumber"
 												required
 												placeholder="Table 4"
-												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+												className="min-h-[44px] sm:min-h-12 rounded-xl border border-slate-200 bg-white px-3 sm:px-4 text-base outline-none focus:border-emerald-700"
 											/>
 										</label>
 									) : null}
 									{!isDineInForSomeoneElse ? (
-										<label className="grid gap-2">
-											<span className="text-sm font-medium text-slate-600">
+										<label className="grid gap-1.5 sm:gap-2">
+											<span className="text-xs font-medium text-slate-600">
 												Sender email (optional)
 											</span>
 											<span className="relative">
-												<Mail className="-translate-y-1/2 absolute top-1/2 left-4 size-4 text-slate-400" />
+												<Mail className="-translate-y-1/2 absolute top-1/2 left-3 sm:left-4 size-4 text-slate-400" />
 												<input
 													name="customerEmail"
 													value={customerEmail ?? ""}
@@ -645,20 +664,20 @@ export function CheckoutFlow({
 													}
 													type="email"
 													placeholder="Enter your email address"
-													className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-11 text-semibold outline-none focus:border-emerald-700"
+													className="min-h-[44px] sm:min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 sm:pr-4 pl-9 sm:pl-11 text-base outline-none focus:border-emerald-700"
 												/>
 											</span>
 										</label>
 									) : null}
 									{selectedType === "DINE_IN" && !isDineInForSomeoneElse ? (
-										<label className="mt-4 grid gap-2">
-											<span className="text-sm font-medium text-slate-600">
+										<label className="mt-3 sm:mt-4 grid gap-1.5 sm:gap-2">
+											<span className="text-xs font-medium text-slate-600">
 												Seat number (optional)
 											</span>
 											<input
 												name="seatNumber"
 												placeholder="e.g. Seat 3"
-												className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-semibold outline-none focus:border-emerald-700"
+												className="min-h-[44px] sm:min-h-12 rounded-xl border border-slate-200 bg-white px-3 sm:px-4 text-base outline-none focus:border-emerald-700"
 											/>
 										</label>
 									) : null}
@@ -667,9 +686,9 @@ export function CheckoutFlow({
 						</section>
 
 						{selectedType === "DINE_IN" && !orderIdToAppend ? (
-							<section className="mt-5 grid gap-4">
-								<label className="grid gap-2">
-									<span className="text-sm font-black text-slate-700">
+							<section className="mt-5 sm:mt-6 grid gap-3 sm:gap-4">
+								<label className="grid gap-1.5 sm:gap-2">
+									<span className="text-xs font-black text-slate-700">
 										{isOrderingForSomeoneElse
 											? "Receiver table number"
 											: "Table number"}
@@ -678,17 +697,17 @@ export function CheckoutFlow({
 										name="tableNumber"
 										required
 										placeholder="Table 4"
-										className="min-h-12 rounded-xl border border-slate-200 px-3 text-semibold outline-none focus:border-emerald-700"
+										className="min-h-[44px] sm:min-h-12 rounded-xl border border-slate-200 px-3 sm:px-4 text-base outline-none focus:border-emerald-700"
 									/>
 								</label>
 								{dineInPaymentPolicy !== "FLEXIBLE" &&
 								!isDineInForSomeoneElse ? (
 									<>
-										<fieldset className="grid gap-3 border-0 p-0">
-											<legend className="text-sm font-black text-slate-700">
+										<fieldset className="grid gap-2 sm:gap-3 border-0 p-0">
+											<legend className="text-xs font-black text-slate-700">
 												In-house payment
 											</legend>
-											<div className="grid gap-3 sm:grid-cols-3">
+											<div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
 												{dineInPaymentOptions.map((option) => {
 													const Icon = option.icon;
 
@@ -701,7 +720,7 @@ export function CheckoutFlow({
 																defaultChecked={option.id === "cash"}
 																className="peer sr-only"
 															/>
-															<span className="grid min-h-28 gap-2 rounded-xl border border-slate-200 bg-white p-4 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-50 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300">
+															<span className="grid min-h-[104px] sm:min-h-28 gap-1.5 sm:gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:p-4 transition peer-checked:border-emerald-700 peer-checked:bg-emerald-50 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300">
 																<span className="flex items-center gap-2 text-sm font-black text-slate-950">
 																	<Icon className="size-4 text-emerald-700" />
 																	{option.label}
@@ -715,7 +734,7 @@ export function CheckoutFlow({
 												})}
 											</div>
 										</fieldset>
-										<p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+										<p className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">
 											Staff or admin will confirm the in-house payment before
 											the order is processed.
 										</p>
@@ -725,9 +744,9 @@ export function CheckoutFlow({
 						) : null}
 
 						{selectedType === "DELIVERY" ? (
-							<section className="mt-5 grid gap-4">
-								<label className="grid gap-2">
-									<span className="text-sm font-black text-slate-700">
+							<section className="mt-5 sm:mt-6 grid gap-3 sm:gap-4">
+								<label className="grid gap-1.5 sm:gap-2">
+									<span className="text-xs font-black text-slate-700">
 										{isOrderingForSomeoneElse
 											? "Recipient delivery address (required)"
 											: "Delivery address (required)"}
@@ -744,70 +763,73 @@ export function CheckoutFlow({
 												? "Enter recipient's delivery address"
 												: "Enter your delivery address"
 										}
-										className="rounded-xl border border-slate-200 px-3 py-3 text-semibold outline-none focus:border-emerald-700"
+										className="rounded-xl border border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 text-base outline-none focus:border-emerald-700"
 									/>
 								</label>
-								<label className="grid gap-2">
-									<span className="text-sm font-black text-slate-700">
+								<label className="grid gap-1.5 sm:gap-2">
+									<span className="text-xs font-black text-slate-700">
 										Delivery notes
 									</span>
 									<textarea
 										name="deliveryNotes"
 										rows={2}
 										placeholder="Add any notes for your order..."
-										className="rounded-xl border border-slate-200 px-3 py-3 text-semibold outline-none focus:border-emerald-700"
+										className="rounded-xl border border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 text-base outline-none focus:border-emerald-700"
 									/>
 								</label>
 							</section>
 						) : (
-							<label className="mt-5 grid gap-2">
-								<span className="text-sm font-medium text-slate-600">
+							<label className="mt-5 sm:mt-6 grid gap-1.5 sm:gap-2">
+								<span className="text-xs font-medium text-slate-600">
 									Special instructions (optional)
 								</span>
 								<textarea
 									name="deliveryNotes"
 									rows={4}
 									placeholder="Add any notes for your order..."
-									className="rounded-xl border border-slate-200 px-4 py-3 text-semibold outline-none focus:border-emerald-700"
+									className="rounded-xl border border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 text-base outline-none focus:border-emerald-700"
 								/>
 							</label>
 						)}
+
+						<TurnstileWidget className="mt-5 sm:mt-6 flex justify-center" />
 
 						<SubmitButton
 							disabled={items.length === 0}
 							loadingText="Processing..."
 							successText="Order created"
-							className="mt-5 inline-flex min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-emerald-700 px-5 text-semibold font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.18)] disabled:opacity-50"
+							className="mt-5 sm:mt-6 inline-flex min-h-[52px] sm:min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-emerald-700 px-4 sm:px-5 text-xs sm:text-base font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.18)] disabled:opacity-50"
 						>
 							{submitLabel}
-							<ArrowRight className="size-5" aria-hidden="true" />
+							<ArrowRight className="size-3.5 sm:size-5" aria-hidden="true" />
 						</SubmitButton>
 
-						<p className="mt-4 flex items-center justify-center gap-2 text-sm font-medium text-slate-500">
-							<Lock className="size-4" aria-hidden="true" />
+						<p className="mt-3 sm:mt-4 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium text-slate-500">
+							<Lock className="size-3.5 sm:size-4" aria-hidden="true" />
 							Your information is secure and encrypted
 						</p>
 					</form>
 
-					<aside className="rounded-[1.4rem] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] md:rounded-[1.75rem] lg:sticky lg:top-6 lg:self-start">
-						<div className="flex items-center justify-between gap-4 border-slate-200 border-b p-5 md:p-6">
-							<h2 className="text-xl font-black">Your order</h2>
+					{/* Cart Aside */}
+					<aside className="rounded-2xl sm:rounded-[1.4rem] md:rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:sticky lg:top-6 lg:self-start">
+						<div className="flex items-center justify-between gap-3 sm:gap-4 border-slate-200 border-b p-4 sm:p-5 md:p-6">
+							<h2 className="text-sm sm:text-xl font-black">Your order</h2>
 							<Link
 								href={`/${slug}`}
-								className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800"
+								className="rounded-xl bg-emerald-50 px-3 sm:px-4 py-2 sm:py-3 text-xs font-black text-emerald-800 sm:text-sm"
 							>
 								Edit cart
 							</Link>
 						</div>
 
-						<div className="grid gap-4 p-5 md:p-6">
+						<div className="grid gap-3 sm:gap-4 p-4 sm:p-5 md:p-6">
 							{items.length > 0 ? (
 								items.map((item) => (
 									<div
 										key={item.id}
-										className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-4"
+										className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-3 sm:gap-4"
 									>
-										<div className="relative size-18 overflow-hidden rounded-xl bg-emerald-50">
+										<div className="relative size-14 sm:size-18 overflow-hidden rounded-xl bg-emerald-50">
 											{item.imageUrl ? (
 												<Image
 													src={item.imageUrl}
@@ -819,32 +841,35 @@ export function CheckoutFlow({
 												/>
 											) : (
 												<div className="grid h-full place-items-center">
-													<Utensils className="size-7 text-emerald-700" />
+													<Utensils className="size-5 sm:size-7 text-emerald-700" />
 												</div>
 											)}
-											<span className="-top-1 -right-1 absolute grid size-6 place-items-center rounded-full bg-emerald-700 text-xs font-black text-white">
+											<span className="-top-1 -right-1 absolute grid size-5 sm:size-6 place-items-center rounded-full bg-emerald-700 text-xs font-black text-white">
 												{item.quantity}
 											</span>
 										</div>
 										<div className="min-w-0">
-											<p className="truncate text-semibold font-black">
+											<p className="truncate text-sm sm:text-base font-black">
 												{item.name}
 											</p>
-											<p className="mt-1 line-clamp-1 text-sm font-medium text-slate-500">
+											<p className="mt-0.5 sm:mt-1 line-clamp-1 text-xs sm:text-sm font-medium text-slate-500">
 												{item.notes || "Freshly prepared"}
 											</p>
-											<div className="mt-3 inline-flex items-center rounded-lg border border-slate-200">
+											<div className="mt-2 sm:mt-3 inline-flex items-center rounded-lg border border-slate-200">
 												<button
 													type="button"
 													onClick={() =>
 														setQuantity(item.id, item.quantity - 1)
 													}
-													className="grid size-8 place-items-center text-emerald-800"
+													className="grid size-7 sm:size-8 place-items-center text-emerald-800"
 													aria-label={`Reduce ${item.name}`}
 												>
-													<Minus className="size-4" aria-hidden="true" />
+													<Minus
+														className="size-3.5 sm:size-4"
+														aria-hidden="true"
+													/>
 												</button>
-												<span className="min-w-8 text-center text-sm font-black">
+												<span className="min-w-6 sm:min-w-8 text-center text-xs sm:text-sm font-black">
 													{item.quantity}
 												</span>
 												<button
@@ -852,33 +877,36 @@ export function CheckoutFlow({
 													onClick={() =>
 														setQuantity(item.id, item.quantity + 1)
 													}
-													className="grid size-8 place-items-center text-emerald-800"
+													className="grid size-7 sm:size-8 place-items-center text-emerald-800"
 													aria-label={`Increase ${item.name}`}
 												>
-													<Plus className="size-4" aria-hidden="true" />
+													<Plus
+														className="size-3.5 sm:size-4"
+														aria-hidden="true"
+													/>
 												</button>
 											</div>
 										</div>
-										<p className="pt-2 text-sm font-black">
+										<p className="pt-1 sm:pt-2 text-xs sm:text-sm font-black">
 											{formatMoney(item.price * item.quantity, currency)}
 										</p>
 									</div>
 								))
 							) : (
-								<p className="rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm font-bold text-slate-500">
+								<p className="rounded-2xl border border-dashed border-slate-200 p-4 sm:p-5 text-center text-sm font-bold text-slate-500">
 									Your cart is empty.
 								</p>
 							)}
 						</div>
 
-						<div className="grid gap-4 border-slate-200 border-t p-5 text-sm md:p-6">
+						<div className="grid gap-2 sm:gap-4 border-slate-200 border-t p-4 sm:p-5 md:p-6 text-xs sm:text-sm">
 							<div className="flex justify-between">
 								<span className="text-slate-600">Subtotal</span>
 								<span className="font-black">
 									{formatMoney(subtotal, currency)}
 								</span>
 							</div>
-							<div className="flex justify-between border-slate-200 border-t pt-5 text-xl font-black">
+							<div className="flex justify-between border-slate-200 border-t pt-4 sm:pt-5 text-base sm:text-xl font-black">
 								<span>Total</span>
 								<span className="text-emerald-800">
 									{formatMoney(total, currency)}
@@ -886,38 +914,38 @@ export function CheckoutFlow({
 							</div>
 						</div>
 
-						<div className="grid grid-cols-3 gap-3 border-slate-200 border-t p-5 text-center md:p-6">
-							<div className="grid gap-2">
-								<Lock className="mx-auto size-6 text-emerald-700" />
+						<div className="grid grid-cols-3 gap-2 sm:gap-3 border-slate-200 border-t p-4 sm:p-5 md:p-6 text-center">
+							<div className="grid gap-1 sm:gap-2">
+								<Lock className="mx-auto size-5 sm:size-6 text-emerald-700" />
 								<p className="text-xs font-black">Secure payment</p>
 							</div>
-							<div className="grid gap-2">
-								<Flame className="mx-auto size-6 text-emerald-700" />
+							<div className="grid gap-1 sm:gap-2">
+								<Flame className="mx-auto size-5 sm:size-6 text-emerald-700" />
 								<p className="text-xs font-black">Fresh & fast</p>
 							</div>
-							<div className="grid gap-2">
-								<User className="mx-auto size-6 text-emerald-700" />
+							<div className="grid gap-1 sm:gap-2">
+								<User className="mx-auto size-5 sm:size-6 text-emerald-700" />
 								<p className="text-xs font-black">Support</p>
 							</div>
 						</div>
 
-						<div className="border-slate-200 border-t p-5 md:p-6">
-							<p className="text-sm font-black">We accept</p>
-							<div className="mt-3 flex flex-wrap gap-3">
-								<span className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-blue-700">
+						<div className="border-slate-200 border-t p-4 sm:p-5 md:p-6">
+							<p className="text-xs font-black sm:text-sm">We accept</p>
+							<div className="mt-2 sm:mt-3 flex flex-wrap gap-2 sm:gap-3">
+								<span className="rounded-lg border border-slate-200 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-black text-blue-700">
 									VISA
 								</span>
-								<span className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2">
-									<span className="size-4 rounded-full bg-red-500" />
-									<span className="-ml-2 size-4 rounded-full bg-yellow-400 opacity-90" />
+								<span className="inline-flex items-center rounded-lg border border-slate-200 px-3 sm:px-4 py-1.5 sm:py-2">
+									<span className="size-3 sm:size-4 rounded-full bg-red-500" />
+									<span className="-ml-1.5 sm:-ml-2 size-3 sm:size-4 rounded-full bg-yellow-400 opacity-90" />
 								</span>
-								<span className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-red-600">
+								<span className="rounded-lg border border-slate-200 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-black text-red-600">
 									Verve
 								</span>
-								<span className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black">
+								<span className="rounded-lg border border-slate-200 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-black">
 									Apple Pay
 								</span>
-								<span className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-black text-slate-700">
+								<span className="rounded-lg border border-slate-200 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-black text-slate-700">
 									G Pay
 								</span>
 							</div>

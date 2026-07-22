@@ -32,7 +32,7 @@ export function NotificationBell({
 		>
 			<Bell className="size-5" aria-hidden="true" />
 			{unreadCount > 0 ? (
-				<span className="-right-1 -top-1 absolute grid min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white">
+				<span className="-right-1 -top-1 absolute grid min-w-5 place-items-center rounded-full bg-red-600 px-1 text-xs font-black text-white">
 					{displayCount}
 				</span>
 			) : null}

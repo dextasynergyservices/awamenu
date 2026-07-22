@@ -1,3 +1,4 @@
+import { UserRole } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -10,6 +11,20 @@ export async function requireUser() {
 	}
 
 	return session.user;
+}
+
+export async function requireSuperAdmin() {
+	const user = await requireUser();
+	const record = await db.user.findUnique({
+		where: { id: user.id },
+		select: { id: true, role: true, name: true, email: true },
+	});
+
+	if (record?.role !== UserRole.SUPER_ADMIN) {
+		redirect("/dashboard");
+	}
+
+	return record;
 }
 
 export async function redirectCompletedOnboarding(userId: string) {

@@ -4,6 +4,7 @@ import { OnboardingStatus, PlanTier, SubscriptionStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "@/env";
+import { captureServerEvent } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { sendRestaurantWelcomeEmail } from "@/lib/email";
@@ -134,6 +135,11 @@ export async function completeSetupAction(formData: FormData) {
 		to: user.email,
 		restaurantName: restaurant.name,
 		dashboardUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${restaurant.slug}`,
+	});
+
+	captureServerEvent("restaurant_signup_completed", user.id, {
+		restaurantId: restaurant.id,
+		slug: restaurant.slug,
 	});
 
 	redirect(`/dashboard/${restaurant.slug}`);

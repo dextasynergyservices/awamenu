@@ -49,7 +49,7 @@ export function PushPermissionPrompt({
 	}
 
 	return (
-		<div className="relative mx-auto mb-4 max-w-2xl overflow-hidden rounded-xl sm:rounded-2xl border border-emerald-200 bg-linear-to-r from-emerald-50 to-lime-50 px-3 py-2 sm:px-5 sm:py-4 shadow-sm">
+		<div className="relative mx-auto mb-4 max-w-2xl overflow-hidden rounded-xl sm:rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 sm:px-5 sm:py-4 shadow-sm">
 			<button
 				type="button"
 				onClick={() => setDismissed(true)}
@@ -63,10 +63,10 @@ export function PushPermissionPrompt({
 					<Bell className="size-3.5 sm:size-5" />
 				</span>
 				<div className="min-w-0 flex-1 pr-4 sm:pr-5">
-					<p className="text-[12px] sm:text-sm font-black text-slate-800 leading-tight">
+					<p className="text-xs sm:text-sm font-black text-slate-800 leading-tight">
 						Enable push notifications
 					</p>
-					<p className="mt-0.5 sm:mt-1 text-[10px] sm:text-[13px] leading-snug text-slate-600">
+					<p className="mt-0.5 sm:mt-1 text-xs sm:text-sm leading-snug text-slate-600">
 						Get alerts for orders and reservations.
 					</p>
 				</div>
@@ -76,14 +76,14 @@ export function PushPermissionPrompt({
 					type="button"
 					onClick={handleEnable}
 					disabled={isLoading}
-					className="flex-1 sm:flex-none inline-flex min-h-7 sm:min-h-9 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-700 px-3 sm:px-4 text-[10px] sm:text-[13px] font-bold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
+					className="flex-1 sm:flex-none inline-flex min-h-7 sm:min-h-9 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-700 px-3 sm:px-4 text-xs sm:text-sm font-bold text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
 				>
 					{isLoading ? "Enabling…" : "Enable"}
 				</button>
 				<button
 					type="button"
 					onClick={() => setDismissed(true)}
-					className="flex-1 sm:flex-none inline-flex min-h-7 sm:min-h-9 items-center justify-center rounded-lg sm:rounded-xl px-3 sm:px-4 text-[10px] sm:text-[13px] font-bold text-slate-500 transition-colors hover:bg-emerald-100/50"
+					className="flex-1 sm:flex-none inline-flex min-h-7 sm:min-h-9 items-center justify-center rounded-lg sm:rounded-xl px-3 sm:px-4 text-xs sm:text-sm font-bold text-slate-500 transition-colors hover:bg-emerald-100/50"
 				>
 					Not now
 				</button>

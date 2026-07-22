@@ -16,6 +16,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
+import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { createStaffSession, destroyStaffSession } from "@/lib/staff-auth";
 import { generateStaffId } from "@/lib/staff-id";
 import { resolveStaffPermissions } from "@/lib/staff-permissions";
@@ -64,6 +65,9 @@ export async function verifyStaffAction(slug: string, pin: string) {
 	if (!restaurant) {
 		throw new Error("Restaurant not found.");
 	}
+
+	const clientIp = await getClientIp();
+	await enforceRateLimit("staffPin", `${clientIp}:${restaurant.id}`);
 
 	const staff = await db.staffMember.findFirst({
 		where: {

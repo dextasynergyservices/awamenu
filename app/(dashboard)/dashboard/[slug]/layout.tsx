@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { AdminDashboardShell } from "@/components/admin/admin-dashboard-shell";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { isSubscriptionActive } from "@/lib/subscription";
+import { getThemeStyle } from "@/lib/theme-style";
 
 export default async function DashboardLayout({
 	children,
@@ -15,10 +17,27 @@ export default async function DashboardLayout({
 	const { slug } = await params;
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug, ownerId: user.id },
-		select: { id: true, name: true, slug: true, logoUrl: true },
+		select: {
+			id: true,
+			name: true,
+			slug: true,
+			logoUrl: true,
+			primaryColor: true,
+		},
 	});
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
+
+	const subscription = await db.subscription.findFirst({
+		where: { userId: user.id },
+		orderBy: { createdAt: "desc" },
+		include: { plan: true },
+	});
+
+	const isPaid = subscription?.plan
+		? Number(subscription.plan.monthlyPrice) > 0 &&
+			isSubscriptionActive(subscription)
+		: false;
 
 	// Get initial unread count for the notification bell
 	const unreadCount = await db.notification.count({
@@ -73,17 +92,22 @@ export default async function DashboardLayout({
 		isRead: n.reads.length > 0,
 	}));
 
+	const style = getThemeStyle(restaurant.primaryColor);
+
 	return (
-		<AdminDashboardShell
-			restaurantId={restaurant.id}
-			restaurantName={restaurant.name}
-			restaurantLogoUrl={restaurant.logoUrl}
-			slug={restaurant.slug}
-			userId={user.id}
-			initialNotifications={notifications}
-			initialUnreadCount={unreadCount}
-		>
-			{children}
-		</AdminDashboardShell>
+		<div style={style} className="h-full">
+			<AdminDashboardShell
+				restaurantId={restaurant.id}
+				restaurantName={restaurant.name}
+				restaurantLogoUrl={restaurant.logoUrl}
+				slug={restaurant.slug}
+				userId={user.id}
+				isPaid={isPaid}
+				initialNotifications={notifications}
+				initialUnreadCount={unreadCount}
+			>
+				{children}
+			</AdminDashboardShell>
+		</div>
 	);
 }

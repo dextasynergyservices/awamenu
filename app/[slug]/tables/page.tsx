@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { TableReservationFlow } from "@/components/reservation/TableReservationFlow";
 import { db } from "@/lib/db";
 import { resolveEffectivePolicy } from "@/lib/reservation-policy";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 type TablesPageProps = {
 	params: Promise<{ slug: string }>;
@@ -56,6 +58,9 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			whatsappNumber: true,
 			currency: true,
 			reservationSetting: true,
+			subscription: {
+				select: { status: true, currentPeriodEnd: true },
+			},
 			tables: {
 				where: { isActive: true },
 				orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -98,6 +103,10 @@ export default async function TablesPage({ params }: TablesPageProps) {
 	});
 
 	if (!restaurant) notFound();
+
+	if (!isSubscriptionActive(restaurant.subscription)) {
+		return <SubscriptionInactive restaurantName={restaurant.name} />;
+	}
 
 	const setting =
 		restaurant.reservationSetting ??

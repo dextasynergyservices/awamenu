@@ -9,7 +9,6 @@ import {
 	Upload,
 	Users,
 	WalletCards,
-	X,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -17,6 +16,12 @@ import type React from "react";
 import { useId, useState } from "react";
 import { createTableSeatAction } from "@/actions/reservation.actions";
 import { uploadTablePhoto } from "@/components/admin/table-photo-upload";
+import {
+	Dialog,
+	DialogBody,
+	DialogFooter,
+	DialogHeader,
+} from "@/components/ui/Dialog";
 
 type TableCreateModalProps = {
 	currency: string;
@@ -27,7 +32,7 @@ type TableCreateModalProps = {
 };
 
 const inputClass =
-	"min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-emerald-700 md:text-sm";
+	"min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-base font-bold text-slate-700 outline-none focus:border-emerald-700 md:text-sm";
 
 export function TableCreateModal({
 	currency,
@@ -90,240 +95,230 @@ export function TableCreateModal({
 				{triggerLabel}
 			</button>
 
-			{open ? (
-				<div className="fixed inset-0 z-120 flex items-end overflow-y-auto bg-slate-950/58 px-0 py-0 backdrop-blur-[2px] md:block md:px-4 md:py-8">
-					<button
-						type="button"
-						className="fixed inset-0 cursor-default"
-						aria-label="Close add table"
-						onClick={() => setOpen(false)}
-					/>
-					<section className="relative z-10 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl animate-in slide-in-from-bottom duration-300 md:mx-auto md:max-h-none md:max-w-200 md:overflow-hidden md:rounded-2xl">
-						<header className="flex items-center justify-between gap-4 px-6 pt-6">
-							<h2 className="text-base font-black text-slate-950 md:text-xl">
-								Add Table
-							</h2>
-							<button
-								type="button"
-								onClick={() => setOpen(false)}
-								className="grid size-9 place-items-center rounded-xl text-slate-950 hover:bg-slate-100"
-								aria-label="Close"
-							>
-								<X className="size-5" aria-hidden="true" />
-							</button>
-						</header>
-
-						<div className="grid gap-5 px-6 pb-5 pt-5">
-							<div className="flex min-w-0 items-center gap-4">
-								<span className="grid size-20 shrink-0 place-items-center rounded-3xl bg-emerald-50 text-emerald-700">
-									<Armchair className="size-7 md:size-9" aria-hidden="true" />
-								</span>
-								<div className="min-w-0">
-									<h3 className="text-lg font-black text-slate-950 md:text-2xl">
-										New Table
-									</h3>
-									<p className="mt-1 text-xs font-semibold text-slate-600 md:text-sm">
-										Add the table details customers will see.
-									</p>
-								</div>
+			<Dialog
+				open={open}
+				onOpenChange={(next) => {
+					setOpen(next);
+					if (!next) setError(null);
+				}}
+				variant="sheet"
+				size="2xl"
+			>
+				<DialogHeader title="Add Table" className="px-6 pt-6 pb-0" />
+				<DialogBody className="px-6 pb-5 pt-5">
+					<div className="grid gap-5">
+						<div className="flex min-w-0 items-center gap-4">
+							<span className="grid size-20 shrink-0 place-items-center rounded-3xl bg-emerald-50 text-emerald-700">
+								<Armchair className="size-7 md:size-9" aria-hidden="true" />
+							</span>
+							<div className="min-w-0">
+								<h3 className="text-lg font-black text-slate-950 md:text-2xl">
+									New Table
+								</h3>
+								<p className="mt-1 text-xs font-semibold text-slate-600 md:text-sm">
+									Add the table details customers will see.
+								</p>
 							</div>
+						</div>
 
-							<form
-								id="table-create"
-								onSubmit={handleSubmit}
-								aria-busy={pending}
-								className="grid gap-5"
-							>
-								<input type="hidden" name="slug" value={restaurantSlug} />
-								<input type="hidden" name="bookingModeOverride" value="" />
-								<input type="hidden" name="paymentTimingOverride" value="" />
-								<input type="hidden" name="inclusionTypeOverride" value="" />
-								<input type="hidden" name="sortOrder" value="0" />
-								<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-									<section className="rounded-2xl border border-slate-200 p-4">
-										<div className="mb-4 flex items-center justify-between gap-3">
-											<h4 className="text-sm font-black text-slate-950 md:text-base">
-												Table Information
-											</h4>
-											<span className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700">
-												<Edit3 className="size-3.5" aria-hidden="true" />
-												Add
-											</span>
-										</div>
-										<div className="grid gap-3">
-											<EditableInfoRow
-												icon={<WalletCards className="size-4" />}
-												label="Table Name"
-											>
-												<input
-													name="label"
-													required
-													placeholder="Table for couples"
-													className={inputClass}
-												/>
-											</EditableInfoRow>
-											<EditableInfoRow
-												icon={<Users className="size-4" />}
-												label="Seats"
-											>
-												<input
-													name="capacity"
-													type="number"
-													min="1"
-													defaultValue={2}
-													className={inputClass}
-												/>
-											</EditableInfoRow>
-											<EditableInfoRow
-												icon={<MapPin className="size-4" />}
-												label="Section / Note"
-											>
-												<input
-													name="description"
-													placeholder="Indoor, VIP Room, Outdoor..."
-													className={inputClass}
-												/>
-											</EditableInfoRow>
-											<EditableInfoRow
-												icon={<WalletCards className="size-4" />}
-												label="Minimum Spend"
-											>
-												<input
-													name="minimumSpend"
-													type="number"
-													min="0"
-													step="100"
-													className={inputClass}
-												/>
-											</EditableInfoRow>
-											<EditableInfoRow
-												icon={<WalletCards className="size-4" />}
-												label={`Table Fee (${currency})`}
-											>
-												<input
-													name="tableFee"
-													type="number"
-													min="0"
-													step="100"
-													className={inputClass}
-												/>
-											</EditableInfoRow>
-										</div>
-									</section>
-
-									<section className="rounded-2xl border border-slate-200 p-4">
+						<form
+							id="table-create"
+							onSubmit={handleSubmit}
+							aria-busy={pending}
+							className="grid gap-5"
+						>
+							<input type="hidden" name="slug" value={restaurantSlug} />
+							<input type="hidden" name="bookingModeOverride" value="" />
+							<input type="hidden" name="paymentTimingOverride" value="" />
+							<input type="hidden" name="inclusionTypeOverride" value="" />
+							<input type="hidden" name="sortOrder" value="0" />
+							<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+								<section className="rounded-2xl border border-slate-200 p-4">
+									<div className="mb-4 flex items-center justify-between gap-3">
 										<h4 className="text-sm font-black text-slate-950 md:text-base">
-											Table Photo
+											Table Information
 										</h4>
-										<input
-											type="hidden"
-											id={imageInputId}
-											name="imageUrl"
-											defaultValue=""
-										/>
-										<div className="relative mt-4 aspect-[1.35] overflow-hidden rounded-xl bg-slate-100">
-											{previewUrl ? (
-												<Image
-													src={previewUrl}
-													alt="New table preview"
-													fill
-													className="object-cover"
-													sizes="320px"
-													unoptimized
-												/>
-											) : (
-												<div className="grid h-full place-items-center bg-emerald-50 text-emerald-700">
-													<Armchair className="size-16" aria-hidden="true" />
-												</div>
-											)}
-										</div>
-										<label className="mt-4 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800">
-											<Upload className="size-4" aria-hidden="true" />
-											{uploading ? "Uploading..." : "Upload photo"}
+										<span className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-700">
+											<Edit3 className="size-3.5" aria-hidden="true" />
+											Add
+										</span>
+									</div>
+									<div className="grid gap-3">
+										<EditableInfoRow
+											icon={<WalletCards className="size-4" />}
+											label="Table Name"
+										>
 											<input
-												type="file"
-												accept="image/webp,image/jpeg,image/png"
-												className="sr-only"
-												onChange={async (event) => {
-													const input = event.currentTarget;
-													const file = input.files?.[0];
-													const hiddenInput =
-														document.getElementById(imageInputId);
-													if (
-														!file ||
-														!(hiddenInput instanceof HTMLInputElement)
-													) {
-														return;
-													}
-													try {
-														setUploading(true);
-														const imageUrl = await uploadTablePhoto(
-															restaurantId,
-															file,
-														);
-														hiddenInput.value = imageUrl;
-														setPreviewUrl(imageUrl);
-													} catch (caughtError) {
-														setError(
-															caughtError instanceof Error
-																? caughtError.message
-																: "Unable to upload table photo.",
-														);
-													} finally {
-														setUploading(false);
-														input.value = "";
-													}
-												}}
+												name="label"
+												required
+												placeholder="Table for couples"
+												className={inputClass}
 											/>
-										</label>
-										<p className="mt-2 text-[11px] font-semibold text-slate-500 md:text-xs">
-											Upload WebP, JPG, or PNG. Save changes after upload.
-										</p>
-									</section>
-								</div>
+										</EditableInfoRow>
+										<EditableInfoRow
+											icon={<Users className="size-4" />}
+											label="Seats"
+										>
+											<input
+												name="capacity"
+												type="number"
+												min="1"
+												defaultValue={2}
+												className={inputClass}
+											/>
+										</EditableInfoRow>
+										<EditableInfoRow
+											icon={<MapPin className="size-4" />}
+											label="Section / Note"
+										>
+											<input
+												name="description"
+												placeholder="Indoor, VIP Room, Outdoor..."
+												className={inputClass}
+											/>
+										</EditableInfoRow>
+										<EditableInfoRow
+											icon={<WalletCards className="size-4" />}
+											label="Minimum Spend"
+										>
+											<input
+												name="minimumSpend"
+												type="number"
+												min="0"
+												step="100"
+												className={inputClass}
+											/>
+										</EditableInfoRow>
+										<EditableInfoRow
+											icon={<WalletCards className="size-4" />}
+											label={`Table Fee (${currency})`}
+										>
+											<input
+												name="tableFee"
+												type="number"
+												min="0"
+												step="100"
+												className={inputClass}
+											/>
+										</EditableInfoRow>
+									</div>
+								</section>
 
 								<section className="rounded-2xl border border-slate-200 p-4">
 									<h4 className="text-sm font-black text-slate-950 md:text-base">
-										Table Settings
+										Table Photo
 									</h4>
-									<div className="mt-4 grid gap-3 md:grid-cols-2">
-										<ToggleRow
-											label="Allow Online Booking"
-											name="isActive"
-											defaultChecked={true}
-										/>
+									<input
+										type="hidden"
+										id={imageInputId}
+										name="imageUrl"
+										defaultValue=""
+									/>
+									<div className="relative mt-4 aspect-[1.35] overflow-hidden rounded-xl bg-slate-100">
+										{previewUrl ? (
+											<Image
+												src={previewUrl}
+												alt="New table preview"
+												fill
+												className="object-cover"
+												sizes="320px"
+												unoptimized
+											/>
+										) : (
+											<div className="grid h-full place-items-center bg-emerald-50 text-emerald-700">
+												<Armchair className="size-16" aria-hidden="true" />
+											</div>
+										)}
 									</div>
+									<label className="mt-4 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-800">
+										<Upload className="size-4" aria-hidden="true" />
+										{uploading ? "Uploading..." : "Upload photo"}
+										<input
+											type="file"
+											accept="image/webp,image/jpeg,image/png"
+											className="sr-only"
+											onChange={async (event) => {
+												const input = event.currentTarget;
+												const file = input.files?.[0];
+												const hiddenInput =
+													document.getElementById(imageInputId);
+												if (
+													!file ||
+													!(hiddenInput instanceof HTMLInputElement)
+												) {
+													return;
+												}
+												try {
+													setUploading(true);
+													const imageUrl = await uploadTablePhoto(
+														restaurantId,
+														file,
+													);
+													hiddenInput.value = imageUrl;
+													setPreviewUrl(imageUrl);
+												} catch (caughtError) {
+													setError(
+														caughtError instanceof Error
+															? caughtError.message
+															: "Unable to upload table photo.",
+													);
+												} finally {
+													setUploading(false);
+													input.value = "";
+												}
+											}}
+										/>
+									</label>
+									<p className="mt-2 text-xs font-semibold text-slate-500">
+										Upload WebP, JPG, or PNG. Save changes after upload.
+									</p>
 								</section>
-							</form>
+							</div>
 
-							{error ? (
-								<p className="rounded-2xl bg-red-50 p-3 text-xs font-bold text-red-700 md:text-sm">
-									{error}
-								</p>
-							) : null}
-						</div>
+							<section className="rounded-2xl border border-slate-200 p-4">
+								<h4 className="text-sm font-black text-slate-950 md:text-base">
+									Table Settings
+								</h4>
+								<div className="mt-4 grid gap-3 md:grid-cols-2">
+									<ToggleRow
+										label="Allow Online Booking"
+										name="isActive"
+										defaultChecked={true}
+									/>
+								</div>
+							</section>
+						</form>
 
-						<footer className="flex items-center justify-between gap-3 border-slate-200 border-t bg-white px-6 py-4">
-							<button
-								type="button"
-								onClick={() => setOpen(false)}
-								className="min-h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-black text-slate-950 md:min-h-11 md:px-7 md:text-sm"
-							>
-								Close
-							</button>
-							<button
-								type="submit"
-								form="table-create"
-								disabled={pending}
-								className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white disabled:opacity-60 md:min-h-11 md:px-7 md:text-sm"
-							>
-								<Save className="size-4" aria-hidden="true" />
-								{pending ? "Adding..." : "Add Table"}
-							</button>
-						</footer>
-					</section>
-				</div>
-			) : null}
+						{error ? (
+							<p className="rounded-2xl bg-red-50 p-3 text-xs font-bold text-red-700 md:text-sm">
+								{error}
+							</p>
+						) : null}
+					</div>
+				</DialogBody>
+
+				<DialogFooter
+					bordered
+					className="flex items-center justify-between gap-3 px-6 py-4"
+				>
+					<button
+						type="button"
+						onClick={() => setOpen(false)}
+						className="min-h-10 rounded-xl border border-slate-200 bg-white px-5 text-xs font-black text-slate-950 md:min-h-11 md:px-7 md:text-sm"
+					>
+						Close
+					</button>
+					<button
+						type="submit"
+						form="table-create"
+						disabled={pending}
+						className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white disabled:opacity-60 md:min-h-11 md:px-7 md:text-sm"
+					>
+						<Save className="size-4" aria-hidden="true" />
+						{pending ? "Adding..." : "Add Table"}
+					</button>
+				</DialogFooter>
+			</Dialog>
 		</>
 	);
 }

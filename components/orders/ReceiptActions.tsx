@@ -511,12 +511,12 @@ export function ReceiptActions({
 
 	const btnClasses =
 		size === "sm"
-			? "h-8 items-center gap-1.5 rounded-md px-3 text-[11px]"
+			? "h-8 items-center gap-1.5 rounded-md px-3 text-xs"
 			: "min-h-9 items-center gap-2 rounded-xl px-3 text-xs";
 	const iconClasses = size === "sm" ? "size-3.5" : "size-4";
 	const printBtnClasses =
 		size === "sm"
-			? "size-8 items-center justify-center rounded-md text-[11px]"
+			? "size-8 items-center justify-center rounded-md text-xs"
 			: "size-9 items-center justify-center rounded-xl text-xs";
 
 	return (

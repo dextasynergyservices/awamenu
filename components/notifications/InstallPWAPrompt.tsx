@@ -55,7 +55,7 @@ export function InstallPWAPrompt() {
 	}
 
 	return (
-		<div className="relative mx-auto mb-4 max-w-2xl overflow-hidden rounded-2xl border border-blue-200 bg-linear-to-r from-blue-50 to-indigo-50 px-5 py-4 shadow-sm">
+		<div className="relative mx-auto mb-4 max-w-2xl overflow-hidden rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 shadow-sm">
 			<button
 				type="button"
 				onClick={() => setDismissed(true)}

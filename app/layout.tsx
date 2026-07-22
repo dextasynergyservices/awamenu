@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat, Open_Sans, Roboto } from "next/font/google";
 import "./globals.css";
+import { PosthogProvider } from "@/components/shared/PosthogProvider";
 import { cn } from "@/lib/utils";
 
 const montserrat = Montserrat({
@@ -57,7 +58,10 @@ export default function RootLayout({
 				<meta name="theme-color" content="#047857" />
 				<link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
 			</head>
-			<body className="min-h-full flex flex-col">{children}</body>
+			<body className="min-h-full flex flex-col">
+				<PosthogProvider />
+				{children}
+			</body>
 		</html>
 	);
 }

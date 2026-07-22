@@ -148,12 +148,15 @@ export default async function StaffDashboardPage({
 				</div>
 			}
 		>
-			<StaffOrderFeed
-				orders={serializedOrders}
-				reservations={pendingReservations}
-				currency={restaurant.currency}
-				slug={restaurant.slug}
-			/>
+			{/* ✅ Responsive container */}
+			<div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 md:py-8 lg:px-8">
+				<StaffOrderFeed
+					orders={serializedOrders}
+					reservations={pendingReservations}
+					currency={restaurant.currency}
+					slug={restaurant.slug}
+				/>
+			</div>
 		</Suspense>
 	);
 }

@@ -257,7 +257,7 @@ export function CustomerAccountDrawer({
 								<p className="text-xs font-black uppercase tracking-wide text-emerald-700">
 									Customer access
 								</p>
-								<h2 className="mt-1 text-xl font-black text-slate-950">
+								<h2 className="mt-1 text-sm md:text-xl font-black text-slate-950">
 									{hubData ? "Your AwaMenu" : "Verify your details"}
 								</h2>
 							</div>
@@ -287,7 +287,7 @@ export function CustomerAccountDrawer({
 								/>
 							) : otpRequested ? (
 								<form onSubmit={handleVerifyOtp} className="grid gap-4">
-									<p className="text-sm font-semibold leading-6 text-slate-600">
+									<p className="text-xs md:text-sm font-semibold leading-6 text-slate-600">
 										Enter the 6-digit code sent to{" "}
 										<span className="font-black text-slate-900">
 											{identifier}
@@ -300,7 +300,7 @@ export function CustomerAccountDrawer({
 												: "email"}
 										.
 									</p>
-									<label className="grid gap-2 text-sm font-black text-slate-700">
+									<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
 										Verification code
 										<input
 											value={code}
@@ -319,14 +319,14 @@ export function CustomerAccountDrawer({
 												setOtpRequested(false);
 												setCode("");
 											}}
-											className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700"
+											className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-xs md:text-sm font-black text-slate-700"
 										>
 											Back
 										</button>
 										<button
 											type="submit"
 											disabled={loading}
-											className="min-h-12 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-60"
+											className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
 										>
 											{loading ? "Checking..." : "Verify"}
 										</button>
@@ -342,7 +342,7 @@ export function CustomerAccountDrawer({
 												setChannel("whatsapp");
 											}}
 										>
-											<Phone className="size-4" />
+											<Phone className="size-3.5 md:size-4" />
 											Phone
 										</SegmentButton>
 										<SegmentButton
@@ -352,12 +352,12 @@ export function CustomerAccountDrawer({
 												setChannel("email");
 											}}
 										>
-											<Mail className="size-4" />
+											<Mail className="size-3.5 md:size-4" />
 											Email
 										</SegmentButton>
 									</div>
 
-									<label className="grid gap-2 text-sm font-black text-slate-700">
+									<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
 										{identityType === "phone"
 											? "Phone number"
 											: "Email address"}
@@ -372,7 +372,7 @@ export function CustomerAccountDrawer({
 
 									{identityType === "phone" ? (
 										<div className="grid gap-2">
-											<p className="text-sm font-black text-slate-700">
+											<p className="text-xs md:text-sm font-black text-slate-700">
 												Receive code through
 											</p>
 											<div className="grid grid-cols-2 gap-2">
@@ -396,7 +396,7 @@ export function CustomerAccountDrawer({
 									<button
 										type="submit"
 										disabled={loading}
-										className="min-h-12 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-60"
+										className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
 									>
 										{loading ? "Sending..." : "Send code"}
 									</button>
@@ -443,7 +443,7 @@ function CustomerHub({
 		<div className="pb-20">
 			<div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 p-3">
 				<div className="min-w-0">
-					<p className="truncate text-sm font-black text-emerald-950">
+					<p className="truncate text-xs md:text-sm font-black text-emerald-950">
 						{data.profile.fullName ?? identifier}
 					</p>
 					<p className="mt-1 text-xs font-semibold text-emerald-800">
@@ -504,7 +504,7 @@ function OrdersPanel({
 						>
 							<div className="flex items-start justify-between gap-3">
 								<div>
-									<p className="text-sm font-black text-slate-950">
+									<p className="text-xs md:text-sm font-black text-slate-950">
 										#{order.id.slice(-6).toUpperCase()} ·{" "}
 										{order.restaurant.name}
 									</p>
@@ -512,7 +512,7 @@ function OrdersPanel({
 										{formatDate(order.createdAt)}
 									</p>
 								</div>
-								<p className="text-sm font-black text-emerald-700">
+								<p className="text-xs md:text-sm font-black text-emerald-700">
 									{formatMoney(Number(order.total), order.restaurant.currency)}
 								</p>
 							</div>
@@ -569,7 +569,9 @@ function VendorsPanel({ data }: { data: CustomerHubData }) {
 						key={vendor.slug}
 						className="rounded-2xl border border-slate-100 bg-white p-4"
 					>
-						<p className="text-sm font-black text-slate-950">{vendor.name}</p>
+						<p className="text-xs md:text-sm font-black text-slate-950">
+							{vendor.name}
+						</p>
 						<p className="mt-1 text-xs font-semibold text-slate-500">
 							{vendor.orders} orders · {vendor.reservations} reservations
 						</p>
@@ -594,7 +596,9 @@ function RewardsPanel({ data }: { data: CustomerHubData }) {
 						key={reward.id}
 						className="rounded-2xl border border-slate-100 bg-white p-4"
 					>
-						<p className="text-sm font-black text-slate-950">{reward.title}</p>
+						<p className="text-xs md:text-sm font-black text-slate-950">
+							{reward.title}
+						</p>
 						<p className="mt-1 text-xs font-semibold text-slate-500">
 							{reward.description}
 						</p>
@@ -674,7 +678,7 @@ function ProfilePanel({
 				label="Email address"
 				defaultValue={profile.email}
 			/>
-			<label className="grid gap-2 text-sm font-black text-slate-700">
+			<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
 				Delivery address
 				<textarea
 					name="deliveryAddress"
@@ -685,15 +689,15 @@ function ProfilePanel({
 			</label>
 			<ErrorMessage message={error} />
 			{saved ? (
-				<p className="inline-flex items-center gap-2 text-sm font-black text-emerald-700">
-					<Check className="size-4" />
+				<p className="inline-flex items-center gap-2 text-xs md:text-sm font-black text-emerald-700">
+					<Check className="size-3.5 md:size-4" />
 					Profile saved
 				</p>
 			) : null}
 			<button
 				type="submit"
 				disabled={loading}
-				className="min-h-12 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-60"
+				className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
 			>
 				{loading ? "Saving..." : "Save profile"}
 			</button>
@@ -726,7 +730,7 @@ function CustomerOrderModal({
 						<p className="text-xs font-black uppercase tracking-wide text-emerald-700">
 							{order.restaurant.name}
 						</p>
-						<h3 className="mt-1 text-xl font-black text-slate-950">
+						<h3 className="mt-1 text-sm md:text-xl font-black text-slate-950">
 							Order #{order.id.slice(-6).toUpperCase()}
 						</h3>
 					</div>
@@ -743,19 +747,19 @@ function CustomerOrderModal({
 					<SummaryCard label="Payment" value={order.paymentStatus} />
 				</div>
 				{order.status === "CANCELLED" && order.cancellationNote ? (
-					<div className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-900">
+					<div className="mt-3 rounded-2xl bg-red-50 p-3 text-xs md:text-sm font-semibold text-red-900">
 						<p className="text-xs font-black uppercase tracking-wide text-red-700">
 							Decline reason
 						</p>
 						<p className="mt-1">{order.cancellationNote}</p>
-						<div className="mt-3 grid gap-1 rounded-xl bg-white/70 p-3 text-sm font-bold leading-6">
+						<div className="mt-3 grid gap-1 rounded-xl bg-white/70 p-3 text-xs md:text-sm font-bold leading-6">
 							<p>Phone: {order.restaurant.phone ?? "Not provided"}</p>
 							<p>Address: {order.restaurant.address ?? "Not provided"}</p>
 						</div>
 					</div>
 				) : null}
 				{order.status !== "CANCELLED" && order.statusNote ? (
-					<div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">
+					<div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs md:text-sm font-semibold text-emerald-900">
 						{order.statusNote}
 					</div>
 				) : null}
@@ -766,7 +770,7 @@ function CustomerOrderModal({
 							className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 p-3"
 						>
 							<div>
-								<p className="font-black text-slate-950">
+								<p className="text-xs md:text-sm font-black text-slate-950">
 									{item.name} x{item.qty}
 								</p>
 								{item.notes ? (
@@ -775,7 +779,7 @@ function CustomerOrderModal({
 									</p>
 								) : null}
 							</div>
-							<p className="font-black text-emerald-700">
+							<p className="text-xs md:text-sm font-black text-emerald-700">
 								{formatMoney(
 									Number(item.unitPrice) * item.qty,
 									order.restaurant.currency,
@@ -785,14 +789,18 @@ function CustomerOrderModal({
 					))}
 				</div>
 				<div className="mt-4 flex items-center justify-between border-slate-100 border-t pt-4">
-					<span className="font-black text-slate-600">Subtotal</span>
-					<span className="font-black text-slate-950">
+					<span className="text-xs md:text-sm font-black text-slate-600">
+						Subtotal
+					</span>
+					<span className="text-xs md:text-sm font-black text-slate-950">
 						{formatMoney(subtotal, order.restaurant.currency)}
 					</span>
 				</div>
 				<div className="mt-2 flex items-center justify-between">
-					<span className="font-black text-slate-600">Total</span>
-					<span className="text-xl font-black text-emerald-700">
+					<span className="text-xs md:text-sm font-black text-slate-600">
+						Total
+					</span>
+					<span className="text-lg md:text-xl font-black text-emerald-700">
 						{formatMoney(total, order.restaurant.currency)}
 					</span>
 				</div>
@@ -871,7 +879,7 @@ function SegmentButton({
 			type="button"
 			onClick={onClick}
 			className={cn(
-				"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black",
+				"inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs md:text-sm font-black",
 				active
 					? "bg-white text-emerald-700 shadow-sm"
 					: "text-slate-500 hover:text-slate-700",
@@ -892,7 +900,7 @@ function ProfileField({
 	defaultValue: string | null;
 }) {
 	return (
-		<label className="grid gap-2 text-sm font-black text-slate-700">
+		<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
 			{label}
 			<input
 				name={name}
@@ -915,7 +923,9 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="rounded-2xl bg-slate-50 p-3">
 			<p className="text-xs font-black text-slate-500">{label}</p>
-			<p className="mt-1 text-sm font-black text-slate-950">{value}</p>
+			<p className="mt-1 text-xs md:text-sm font-black text-slate-950">
+				{value}
+			</p>
 		</div>
 	);
 }
@@ -923,8 +933,10 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 function EmptyState({ title, text }: { title: string; text: string }) {
 	return (
 		<div className="rounded-3xl border border-dashed border-slate-200 p-8 text-center">
-			<p className="text-base font-black text-slate-950">{title}</p>
-			<p className="mt-2 text-sm font-semibold text-slate-500">{text}</p>
+			<p className="text-sm md:text-base font-black text-slate-950">{title}</p>
+			<p className="mt-2 text-xs md:text-sm font-semibold text-slate-500">
+				{text}
+			</p>
 		</div>
 	);
 }
@@ -932,7 +944,7 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function ErrorMessage({ message }: { message: string }) {
 	if (!message) return null;
 	return (
-		<p className="rounded-xl bg-red-50 p-3 text-sm font-black text-red-700">
+		<p className="rounded-xl bg-red-50 p-3 text-xs md:text-sm font-black text-red-700">
 			{message}
 		</p>
 	);

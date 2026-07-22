@@ -26,10 +26,10 @@ export function CartItem({ item, currency }: CartItemProps) {
 		<div className="rounded-2xl border border-slate-100 bg-white p-4">
 			<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
 				<div className="min-w-0">
-					<p className="truncate text-base font-semibold text-slate-950">
+					<p className="truncate text-sm font-semibold text-slate-950">
 						{item.name}
 					</p>
-					<p className="mt-1 text-sm font-semibold text-emerald-700">
+					<p className="mt-1 text-xs font-semibold text-emerald-700">
 						{formatMoney(item.price * item.quantity, currency)}
 					</p>
 				</div>
@@ -52,7 +52,7 @@ export function CartItem({ item, currency }: CartItemProps) {
 					>
 						<Minus className="size-4" aria-hidden="true" />
 					</button>
-					<span className="min-w-8 text-center text-sm font-semibold">
+					<span className="min-w-8 text-center text-xs font-semibold">
 						{item.quantity}
 					</span>
 					<button
@@ -66,7 +66,7 @@ export function CartItem({ item, currency }: CartItemProps) {
 				</div>
 			</div>
 			<label className="mt-4 block">
-				<span className="text-sm font-semibold text-slate-700">Item notes</span>
+				<span className="text-xs font-semibold text-slate-700">Item notes</span>
 				<textarea
 					value={item.notes}
 					onChange={(event) => setNotes(item.id, event.target.value)}

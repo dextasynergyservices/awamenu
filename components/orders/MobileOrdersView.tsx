@@ -228,10 +228,10 @@ export function MobileOrdersView({
 	return (
 		<>
 			{/* ── Search ─────────────────────────────────── */}
-			<div className="flex items-center gap-2">
-				<div className="relative flex-1">
+			<div className="flex min-w-0 items-center gap-2">
+				<div className="relative min-w-0 flex-1">
 					<Search
-						className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400"
+						className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-slate-400"
 						aria-hidden="true"
 					/>
 					<input
@@ -242,7 +242,7 @@ export function MobileOrdersView({
 							setCurrentPage(0);
 						}}
 						placeholder="Search orders by ID, customer, phone, email..."
-						className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+						className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-base font-medium text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
 					/>
 				</div>
 				<button
@@ -417,20 +417,20 @@ function OrderCard({
 	const nextStatus = getNextStatus(order.status, order.type);
 
 	return (
-		<article className="relative rounded-2xl border border-slate-100 bg-white p-3.5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+		<article className="relative min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-100 bg-white p-3.5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
 			{/* Top row: ID + badges + 3-dot */}
-			<div className="flex items-start justify-between gap-2">
-				<div className="flex flex-wrap items-center gap-1.5">
+			<div className="flex min-w-0 items-start justify-between gap-2">
+				<div className="flex min-w-0 flex-wrap items-center gap-1.5">
 					<h2 className="text-sm font-black text-slate-950">
 						#{order.id.slice(-6).toUpperCase()}
 					</h2>
-					<span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+					<span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-black uppercase tracking-wide text-emerald-700">
 						{order.type.replace("_", " ")}
 					</span>
-					<span className="rounded-md bg-yellow-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-yellow-700">
+					<span className="rounded-md bg-yellow-50 px-2 py-0.5 text-xs font-black uppercase tracking-wide text-yellow-700">
 						{order.paymentStatus}
 					</span>
-					<span className="text-[10px] font-bold text-slate-400">
+					<span className="text-xs font-bold text-slate-400">
 						{order.items.length} item{order.items.length !== 1 ? "s" : ""}
 					</span>
 				</div>
@@ -474,7 +474,7 @@ function OrderCard({
 					<p className="text-xs font-bold text-slate-700">
 						{order.customerName}
 					</p>
-					<p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-slate-400">
+					<p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-400">
 						<Phone className="size-3" aria-hidden="true" />
 						{order.customerPhone || "No phone provided"}
 					</p>
@@ -483,7 +483,7 @@ function OrderCard({
 					<p className="text-sm font-black text-emerald-700">
 						{formatMoney(Number(order.total), currency)}
 					</p>
-					<p className="mt-0.5 text-[10px] font-medium text-slate-400">
+					<p className="mt-0.5 text-xs font-medium text-slate-400">
 						{timeAgo(order.createdAt)}
 					</p>
 				</div>
@@ -539,7 +539,7 @@ function OrderCard({
 									</div>
 									<span
 										className={cn(
-											"mt-1 text-[9px] font-bold",
+											"mt-1 text-xs font-bold",
 											done ? "text-emerald-700" : "text-slate-400",
 											isActive && "font-black text-emerald-700",
 										)}
@@ -558,7 +558,7 @@ function OrderCard({
 						{orderStatusLabel(order)}
 					</p>
 					{order.cancellationNote ? (
-						<p className="mt-1 text-[11px] font-bold text-red-800">
+						<p className="mt-1 text-xs font-bold text-red-800">
 							{order.cancellationNote}
 						</p>
 					) : null}
@@ -576,7 +576,7 @@ function OrderCard({
 				<button
 					type="button"
 					onClick={onViewDetails}
-					className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+					className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
 				>
 					<FileText className="size-3" aria-hidden="true" />
 					View Details
@@ -598,7 +598,7 @@ function OrderCard({
 						<SubmitButton
 							loadingText="..."
 							successText="Completed"
-							className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 text-[11px] font-bold text-white"
+							className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 text-xs font-bold text-white"
 						>
 							<Check className="size-3" aria-hidden="true" />
 							{nextStatusLabel}
@@ -654,14 +654,14 @@ function OrderDetailModal({
 								<h2 className="text-sm font-black text-slate-950">
 									Order #{order.id.slice(-6).toUpperCase()}
 								</h2>
-								<span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+								<span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-black uppercase tracking-wide text-emerald-700">
 									{order.type.replace("_", " ")}
 								</span>
-								<span className="rounded-md bg-yellow-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-yellow-700">
+								<span className="rounded-md bg-yellow-50 px-2 py-0.5 text-xs font-black uppercase tracking-wide text-yellow-700">
 									{order.paymentStatus}
 								</span>
 							</div>
-							<p className="mt-1 text-[11px] font-medium text-slate-400">
+							<p className="mt-1 text-xs font-medium text-slate-400">
 								{new Date(order.createdAt).toLocaleString("en-NG", {
 									dateStyle: "medium",
 									timeStyle: "short",
@@ -681,7 +681,7 @@ function OrderDetailModal({
 					{order.status !== "CANCELLED" &&
 					order.status !== "PENDING_PAYMENT" ? (
 						<div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-							<p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+							<p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-400">
 								Order Progress
 							</p>
 							<div className="flex items-center">
@@ -738,7 +738,7 @@ function OrderDetailModal({
 											</div>
 											<span
 												className={cn(
-													"mt-1 text-[10px] font-bold",
+													"mt-1 text-xs font-bold",
 													done ? "text-emerald-700" : "text-slate-400",
 													isActive && "font-black text-emerald-700",
 												)}
@@ -780,7 +780,7 @@ function OrderDetailModal({
 
 					{/* Customer info */}
 					<div className="mt-4 rounded-xl border border-slate-100 p-3">
-						<p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+						<p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-400">
 							Customer Details
 						</p>
 						<div className="grid gap-1.5">
@@ -884,7 +884,7 @@ function OrderDetailModal({
 
 					{/* Order items */}
 					<div className="mt-4 rounded-xl border border-slate-100 p-3">
-						<p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">
+						<p className="mb-2 text-xs font-black uppercase tracking-wider text-slate-400">
 							Order Items ({order.items.length})
 						</p>
 						<div className="grid gap-2">
@@ -901,7 +901,7 @@ function OrderDetailModal({
 											</span>
 										</p>
 										{item.notes ? (
-											<p className="mt-0.5 text-[10px] font-medium text-slate-500">
+											<p className="mt-0.5 text-xs font-medium text-slate-500">
 												Note: {item.notes}
 											</p>
 										) : null}
@@ -923,7 +923,7 @@ function OrderDetailModal({
 					{/* Delivery notes */}
 					{order.deliveryNotes ? (
 						<div className="mt-4 rounded-xl bg-yellow-50 p-3">
-							<p className="text-[10px] font-black uppercase tracking-wider text-yellow-700">
+							<p className="text-xs font-black uppercase tracking-wider text-yellow-700">
 								Order Note
 							</p>
 							<p className="mt-1 text-xs font-bold text-yellow-800">
@@ -954,7 +954,7 @@ function OrderDetailModal({
 									className="flex w-full items-center justify-between text-xs font-black text-slate-800"
 								>
 									View Order Timeline
-									<ChevronRight className="size-4 text-slate-400" />
+									<ChevronRight className="size-3.5 text-slate-400" />
 								</button>
 							</div>
 						) : null}

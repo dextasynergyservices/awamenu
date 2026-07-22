@@ -35,7 +35,7 @@ export function OrderLookupForm({
 		>
 			<label
 				htmlFor={`order-lookup-${compact ? "desktop" : "mobile"}`}
-				className="text-sm font-black text-slate-700"
+				className="text-xs md:text-sm font-black text-slate-700"
 			>
 				Track your order or reservation
 			</label>
@@ -47,15 +47,15 @@ export function OrderLookupForm({
 						value={trackingCode}
 						onChange={(event) => setTrackingCode(event.target.value)}
 						placeholder="Enter tracking code"
-						className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-10 text-base font-bold outline-none focus:border-emerald-700"
+						className="min-h-9 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-10 text-base font-bold outline-none focus:border-emerald-700 md:text-lg"
 					/>
 				</span>
 				<button
 					type="submit"
-					className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 text-white"
+					className="inline-flex min-h-9 items-center justify-center rounded-xl bg-emerald-700  px-4 text-white"
 					aria-label="Track order"
 				>
-					<ArrowRight className="size-5" aria-hidden="true" />
+					<ArrowRight className="size-3.5 md:size-5" aria-hidden="true" />
 				</button>
 			</div>
 		</form>

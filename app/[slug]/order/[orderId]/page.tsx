@@ -2,6 +2,7 @@ import { OrderStatus, PaymentPolicy, PaymentStatus } from "@prisma/client";
 import { Check, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { DineInPayNowButton } from "@/components/orders/DineInPayNowButton";
 import { OrderCartFinalizer } from "@/components/orders/OrderCartFinalizer";
 import { OrderStatusPoller } from "@/components/orders/OrderStatusPoller";
@@ -9,6 +10,8 @@ import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
 import { verifyOrderPaymentReference } from "@/lib/payments";
+import { isOrderRatingEligible } from "@/lib/rating";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 type OrderStatusPageProps = {
 	params: Promise<{ slug: string; orderId: string }>;
@@ -197,13 +200,13 @@ function OrderStatusNotice({
 	return (
 		<div className={`mt-5 rounded-2xl border p-4 ${notice.className}`}>
 			<p
-				className={`text-sm font-black uppercase tracking-wide ${notice.titleClassName}`}
+				className={`text-xs font-black uppercase tracking-wide ${notice.titleClassName}`}
 			>
 				{notice.title}
 			</p>
-			<p className="mt-2 text-sm font-bold leading-6">{notice.message}</p>
+			<p className="mt-2 text-xs font-bold leading-6">{notice.message}</p>
 			{contact ? (
-				<div className="mt-3 grid gap-1 rounded-xl bg-white/70 p-3 text-sm font-bold leading-6">
+				<div className="mt-3 grid gap-1 rounded-xl bg-white/70 p-3 text-xs font-bold leading-6">
 					<p>Phone: {contact.phone ?? "Not provided"}</p>
 					<p>Address: {contact.address ?? "Not provided"}</p>
 				</div>
@@ -244,6 +247,9 @@ export default async function OrderStatusPage({
 				currency: true,
 				phone: true,
 				address: true,
+				subscription: {
+					select: { status: true, currentPeriodEnd: true },
+				},
 				bankAccounts: {
 					where: { isActive: true },
 					select: {
@@ -270,6 +276,7 @@ export default async function OrderStatusPage({
 				method: true,
 			},
 		},
+		rating: { select: { id: true } },
 	} as const;
 
 	const exactOrder = await db.order.findUnique({
@@ -320,6 +327,10 @@ export default async function OrderStatusPage({
 		);
 	}
 
+	if (!isSubscriptionActive(order.restaurant.subscription)) {
+		return <SubscriptionInactive restaurantName={order.restaurant.name} />;
+	}
+
 	// If the current orderId in the URL doesn't match the canonical full ID, redirect to the canonical URL
 	if (orderId !== order.id) {
 		const searchParamsObj = await searchParams;
@@ -367,6 +378,7 @@ export default async function OrderStatusPage({
 		!isDeclined && order.status !== OrderStatus.PENDING_PAYMENT;
 	const orderCode = `#${order.id.slice(-6).toUpperCase()}`;
 	const isPendingApproval = order.status === OrderStatus.PENDING_APPROVAL;
+	const canRate = !order.rating && isOrderRatingEligible(order);
 
 	if (isPendingApproval) {
 		return (
@@ -376,10 +388,10 @@ export default async function OrderStatusPage({
 					<div className="size-20 rounded-full bg-emerald-100 flex items-center justify-center mb-6">
 						<Loader2 className="size-10 text-emerald-600 animate-spin" />
 					</div>
-					<h1 className="text-2xl font-black text-slate-950 mb-3">
+					<h1 className="text-sm font-black text-slate-950 mb-3 sm:text-2xl">
 						Waiting for staff to confirm availability...
 					</h1>
-					<p className="text-sm font-medium text-slate-600 mb-8">
+					<p className="text-xs font-medium text-slate-600 mb-8 sm:text-sm">
 						Please wait while we confirm your order.
 					</p>
 
@@ -387,12 +399,12 @@ export default async function OrderStatusPage({
 						<p className="text-xs font-black uppercase tracking-wide text-slate-500 mb-2">
 							Order Code
 						</p>
-						<p className="text-3xl font-black text-slate-950">{orderCode}</p>
+						<p className="text-2xl font-black text-slate-950">{orderCode}</p>
 					</div>
 
 					<Link
 						href={`/${order.restaurant.slug}`}
-						className="mt-8 text-sm font-black text-emerald-700 hover:underline"
+						className="mt-8 text-xs font-black text-emerald-700 hover:underline sm:text-sm"
 					>
 						Back to menu
 					</Link>
@@ -409,10 +421,10 @@ export default async function OrderStatusPage({
 					<div className="size-20 rounded-full bg-emerald-100 flex items-center justify-center mb-6">
 						<Loader2 className="size-10 text-emerald-600 animate-spin" />
 					</div>
-					<h1 className="text-2xl font-black text-slate-950 mb-3">
+					<h1 className="text-sm font-black text-slate-950 mb-3 sm:text-2xl">
 						Waiting for Confirmation
 					</h1>
-					<p className="text-sm font-medium text-slate-600 mb-8">
+					<p className="text-xs font-medium text-slate-600 mb-8 sm:text-sm">
 						Please complete your{" "}
 						<strong className="text-slate-900 font-bold">
 							{order.dineInPaymentMethod === "CASH" ? "cash" : "POS/transfer"}
@@ -428,12 +440,12 @@ export default async function OrderStatusPage({
 						<p className="text-xs font-black uppercase tracking-wide text-slate-500 mb-2">
 							Order Code
 						</p>
-						<p className="text-3xl font-black text-slate-950">{orderCode}</p>
+						<p className="text-2xl font-black text-slate-950">{orderCode}</p>
 					</div>
 
 					<Link
 						href={`/${order.restaurant.slug}`}
-						className="mt-8 text-sm font-black text-emerald-700 hover:underline"
+						className="mt-8 text-xs font-black text-emerald-700 hover:underline sm:text-sm"
 					>
 						Back to menu
 					</Link>
@@ -452,19 +464,19 @@ export default async function OrderStatusPage({
 			<div className="mx-auto max-w-2xl">
 				<Link
 					href={`/${order.restaurant.slug}`}
-					className="text-sm font-black text-emerald-700"
+					className="text-xs font-black text-emerald-700 sm:text-sm"
 				>
 					Back to menu
 				</Link>
 				<section className="mt-5 rounded-[2rem] border border-slate-100 bg-white p-6 md:p-8 shadow-xl shadow-slate-200/40">
 					<div className="mb-6">
-						<p className="text-sm font-bold text-slate-500">
+						<p className="text-xs font-bold text-slate-500 sm:text-sm">
 							{order.restaurant.name}
 						</p>
-						<h1 className="mt-1 text-3xl font-black tracking-tight text-slate-900 md:text-4xl">
+						<h1 className="mt-1 text-sm font-black tracking-tight text-slate-900 sm:text-3xl md:text-4xl">
 							Order {orderCode}
 						</h1>
-						<p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
+						<p className="mt-2 text-xs font-medium leading-relaxed text-slate-600 sm:text-sm">
 							{getOrderNumberMessage(order.type)}
 						</p>
 					</div>
@@ -520,13 +532,13 @@ export default async function OrderStatusPage({
 							<p className="text-xs font-black uppercase tracking-wider text-emerald-800">
 								Restaurant update
 							</p>
-							<p className="mt-1.5 text-sm font-bold leading-relaxed text-slate-700">
+							<p className="mt-1.5 text-xs font-bold leading-relaxed text-slate-700">
 								{order.statusNote}
 							</p>
 						</div>
 					) : null}
 					{order.type === "DINE_IN" ? (
-						<p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-700">
+						<p className="mt-4 rounded-2xl bg-slate-50 p-4 text-xs font-bold text-slate-700">
 							{order.dineInServiceMode === "SERVED_BY_WAITER"
 								? `Served by ${order.waiterName ?? "staff"}`
 								: "Self-served"}
@@ -551,12 +563,12 @@ export default async function OrderStatusPage({
 								className="flex items-center justify-between gap-3 border-slate-100 border-b pb-3 last:border-b-0"
 							>
 								<div>
-									<p className="font-black">{item.name}</p>
-									<p className="text-sm font-medium text-slate-500">
+									<p className="text-sm font-black">{item.name}</p>
+									<p className="text-xs font-medium text-slate-500">
 										x{item.qty}
 									</p>
 								</div>
-								<p className="font-black text-emerald-700">
+								<p className="text-sm font-black text-emerald-700">
 									{formatMoney(
 										Number(item.unitPrice) * item.qty,
 										order.restaurant.currency,
@@ -566,18 +578,33 @@ export default async function OrderStatusPage({
 						))}
 					</div>
 					<div className="mt-6 flex items-center justify-between border-slate-100 border-t pt-4">
-						<span className="font-bold text-slate-600">Total</span>
-						<span className="text-2xl font-black">
+						<span className="text-xs font-bold text-slate-600">Total</span>
+						<span className="text-lg font-black sm:text-2xl">
 							{formatMoney(Number(order.total), order.restaurant.currency)}
 						</span>
 					</div>
 					{canAddMore ? (
 						<Link
 							href={`/${order.restaurant.slug}?orderId=${order.id}`}
-							className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white"
+							className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-xs font-semibold text-white sm:text-sm"
 						>
 							Add More Items
 						</Link>
+					) : null}
+					{canRate ? (
+						<Link
+							href={`/${order.restaurant.slug}/rate/${order.id}`}
+							className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl border-2 border-emerald-700 bg-white px-4 text-xs font-black text-emerald-700 hover:bg-emerald-50 sm:text-sm"
+						>
+							Rate your experience
+						</Link>
+					) : null}
+					{order.rating ? (
+						<div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-center">
+							<p className="text-xs font-black text-emerald-800">
+								Thanks for rating your experience!
+							</p>
+						</div>
 					) : null}
 				</section>
 			</div>

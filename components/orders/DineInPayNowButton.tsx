@@ -3,6 +3,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { initiateOrderPaymentAction } from "@/actions/order.actions";
+import { Dialog, DialogBody, DialogTitle } from "@/components/ui/Dialog";
 import { DineInPaymentChoiceModal } from "./DineInPaymentChoiceModal";
 
 type Props = {
@@ -122,34 +123,32 @@ function PayLaterModal({
 	isOpen: boolean;
 	onClose: () => void;
 }) {
-	if (!isOpen) return null;
-
 	return (
-		<div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
-			<button
-				type="button"
-				onClick={onClose}
-				className="absolute inset-0 cursor-default"
-				aria-label="Close"
-			/>
-			<div className="relative z-10 w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl">
-				<div className="p-6 text-center">
-					<div className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-100 mb-4">
-						<CheckCircle2 className="size-6 text-emerald-600" />
-					</div>
-					<h3 className="text-xl font-black text-slate-950 mb-2">Pay Later</h3>
-					<p className="text-sm font-medium text-slate-600 mb-6">
-						You can pay the staff when you&apos;re eating. Enjoy your meal!
-					</p>
-					<button
-						type="button"
-						onClick={onClose}
-						className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-black text-white hover:bg-slate-800 transition-colors"
-					>
-						Got it
-					</button>
+		<Dialog
+			open={isOpen}
+			onOpenChange={(next) => {
+				if (!next) onClose();
+			}}
+			size="sm"
+		>
+			<DialogBody className="pt-4 text-center sm:pt-5">
+				<div className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-100 mb-4">
+					<CheckCircle2 className="size-6 text-emerald-600" />
 				</div>
-			</div>
-		</div>
+				<DialogTitle className="text-xl font-black text-slate-950 mb-2">
+					Pay Later
+				</DialogTitle>
+				<p className="text-sm font-medium text-slate-600 mb-6">
+					You can pay the staff when you&apos;re eating. Enjoy your meal!
+				</p>
+				<button
+					type="button"
+					onClick={onClose}
+					className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-black text-white hover:bg-slate-800 transition-colors"
+				>
+					Got it
+				</button>
+			</DialogBody>
+		</Dialog>
 	);
 }

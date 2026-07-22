@@ -1,6 +1,14 @@
 "use client";
 
-import { Pencil, Plus, Trash2, Upload, Utensils, X } from "lucide-react";
+import {
+	LayoutGrid,
+	Pencil,
+	Plus,
+	Trash2,
+	Upload,
+	Utensils,
+	X,
+} from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import {
@@ -8,12 +16,15 @@ import {
 	deleteMenuItemAction,
 	updateMenuItemAction,
 } from "@/actions/menu.actions";
+import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
 
 type MenuEditorProps = {
 	restaurantId: string;
 	slug: string;
 	canCreateItem: boolean;
+	activeTemplate: string;
+	planTier: string;
 	categories: Array<{
 		id: string;
 		name: string;
@@ -28,6 +39,13 @@ type MenuEditorProps = {
 			isTodaySpecial: boolean;
 		}>;
 	}>;
+};
+
+const templateLabels: Record<string, string> = {
+	classic: "Classic",
+	grid: "Grid",
+	compact: "Compact",
+	magazine: "Magazine",
 };
 
 const ITEMS_PER_PAGE = 5;
@@ -168,6 +186,8 @@ export function MenuEditor({
 	restaurantId,
 	slug,
 	canCreateItem,
+	activeTemplate,
+	planTier,
 	categories,
 }: MenuEditorProps) {
 	const firstCategory = categories[0];
@@ -182,6 +202,7 @@ export function MenuEditor({
 	const [editingItem, setEditingItem] = useState<(typeof items)[number] | null>(
 		null,
 	);
+	const [layoutModalOpen, setLayoutModalOpen] = useState(false);
 	const pageCount = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
 	const visibleItems = items.slice(
 		(itemPage - 1) * ITEMS_PER_PAGE,
@@ -197,16 +218,26 @@ export function MenuEditor({
 						Create, edit, publish, and upload WebP photos for menu items.
 					</p>
 				</div>
-				<FormSubmitButton
-					form="new-menu-item-form"
-					disabled={!canCreateItem || categories.length === 0}
-					loadingText="Creating..."
-					successText="Created"
-					className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 disabled:opacity-50"
-				>
-					<Plus className="size-4" aria-hidden="true" />
-					Add new item
-				</FormSubmitButton>
+				<div className="flex shrink-0 items-center gap-2">
+					<button
+						type="button"
+						onClick={() => setLayoutModalOpen(true)}
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-sm font-black text-slate-700 hover:bg-slate-50"
+					>
+						<LayoutGrid className="size-4" aria-hidden="true" />
+						Layout: {templateLabels[activeTemplate] ?? "Classic"}
+					</button>
+					<FormSubmitButton
+						form="new-menu-item-form"
+						disabled={!canCreateItem || categories.length === 0}
+						loadingText="Creating..."
+						successText="Created"
+						className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 disabled:opacity-50"
+					>
+						<Plus className="size-4" aria-hidden="true" />
+						Add new item
+					</FormSubmitButton>
+				</div>
 			</div>
 
 			<form
@@ -575,6 +606,15 @@ export function MenuEditor({
 						</form>
 					</div>
 				</div>
+			) : null}
+
+			{layoutModalOpen ? (
+				<MenuLayoutModal
+					slug={slug}
+					activeTemplate={activeTemplate}
+					planTier={planTier}
+					onClose={() => setLayoutModalOpen(false)}
+				/>
 			) : null}
 		</section>
 	);

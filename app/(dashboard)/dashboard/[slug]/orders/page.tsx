@@ -200,7 +200,7 @@ export default async function OrdersPage({
 		.reduce((total, order) => total + Number(order.total), 0);
 
 	return (
-		<section className="grid gap-5">
+		<section className="grid min-w-0 max-w-full gap-5 overflow-hidden">
 			<AdminOrdersPoller />
 
 			<div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_auto] md:gap-6">
@@ -234,14 +234,14 @@ export default async function OrdersPage({
 
 			<div className="md:hidden">
 				<p className="text-sm font-medium text-slate-500">{restaurant.name}</p>
-				<h1 className="mt-1 text-xl font-black text-slate-950">Orders</h1>
+				<h1 className="mt-1 text-sm font-black text-slate-950">Orders</h1>
 				<p className="mt-1 text-xs font-medium text-slate-500">
 					Live feed for new and active customer orders.
 				</p>
 			</div>
 
-			<div className="grid gap-4">
-				<div className="rounded-[1.35rem] border border-slate-100 bg-white p-4 shadow-[0_16px_50px_rgba(15,23,42,0.04)] md:p-5">
+			<div className="grid min-w-0 gap-4">
+				<div className="min-w-0 rounded-[1.35rem] border border-slate-100 bg-white p-4 shadow-[0_16px_50px_rgba(15,23,42,0.04)] md:p-5">
 					<div className="hidden md:block">
 						<div>
 							<h2 className="text-2xl font-black text-slate-950">Orders</h2>
@@ -250,7 +250,7 @@ export default async function OrdersPage({
 
 					<form
 						action={`/dashboard/${restaurant.slug}/orders`}
-						className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_7rem_8rem]"
+						className="mt-4 hidden gap-3 md:grid md:grid-cols-[minmax(0,1fr)_7rem_8rem]"
 					>
 						<label className="relative">
 							<span className="sr-only">
@@ -264,7 +264,7 @@ export default async function OrdersPage({
 								name="q"
 								defaultValue={rawSearch}
 								placeholder="Search by order code, customer name, phone, or email..."
-								className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-11 text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-emerald-700"
+								className="min-h-12 w-full rounded-xl border border-slate-200 bg-white pr-3 pl-11 text-base font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-emerald-700 md:text-sm"
 							/>
 						</label>
 						<details className="group relative">
@@ -278,7 +278,7 @@ export default async function OrdersPage({
 									<select
 										name="status"
 										defaultValue={selectedStatus}
-										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-emerald-700"
+										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-600 outline-none focus:border-emerald-700 md:text-sm"
 									>
 										<option value="">All statuses</option>
 										{Object.values(OrderStatus).map((status) => (
@@ -293,7 +293,7 @@ export default async function OrdersPage({
 									<select
 										name="type"
 										defaultValue={selectedType}
-										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-emerald-700"
+										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-600 outline-none focus:border-emerald-700 md:text-sm"
 									>
 										<option value="">All types</option>
 										{Object.values(OrderType).map((type) => (
@@ -309,13 +309,13 @@ export default async function OrdersPage({
 										name="dateFrom"
 										type="date"
 										defaultValue={query.dateFrom ?? ""}
-										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-emerald-700"
+										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-600 outline-none focus:border-emerald-700 md:text-sm"
 									/>
 									<input
 										name="dateTo"
 										type="date"
 										defaultValue={query.dateTo ?? ""}
-										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none focus:border-emerald-700"
+										className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-semibold text-slate-600 outline-none focus:border-emerald-700 md:text-sm"
 									/>
 								</div>
 							</div>
@@ -329,7 +329,7 @@ export default async function OrdersPage({
 					</form>
 
 					{search ? (
-						<div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+						<div className="mt-3 hidden flex-wrap items-center justify-between gap-2 md:flex">
 							<p className="text-xs font-semibold text-slate-500">
 								Showing orders matching #{search.toUpperCase()}.
 							</p>
@@ -342,7 +342,7 @@ export default async function OrdersPage({
 						</div>
 					) : null}
 
-					<div className="mt-4 grid gap-3 md:hidden">
+					<div className="mt-4 grid min-w-0 gap-3 md:hidden">
 						<MobileOrdersView
 							orders={serializedOrders}
 							currency={restaurant.currency}

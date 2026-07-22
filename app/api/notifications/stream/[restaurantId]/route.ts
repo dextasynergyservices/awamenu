@@ -1,7 +1,14 @@
 import * as Sentry from "@sentry/nextjs";
+import { getSession } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { enforceRateLimit, getClientIpFromRequest } from "@/lib/ratelimit";
 import { getRedis, notificationChannelKey } from "@/lib/redis";
+import { getStaffSession } from "@/lib/staff-auth";
 
-export const runtime = "edge";
+// Auth (staff-session cookie via node:crypto, better-auth session via
+// Prisma) requires the Node.js runtime — it also gives this route longer-
+// lived connections than the Edge runtime's 60s cap on Vercel Hobby.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
@@ -13,13 +20,42 @@ export const dynamic = "force-dynamic";
  * Polling interval: 2 seconds (a good balance between latency and cost).
  */
 export async function GET(
-	_request: Request,
+	request: Request,
 	{ params }: { params: Promise<{ restaurantId: string }> },
 ) {
 	const { restaurantId } = await params;
 
 	if (!restaurantId) {
 		return new Response("Missing restaurantId", { status: 400 });
+	}
+
+	const [session, staffSession] = await Promise.all([
+		getSession(),
+		getStaffSession(),
+	]);
+
+	const isAuthorizedStaff = staffSession?.restaurantId === restaurantId;
+	let isAuthorizedAdmin = false;
+
+	if (!isAuthorizedStaff && session?.user) {
+		const restaurant = await db.restaurant.findFirst({
+			where: { id: restaurantId, ownerId: session.user.id },
+			select: { id: true },
+		});
+		isAuthorizedAdmin = Boolean(restaurant);
+	}
+
+	if (!isAuthorizedStaff && !isAuthorizedAdmin) {
+		return new Response("Unauthorized", { status: 401 });
+	}
+
+	try {
+		await enforceRateLimit(
+			"sse",
+			`${getClientIpFromRequest(request)}:${restaurantId}`,
+		);
+	} catch {
+		return new Response("Too many requests", { status: 429 });
 	}
 
 	const redis = getRedis();

@@ -27,11 +27,13 @@ export default async function MenuBuilderPage({
 			name: true,
 			slug: true,
 			currency: true,
+			activeTemplate: true,
 			subscription: {
 				select: {
 					plan: {
 						select: {
 							name: true,
+							tier: true,
 							maxCategories: true,
 							maxMenuItems: true,
 						},
@@ -78,11 +80,17 @@ export default async function MenuBuilderPage({
 		? null
 		: await db.plan.findUnique({
 				where: { tier: "FREE" },
-				select: { name: true, maxCategories: true, maxMenuItems: true },
+				select: {
+					name: true,
+					tier: true,
+					maxCategories: true,
+					maxMenuItems: true,
+				},
 			});
 	const plan = restaurant.subscription?.plan ??
 		freePlan ?? {
 			name: "Free",
+			tier: "FREE" as const,
 			maxCategories: 2,
 			maxMenuItems: 8,
 		};
@@ -129,6 +137,8 @@ export default async function MenuBuilderPage({
 				bannerItems={bannerItems}
 				maxCategories={plan.maxCategories}
 				maxMenuItems={plan.maxMenuItems}
+				activeTemplate={restaurant.activeTemplate}
+				planTier={plan.tier}
 			/>
 
 			<div className="hidden gap-5 md:grid">
@@ -158,6 +168,8 @@ export default async function MenuBuilderPage({
 						restaurantId={restaurant.id}
 						slug={restaurant.slug}
 						canCreateItem={isWithinLimit(menuItemCount, plan.maxMenuItems)}
+						activeTemplate={restaurant.activeTemplate}
+						planTier={plan.tier}
 						categories={categories}
 					/>
 				</div>

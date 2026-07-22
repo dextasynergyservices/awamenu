@@ -38,6 +38,7 @@ type AdminDashboardShellProps = {
 	userId: string;
 	initialNotifications: Notification[];
 	initialUnreadCount: number;
+	isPaid?: boolean;
 };
 
 const navItems = [
@@ -67,6 +68,7 @@ export function AdminDashboardShell({
 	userId,
 	initialNotifications,
 	initialUnreadCount,
+	isPaid = false,
 }: AdminDashboardShellProps) {
 	const pathname = usePathname();
 	const router = useRouter();
@@ -151,22 +153,24 @@ export function AdminDashboardShell({
 					})}
 				</nav>
 				<div className="mt-auto p-5">
-					<div className="rounded-2xl border border-lime-100 bg-lime-50 p-5">
-						<div>
-							<p className="text-sm font-black text-emerald-800">
-								Upgrade to Premium
-							</p>
-							<p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-								Unlock advanced features and boost your business.
-							</p>
+					{!isPaid && (
+						<div className="rounded-2xl border border-lime-100 bg-lime-50 p-5">
+							<div>
+								<p className="text-sm font-black text-emerald-800">
+									Upgrade to Premium
+								</p>
+								<p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+									Unlock advanced features and boost your business.
+								</p>
+							</div>
+							<Link
+								href={`${basePath}/settings`}
+								className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white"
+							>
+								Upgrade Now
+							</Link>
 						</div>
-						<Link
-							href={`${basePath}/settings`}
-							className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white"
-						>
-							Upgrade Now
-						</Link>
-					</div>
+					)}
 					<p className="mt-6 text-center text-xs font-medium text-slate-400">
 						© 2026 AwaMenu
 					</p>
@@ -186,10 +190,10 @@ export function AdminDashboardShell({
 										fallbackClassName="size-10 rounded-2xl text-sm"
 									/>
 									<div className="min-w-0">
-										<p className="truncate text-xl font-black text-slate-950">
+										<p className="truncate text-sm font-black text-slate-950">
 											{restaurantName}
 										</p>
-										<p className="truncate text-sm font-bold text-slate-500">
+										<p className="truncate text-xs font-bold text-slate-500">
 											{mobileSubtitle}
 										</p>
 									</div>

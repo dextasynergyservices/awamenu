@@ -1,10 +1,10 @@
 import { NotificationAudience, NotificationType } from "@prisma/client";
 import * as Sentry from "@sentry/nextjs";
 import { env } from "@/env";
+import { captureServerEvent } from "@/lib/analytics";
 import { db } from "@/lib/db";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
-import { sendOrderNotificationSafe } from "@/lib/whatsapp";
 
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
@@ -36,7 +36,6 @@ export async function notifyNewOrder(orderId: string) {
 					name: true,
 					slug: true,
 					currency: true,
-					whatsappNumber: true,
 				},
 			},
 			items: {
@@ -50,35 +49,6 @@ export async function notifyNewOrder(orderId: string) {
 	});
 	const orderUrl = `${env.NEXT_PUBLIC_APP_URL}/${order.restaurant.slug}/order/${order.id}`;
 	const total = Number(order.total);
-	const whatsappSent = await sendOrderNotificationSafe(
-		order.restaurant.whatsappNumber,
-		{
-			id: order.id,
-			customerName: order.customerName,
-			customerPhone: order.customerPhone,
-			type: order.type,
-			tableLabel: order.tableLabel,
-			tableNumber: order.tableNumber,
-			deliveryAddress: order.deliveryAddress,
-			dineInPaymentMethod: order.dineInPaymentMethod,
-			dineInServiceMode: order.dineInServiceMode,
-			waiterName: order.waiterName,
-			currency: order.restaurant.currency,
-			total,
-			items: order.items.map((item) => ({
-				name: item.name,
-				qty: item.qty,
-				unitPrice: Number(item.unitPrice),
-			})),
-		},
-	);
-
-	if (whatsappSent) {
-		await db.order.update({
-			where: { id: order.id },
-			data: { whatsappNotified: true, whatsappNotifiedAt: new Date() },
-		});
-	}
 
 	if (order.customerEmail) {
 		try {
@@ -102,5 +72,12 @@ export async function notifyNewOrder(orderId: string) {
 		body: `${order.type.replace("_", " ")} · ${formatMoney(total, order.restaurant.currency)}`,
 		actionUrl: `/dashboard/${order.restaurant.slug}/orders?orderId=${order.id}`,
 		metadata: { orderId: order.id },
+	});
+
+	captureServerEvent("order_placed", order.customerPhone, {
+		orderId: order.id,
+		restaurantId: order.restaurant.id,
+		type: order.type,
+		total,
 	});
 }

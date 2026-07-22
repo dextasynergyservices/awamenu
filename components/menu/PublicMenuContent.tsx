@@ -4,6 +4,9 @@ import { ChevronLeft, ChevronRight, Utensils } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CategoryNav } from "@/components/menu/CategoryNav";
 import { MenuItemCard } from "@/components/menu/MenuItemCard";
+import { MenuItemCompactRow } from "@/components/menu/MenuItemCompactRow";
+import { MenuItemGridCard } from "@/components/menu/MenuItemGridCard";
+import { MenuItemMagazineCard } from "@/components/menu/MenuItemMagazineCard";
 
 type PublicMenuCategory = {
 	id: string;
@@ -18,21 +21,41 @@ type PublicMenuCategory = {
 	}>;
 };
 
+export type MenuGridTemplate = "classic" | "grid" | "compact" | "magazine";
+
 type PublicMenuContentProps = {
 	categories: PublicMenuCategory[];
 	restaurantSlug: string;
 	currency: string;
+	template?: MenuGridTemplate;
+};
+
+const itemsWrapperClass: Record<MenuGridTemplate, string> = {
+	classic: "grid gap-5",
+	grid: "grid grid-cols-2 gap-3 sm:grid-cols-3",
+	compact: "grid",
+	magazine: "grid gap-5",
 };
 
 const INITIAL_VISIBLE_ITEMS = 8;
 const LOAD_MORE_ITEMS = 6;
 const MOBILE_PAGE_SIZE = 8;
 
+const templateComponents = {
+	classic: MenuItemCard,
+	grid: MenuItemGridCard,
+	compact: MenuItemCompactRow,
+	magazine: MenuItemMagazineCard,
+};
+
 export function PublicMenuContent({
 	categories,
 	restaurantSlug,
 	currency,
+	template = "classic",
 }: PublicMenuContentProps) {
+	const ItemComponent = templateComponents[template] ?? MenuItemCard;
+	const wrapperClass = itemsWrapperClass[template] ?? itemsWrapperClass.classic;
 	const [activeCategoryId, setActiveCategoryId] = useState("all");
 	const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ITEMS);
 	const [mobilePage, setMobilePage] = useState(0);
@@ -76,26 +99,31 @@ export function PublicMenuContent({
 	const mobileRenderedCategories = useMemo(() => {
 		const start = mobilePage * MOBILE_PAGE_SIZE;
 		const end = start + MOBILE_PAGE_SIZE;
-		let cursor = 0;
 
-		return visibleCategories
-			.map((category) => {
-				const catStart = cursor;
-				const catEnd = cursor + category.items.length;
-				cursor = catEnd;
+		return visibleCategories.reduce(
+			(acc, category) => {
+				const catStart = acc.cursor;
+				const catEnd = acc.cursor + category.items.length;
 
-				if (catEnd <= start || catStart >= end) {
-					return { ...category, items: [] };
+				if (catEnd > start && catStart < end) {
+					const sliceStart = Math.max(start - catStart, 0);
+					const sliceEnd = Math.min(end - catStart, category.items.length);
+					const items = category.items.slice(sliceStart, sliceEnd);
+					if (items.length > 0) {
+						acc.result.push({ ...category, items });
+					}
 				}
 
-				const sliceStart = Math.max(start - catStart, 0);
-				const sliceEnd = Math.min(end - catStart, category.items.length);
-				return {
-					...category,
-					items: category.items.slice(sliceStart, sliceEnd),
-				};
-			})
-			.filter((category) => category.items.length > 0);
+				acc.cursor = catEnd;
+				return acc;
+			},
+			{
+				cursor: 0,
+				result: [] as Array<
+					PublicMenuCategory & { items: PublicMenuCategory["items"] }
+				>,
+			},
+		).result;
 	}, [visibleCategories, mobilePage]);
 
 	function handleSelectCategory(categoryId: string) {
@@ -149,9 +177,9 @@ export function PublicMenuContent({
 										{category.name}
 									</h2>
 								</div>
-								<div className="grid gap-5">
+								<div className={wrapperClass}>
 									{category.items.map((item) => (
-										<MenuItemCard
+										<ItemComponent
 											key={item.id}
 											item={item}
 											restaurantSlug={restaurantSlug}
@@ -196,13 +224,13 @@ export function PublicMenuContent({
 									className="scroll-mt-24"
 								>
 									<div className="mb-4">
-										<h2 className="text-xl font-semibold text-slate-950">
+										<h2 className="text-sm font-bold text-slate-950">
 											{category.name}
 										</h2>
 									</div>
-									<div className="grid gap-5">
+									<div className={wrapperClass}>
 										{category.items.map((item) => (
-											<MenuItemCard
+											<ItemComponent
 												key={item.id}
 												item={item}
 												restaurantSlug={restaurantSlug}
@@ -220,12 +248,12 @@ export function PublicMenuContent({
 										type="button"
 										onClick={() => setMobilePage((p) => Math.max(0, p - 1))}
 										disabled={mobilePage === 0}
-										className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-bold text-slate-700 disabled:opacity-40"
+										className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 disabled:opacity-40"
 									>
-										<ChevronLeft className="size-4" aria-hidden="true" />
+										<ChevronLeft className="size-3.5" aria-hidden="true" />
 										Previous
 									</button>
-									<p className="text-sm font-semibold text-slate-500">
+									<p className="text-xs font-semibold text-slate-500">
 										Page {mobilePage + 1} of {mobileTotalPages}
 									</p>
 									<button
@@ -236,16 +264,16 @@ export function PublicMenuContent({
 											)
 										}
 										disabled={mobilePage >= mobileTotalPages - 1}
-										className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-bold text-slate-700 disabled:opacity-40"
+										className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 disabled:opacity-40"
 									>
 										Next
-										<ChevronRight className="size-4" aria-hidden="true" />
+										<ChevronRight className="size-3.5" aria-hidden="true" />
 									</button>
 								</div>
 							) : null}
 						</>
 					) : (
-						<div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-base font-semibold text-slate-500">
+						<div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-xs font-semibold text-slate-500">
 							<Utensils
 								className="mx-auto mb-3 size-10 text-slate-300"
 								aria-hidden="true"
@@ -256,7 +284,7 @@ export function PublicMenuContent({
 					)
 				) : (
 					<div className="rounded-3xl border border-dashed border-emerald-100 bg-white p-8 text-center">
-						<p className="text-lg font-semibold text-slate-950">
+						<p className="text-sm font-semibold text-slate-950">
 							Menu is coming soon
 						</p>
 					</div>

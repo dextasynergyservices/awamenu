@@ -46,9 +46,9 @@ const featureCards = [
 		tone: "bg-emerald-600 text-white",
 	},
 	{
-		title: "WhatsApp ordering built in",
+		title: "WhatsApp click-to-chat",
 		description:
-			"Receive orders directly on WhatsApp with clear order details.",
+			"Customers can reach you on WhatsApp with one tap — no extra apps needed.",
 		icon: MessageCircle,
 		tone: "bg-lime-200 text-emerald-950",
 	},
@@ -263,7 +263,8 @@ export default async function Home() {
 								Home
 							</Link>
 							<Link href="#features">Features</Link>
-							<Link href="#pricing">Pricing</Link>
+							<Link href="/pricing">Pricing</Link>
+							<Link href="/about">About</Link>
 						</nav>
 						<div className="flex items-center gap-2">
 							<Link
@@ -292,7 +293,7 @@ export default async function Home() {
 							<span className="text-yellow-300">online in minutes.</span>
 						</h1>
 						<p className="mt-4 max-w-lg text-base font-medium leading-7 text-white/78 sm:text-lg">
-							Create your QR menu and receive WhatsApp orders in minutes.
+							Create your QR menu and start taking orders in minutes.
 						</p>
 						<div className="mt-6 flex flex-col gap-3 sm:flex-row">
 							<Link
@@ -302,7 +303,7 @@ export default async function Home() {
 								Get Started for Free
 							</Link>
 							<Link
-								href="#pricing"
+								href="/pricing"
 								className="inline-flex h-12 items-center justify-center gap-3 rounded-full border border-white/18 bg-white/10 px-7 text-sm font-bold text-white transition-colors hover:bg-white/15 sm:h-14 sm:gap-4 sm:text-base"
 							>
 								View Plans
@@ -318,7 +319,7 @@ export default async function Home() {
 					<div className="grid gap-3 rounded-[2rem] border border-yellow-300/20 bg-white/8 p-3 shadow-[0_24px_70px_rgba(0,0,0,0.22)] backdrop-blur md:grid-cols-5">
 						{[
 							"QR menu",
-							"WhatsApp orders",
+							"WhatsApp chat",
 							"Reservations",
 							"Staff access",
 							"Analytics",

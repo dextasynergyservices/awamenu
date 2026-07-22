@@ -40,4 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-aawamenu_spec (1).md
+awamenu_spec.md
+AwaMenu_Super_Admin.md
+.agents

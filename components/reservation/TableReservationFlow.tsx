@@ -364,13 +364,13 @@ export function TableReservationFlow({
 
 				<div className="mx-auto grid max-w-472 gap-6 px-4 pb-36 pt-5 md:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] md:items-start md:px-6 md:py-8 lg:grid-cols-[minmax(19rem,27rem)_minmax(28rem,1fr)_minmax(21rem,29rem)] lg:gap-8 lg:pt-28">
 					<section className="md:col-span-2 lg:hidden">
-						<p className="text-sm font-black uppercase tracking-wide text-emerald-700">
+						<p className="text-xs font-black uppercase tracking-wide text-emerald-700">
 							Table Reservation
 						</p>
-						<h2 className="mt-2 text-3xl font-black leading-tight text-slate-950">
+						<h2 className="mt-2 text-sm font-black leading-tight text-slate-950 md:text-3xl">
 							Reserve a table
 						</h2>
-						<p className="mt-2 text-base font-semibold leading-6 text-slate-500">
+						<p className="mt-2 text-xs font-semibold leading-6 text-slate-500 md:text-base">
 							{setting.bookingDescription ?? "Great food is better shared."}
 						</p>
 					</section>
@@ -384,7 +384,7 @@ export function TableReservationFlow({
 								<div>
 									<div className="flex items-center gap-3 md:hidden">
 										<CalendarDays className="size-5 text-emerald-700" />
-										<h3 className="text-lg font-black text-slate-950">
+										<h3 className="text-sm font-black text-slate-950">
 											Reservation Details
 										</h3>
 									</div>
@@ -413,7 +413,7 @@ export function TableReservationFlow({
 										min={initialReservationDateTime.date}
 										onChange={(event) => setDate(event.target.value)}
 										required
-										className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-emerald-700"
+										className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-black text-slate-700 outline-none focus:border-emerald-700"
 									/>
 								</DateTimeField>
 								<DateTimeField
@@ -429,7 +429,7 @@ export function TableReservationFlow({
 										value={time}
 										onChange={(event) => setTime(event.target.value)}
 										required
-										className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 outline-none focus:border-emerald-700"
+										className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-black text-slate-700 outline-none focus:border-emerald-700"
 									/>
 								</DateTimeField>
 								<div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3">
@@ -438,7 +438,7 @@ export function TableReservationFlow({
 									</span>
 									<div className="min-w-0">
 										<p className="text-xs font-black text-slate-500">Guests</p>
-										<p className="mt-1 text-base font-black text-slate-950">
+										<p className="mt-1 text-sm font-black text-slate-950">
 											{partySize} Guest{partySize === 1 ? "" : "s"}
 										</p>
 									</div>
@@ -532,7 +532,7 @@ export function TableReservationFlow({
 								2
 							</span>
 							<div>
-								<h3 className="text-xl font-black text-slate-950">
+								<h3 className="text-sm font-black text-slate-950 md:text-xl">
 									Available Tables
 								</h3>
 								<p className="mt-1 hidden text-sm font-semibold text-slate-500 md:block">
@@ -550,7 +550,7 @@ export function TableReservationFlow({
 										setTablePage(1);
 									}}
 									className={cn(
-										"inline-flex h-10 shrink-0 items-center gap-2 rounded-full border px-5 text-sm font-black transition-colors",
+										"inline-flex h-10 shrink-0 items-center gap-2 rounded-full border px-5 text-xs font-black transition-colors sm:text-sm",
 										tableFilter === filter.value
 											? "border-emerald-700 bg-emerald-700 text-white"
 											: "border-slate-200 bg-white text-slate-600",
@@ -586,7 +586,7 @@ export function TableReservationFlow({
 								);
 							})}
 							{filteredTables.length === 0 ? (
-								<div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">
+								<div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-500 sm:text-sm">
 									No tables match this filter.
 								</div>
 							) : null}
@@ -628,7 +628,9 @@ export function TableReservationFlow({
 							<ArrowLeft className="size-4" aria-hidden="true" />
 							Back to selection
 						</button>
-						<h3 className="text-xl font-black text-slate-950">Your details</h3>
+						<h3 className="text-sm font-black text-slate-950 md:text-xl">
+							Your details
+						</h3>
 						<div className="mt-4 grid gap-3">
 							<input
 								name="customerName"
@@ -777,7 +779,7 @@ export function TableReservationFlow({
 							}
 							loadingText="Reserving..."
 							successText="Reserved"
-							className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-5 text-sm font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.25)] disabled:opacity-50"
+							className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-5 text-xs font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.25)] disabled:opacity-50 sm:text-sm"
 						>
 							<span>Continue</span>
 							<ArrowRight className="size-5" aria-hidden="true" />
@@ -812,7 +814,7 @@ function DateTimeField({
 			</span>
 			<span className="min-w-0">
 				<span className="block text-xs font-black text-slate-500">{label}</span>
-				<span className="mt-1 block truncate text-base font-black text-slate-950">
+				<span className="mt-1 block truncate text-sm font-black text-slate-950">
 					{displayValue}
 				</span>
 			</span>
@@ -970,10 +972,10 @@ function FoodSelectionContent({
 		<>
 			<div className="flex items-start justify-between gap-3">
 				<div>
-					<h3 className="text-xl font-black text-slate-950">
+					<h3 className="text-sm font-black text-slate-950 md:text-xl">
 						Food for the table
 					</h3>
-					<p className="mt-1 text-sm font-semibold text-slate-500">
+					<p className="mt-1 text-xs font-semibold text-slate-500 md:text-sm">
 						{foodRequired
 							? "This reservation requires a meal or drink selection."
 							: "Add items you want ready for the table."}
@@ -991,7 +993,7 @@ function FoodSelectionContent({
 						type="button"
 						onClick={() => onSelectCategory(category.id)}
 						className={cn(
-							"h-10 shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors",
+							"h-10 shrink-0 rounded-full border px-4 text-xs font-semibold transition-colors sm:text-sm",
 							activeCategory?.id === category.id
 								? "border-emerald-950 bg-emerald-950 text-white"
 								: "border-slate-200 bg-white text-slate-600",
@@ -1033,7 +1035,7 @@ function FoodSelectionContent({
 										)}
 									</div>
 									<div className="min-w-0">
-										<p className="truncate text-base font-black text-slate-950">
+										<p className="truncate text-sm font-black text-slate-950">
 											{item.name}
 										</p>
 										{item.description ? (
@@ -1041,7 +1043,7 @@ function FoodSelectionContent({
 												{item.description}
 											</p>
 										) : null}
-										<p className="mt-1 text-sm font-semibold text-emerald-800">
+										<p className="mt-1 text-xs font-semibold text-emerald-800 sm:text-sm">
 											{formatMoney(item.price, currency)}
 										</p>
 										<div className="mt-2 inline-flex items-center rounded-xl border border-slate-200">
@@ -1117,7 +1119,7 @@ function FoodPagination({
 					type="button"
 					disabled={currentPage <= 1}
 					onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-					className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
+					className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:opacity-40 sm:text-sm"
 					aria-label="Previous food page"
 				>
 					<ChevronLeft className="size-4" aria-hidden="true" />
@@ -1145,7 +1147,7 @@ function FoodPagination({
 					type="button"
 					disabled={currentPage >= pageCount}
 					onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}
-					className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
+					className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 disabled:opacity-40 sm:text-sm"
 					aria-label="Next food page"
 				>
 					Next
@@ -1402,7 +1404,7 @@ function TablePagination({
 						</button>
 					))}
 				</div>
-				<span className="min-w-20 text-center text-sm font-black text-slate-700 md:hidden">
+				<span className="min-w-20 text-center text-xs font-black text-slate-700 md:hidden">
 					{currentPage} / {pageCount}
 				</span>
 				<button
@@ -1456,7 +1458,7 @@ function TableCard({
 				className="md:h-20 md:w-28"
 			/>
 			<span className="min-w-0">
-				<span className="block truncate text-base font-black text-slate-950 md:text-lg">
+				<span className="block truncate text-sm font-black text-slate-950 md:text-lg">
 					{table.label}
 				</span>
 				<span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-bold text-slate-500">
@@ -1469,7 +1471,7 @@ function TableCard({
 						{zoneLabel(zone)}
 					</span>
 				</span>
-				<span className="mt-2 block text-sm font-semibold text-slate-500 md:text-base">
+				<span className="mt-2 block text-xs font-semibold text-slate-500 md:text-base">
 					Min. Spend{" "}
 					<span className="font-black text-slate-950">
 						{formatMoney(table.policy.tableFee, currency)}
@@ -1560,10 +1562,10 @@ function TableDetailsModal({
 							className="size-14"
 						/>
 						<div className="min-w-0">
-							<p className="truncate text-xl font-black text-slate-950">
+							<p className="truncate text-sm font-black text-slate-950 sm:text-xl">
 								{table.label}
 							</p>
-							<p className="mt-1 text-sm font-bold text-slate-500">
+							<p className="mt-1 text-xs font-bold text-slate-500 sm:text-sm">
 								{zoneLabel(zone)}
 							</p>
 						</div>
@@ -1598,7 +1600,7 @@ function TableDetailsModal({
 				</div>
 
 				{table.description ? (
-					<p className="mt-4 text-sm font-semibold leading-6 text-slate-600">
+					<p className="mt-4 text-xs font-semibold leading-6 text-slate-600 sm:text-sm">
 						{table.description}
 					</p>
 				) : null}
@@ -1642,7 +1644,7 @@ function TableDetailsModal({
 				</div>
 
 				{unavailableText ? (
-					<p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">
+					<p className="mt-4 rounded-2xl bg-red-50 p-3 text-xs font-black text-red-700">
 						{unavailableText}
 					</p>
 				) : null}
@@ -1651,7 +1653,7 @@ function TableDetailsModal({
 					<button
 						type="button"
 						onClick={onClose}
-						className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700"
+						className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 sm:text-sm"
 					>
 						Close
 					</button>
@@ -1659,7 +1661,7 @@ function TableDetailsModal({
 						type="button"
 						disabled={!selectable}
 						onClick={selected ? onClose : onSelect}
-						className="min-h-12 rounded-2xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-50"
+						className="min-h-12 rounded-2xl bg-emerald-700 px-4 text-xs font-black text-white disabled:opacity-50 sm:text-sm"
 					>
 						{selected ? "Selected" : "Select this table"}
 					</button>

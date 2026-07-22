@@ -52,17 +52,20 @@ export function CartDrawer({
 							onClick={openCart}
 							className="flex min-w-0 items-center gap-3 text-left"
 						>
-							<span className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white text-emerald-900 md:size-14">
-								<ShoppingCart className="size-6 md:size-7" aria-hidden="true" />
+							<span className="relative grid size-9 shrink-0 place-items-center rounded-2xl bg-white text-emerald-900 md:size-14">
+								<ShoppingCart
+									className="size-3.5 md:size-7"
+									aria-hidden="true"
+								/>
 								<span className="-right-1 -top-1 absolute grid size-6 place-items-center rounded-full bg-yellow-300 text-xs font-semibold text-emerald-950">
 									{itemCount}
 								</span>
 							</span>
 							<span className="min-w-0">
-								<span className="block text-base font-semibold md:text-lg">
+								<span className="block text-xs font-semibold md:text-lg lg:text-xl">
 									View Cart
 								</span>
-								<span className="block truncate text-sm font-medium text-emerald-50 md:text-base">
+								<span className="block truncate text-xs font-medium text-emerald-50 md:text-base">
 									{itemCount} item{itemCount === 1 ? "" : "s"} ·{" "}
 									{formatMoney(subtotal, currency)}
 								</span>
@@ -70,10 +73,10 @@ export function CartDrawer({
 						</button>
 						<Link
 							href={checkoutHref}
-							className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-yellow-300 px-4 text-sm font-semibold text-emerald-950 md:min-h-12 md:px-5 md:text-base"
+							className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-yellow-300 p-2 md:px-4 text-xs font-semibold text-emerald-950 md:min-h-12 md:text-base"
 						>
 							Checkout
-							<ArrowRight className="size-4 md:size-5" aria-hidden="true" />
+							<ArrowRight className="size-3.5 md:size-5" aria-hidden="true" />
 						</Link>
 					</div>
 				</div>
@@ -100,8 +103,8 @@ export function CartDrawer({
 						>
 							<div className="flex items-center justify-between border-slate-200 border-b bg-white px-5 py-4">
 								<div>
-									<h2 className="text-xl font-semibold text-slate-950">Cart</h2>
-									<p className="text-sm font-medium text-slate-500">
+									<h2 className="text-sm font-semibold text-slate-950">Cart</h2>
+									<p className="text-xs font-medium text-slate-500">
 										{itemCount} item{itemCount === 1 ? "" : "s"}
 									</p>
 								</div>
@@ -121,7 +124,7 @@ export function CartDrawer({
 									))
 								) : (
 									<div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center">
-										<p className="text-base font-semibold text-slate-950">
+										<p className="text-sm font-semibold text-slate-950">
 											Your cart is empty
 										</p>
 									</div>
@@ -129,17 +132,17 @@ export function CartDrawer({
 							</div>
 							<div className="border-slate-200 border-t bg-white px-5 py-4">
 								<div className="flex items-center justify-between">
-									<span className="text-base font-semibold text-slate-600">
+									<span className="text-xs font-semibold text-slate-600">
 										Subtotal
 									</span>
-									<span className="text-xl font-semibold text-slate-950">
+									<span className="text-lg font-semibold text-slate-950 md:text-xl">
 										{formatMoney(subtotal, currency)}
 									</span>
 								</div>
 								<Link
 									href={checkoutHref}
 									onClick={closeCart}
-									className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-base font-semibold text-white aria-disabled:pointer-events-none aria-disabled:opacity-50"
+									className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-xs font-semibold text-white aria-disabled:pointer-events-none aria-disabled:opacity-50 md:text-base"
 									aria-disabled={items.length === 0}
 								>
 									Checkout

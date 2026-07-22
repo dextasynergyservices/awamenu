@@ -157,7 +157,7 @@ function AdminOrderControlsContent({
 							"rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400",
 							variant === "desktop"
 								? "min-h-11 text-base"
-								: "h-8 flex-1 text-[11px] rounded-md",
+								: "h-8 flex-1 text-base rounded-md",
 						)}
 					>
 						{getStatusOptions(type).map((option) => (
@@ -174,7 +174,7 @@ function AdminOrderControlsContent({
 							"rounded-xl bg-emerald-700 text-white",
 							variant === "desktop"
 								? "min-h-11 px-4 text-base font-medium md:text-sm md:font-black"
-								: "h-8 px-4 text-[11px] font-black rounded-md",
+								: "h-8 px-4 text-xs font-black rounded-md",
 						)}
 					>
 						{isAwaitingAcceptance ? "Accept order" : "Update"}
@@ -190,13 +190,13 @@ function AdminOrderControlsContent({
 							"rounded-xl border border-red-100 bg-white font-black text-red-600 disabled:opacity-50",
 							variant === "desktop"
 								? "min-h-11 px-4 text-base md:text-sm"
-								: "h-8 px-4 text-[11px] rounded-md",
+								: "h-8 px-4 text-xs rounded-md",
 						)}
 					>
 						{isAwaitingAcceptance ? "Decline order" : "Cancel order"}
 					</button>
 					{isCancelled || isCompleted ? (
-						<p className="text-[11px] font-bold text-slate-400">
+						<p className="text-xs font-bold text-slate-400">
 							{isCancelled
 								? "Cancelled orders are locked."
 								: "Completed orders cannot be cancelled."}
@@ -214,7 +214,7 @@ function AdminOrderControlsContent({
 							"rounded-xl bg-yellow-300 px-4 font-black text-emerald-950 hover:bg-yellow-400",
 							variant === "desktop"
 								? "min-h-11 text-base"
-								: "h-8 w-full text-[11px] rounded-md",
+								: "h-8 w-full text-xs rounded-md",
 						)}
 					>
 						Confirm payment received
@@ -242,7 +242,7 @@ function AdminOrderControlsContent({
 							className="rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400"
 						/>
 					</label>
-					<p className="text-[11px] font-bold text-emerald-800">
+					<p className="text-xs font-bold text-emerald-800">
 						{canSendPaymentLink
 							? "The payment link is added automatically and cannot be edited."
 							: "The order link is added automatically and cannot be edited."}
@@ -271,7 +271,7 @@ function AdminOrderControlsContent({
 							: "Open WhatsApp status message"}
 					</button>
 					{normalizedPhone ? null : (
-						<p className="text-[11px] font-bold text-red-600">
+						<p className="text-xs font-bold text-red-600">
 							Add a valid customer phone number to send this link.
 						</p>
 					)}

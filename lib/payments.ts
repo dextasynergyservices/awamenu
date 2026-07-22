@@ -251,7 +251,7 @@ export async function verifyReservationPaymentReference(
 }
 
 export async function initiateSubscriptionPayment(
-	params: PaystackSubscriptionParams,
+	params: PaystackSubscriptionParams & { callbackUrl?: string },
 ) {
 	const plan = await db.plan.findUniqueOrThrow({
 		where: { id: params.planId },
@@ -266,7 +266,10 @@ export async function initiateSubscriptionPayment(
 		body: JSON.stringify({
 			email: params.customerEmail,
 			amount: Number(plan.monthlyPrice) * 100,
-			callback_url: `${env.NEXT_PUBLIC_APP_URL}/onboarding/setup?planId=${params.planId}`,
+			plan: plan.paystackPlanCode || undefined,
+			callback_url:
+				params.callbackUrl ||
+				`${env.NEXT_PUBLIC_APP_URL}/onboarding/setup?planId=${params.planId}`,
 			metadata: {
 				type: "SUBSCRIPTION",
 				userId: params.userId,
@@ -279,6 +282,39 @@ export async function initiateSubscriptionPayment(
 
 	if (!res.ok || !payload?.data?.authorization_url) {
 		throw new Error("Unable to initialize subscription payment.");
+	}
+
+	return payload.data.authorization_url as string;
+}
+
+export async function initiateCardAddPayment(params: {
+	userId: string;
+	customerEmail: string;
+	callbackUrl?: string;
+}) {
+	const paystackSecretKey = requireEnv("PAYSTACK_SECRET_KEY");
+	const res = await fetch("https://api.paystack.co/transaction/initialize", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${paystackSecretKey}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			email: params.customerEmail,
+			amount: 5000,
+			channels: ["card"],
+			callback_url: params.callbackUrl,
+			metadata: {
+				type: "ADD_CARD",
+				userId: params.userId,
+			},
+		}),
+	});
+
+	const payload = await res.json();
+
+	if (!res.ok || !payload?.data?.authorization_url) {
+		throw new Error("Unable to initialize card binding payment.");
 	}
 
 	return payload.data.authorization_url as string;
@@ -335,6 +371,7 @@ export async function verifySubscriptionPaymentReference(
 				paymentRef: payload.data.reference ?? params.reference,
 				paystackCustomerCode: payload.data.customer?.customer_code,
 				paystackSubscriptionCode: payload.data.subscription?.subscription_code,
+				originalPlanId: params.planId,
 			},
 		});
 	} else {
@@ -348,6 +385,7 @@ export async function verifySubscriptionPaymentReference(
 				paymentRef: payload.data.reference ?? params.reference,
 				paystackCustomerCode: payload.data.customer?.customer_code,
 				paystackSubscriptionCode: payload.data.subscription?.subscription_code,
+				originalPlanId: params.planId,
 			},
 		});
 	}

@@ -592,7 +592,7 @@ function MobileTablesView({
 					<p className="text-xs font-semibold text-emerald-700">
 						Manage restaurant seating
 					</p>
-					<h1 className="mt-1 text-2xl font-black leading-none tracking-normal text-slate-950">
+					<h1 className="mt-1 text-sm font-black leading-none tracking-normal text-slate-950">
 						Tables
 					</h1>
 				</div>
@@ -649,7 +649,7 @@ function MobileTablesView({
 						name="q"
 						defaultValue={searchTerm}
 						placeholder="Search tables..."
-						className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white pr-3 pl-11 text-sm font-semibold text-slate-600 outline-none focus:border-emerald-700"
+						className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white pr-3 pl-11 text-base font-semibold text-slate-600 outline-none focus:border-emerald-700"
 					/>
 					{selectedStatus !== "ALL" ? (
 						<input type="hidden" name="status" value={selectedStatus} />
@@ -681,10 +681,10 @@ function MobileTablesView({
 					))
 				) : (
 					<div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-white p-6 text-center">
-						<p className="text-base font-bold text-slate-950">
+						<p className="text-sm font-bold text-slate-950">
 							No matching tables found
 						</p>
-						<p className="mt-1 text-sm font-medium text-slate-500">
+						<p className="mt-1 text-xs font-medium text-slate-500">
 							Try another search or status filter.
 						</p>
 					</div>
@@ -703,7 +703,7 @@ function MobileTablesView({
 					>
 						<ChevronLeft className="size-4" aria-hidden="true" />
 					</PageLink>
-					<span className="text-sm font-semibold text-slate-500">
+					<span className="text-xs font-semibold text-slate-500">
 						Page {safePage} of {totalPages} • {totalFiltered} table
 						{totalFiltered === 1 ? "" : "s"}
 					</span>
@@ -752,13 +752,13 @@ function MobileStatCard({
 				{icon}
 			</span>
 			<span className="min-w-0">
-				<span className="block text-xl font-bold leading-none text-slate-950">
+				<span className="block text-lg font-bold leading-none text-slate-950">
 					{value}
 				</span>
-				<span className="mt-1.5 block truncate text-[11px] font-bold text-slate-950">
+				<span className="mt-1.5 block truncate text-xs font-bold text-slate-950">
 					{label}
 				</span>
-				<span className="mt-1 block truncate text-[10px] font-medium leading-4 text-slate-500">
+				<span className="mt-1 block truncate text-xs font-medium leading-4 text-slate-500">
 					{description}
 				</span>
 			</span>
@@ -793,7 +793,7 @@ function MobileFilterLink({
 				status: filter.value,
 			})}
 			className={cn(
-				"inline-flex min-h-9 w-full min-w-0 items-center justify-center rounded-xl px-2 text-[10px] font-bold",
+				"inline-flex min-h-9 w-full min-w-0 items-center justify-center rounded-xl px-2 text-xs font-bold",
 				active ? "bg-emerald-700 text-white" : tone,
 				active && filter.value !== "AVAILABLE" && "bg-emerald-700 text-white",
 			)}
@@ -836,12 +836,12 @@ function MobileTableCard({
 					<Armchair className="size-6" aria-hidden="true" />
 				</span>
 				<div className="min-w-0">
-					<h2 className="truncate text-base font-bold text-slate-950">
+					<h2 className="truncate text-sm font-bold text-slate-950">
 						{table.label}
 					</h2>
 					<span
 						className={cn(
-							"mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+							"mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
 							tone.badge,
 						)}
 					>
@@ -911,10 +911,10 @@ function MobileTableMeta({
 	return (
 		<div className="grid min-w-0 gap-1 border-slate-100 border-r px-1.5 py-2.5 last:border-r-0">
 			<span className="mx-auto text-slate-500">{icon}</span>
-			<span className="truncate text-[10px] font-medium text-slate-500">
+			<span className="truncate text-xs font-medium text-slate-500">
 				{label}
 			</span>
-			<span className="truncate text-[11px] font-semibold text-slate-700">
+			<span className="truncate text-xs font-semibold text-slate-700">
 				{value}
 			</span>
 		</div>
@@ -1173,7 +1173,7 @@ function TableCard({
 	const tone = statusTone(table.status);
 
 	return (
-		<article className="grid min-h-[16.5rem] gap-4 rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+		<article className="grid min-h-66 gap-4 rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
 			<div className="flex items-start justify-between gap-3">
 				<div className="flex items-center gap-4">
 					<span

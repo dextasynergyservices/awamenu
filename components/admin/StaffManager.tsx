@@ -132,7 +132,7 @@ export function StaffManager({
 						<h2 className="text-lg sm:text-2xl font-black tracking-tight text-slate-950">
 							Staff
 						</h2>
-						<p className="text-[11px] sm:text-[13px] font-medium text-slate-500">
+						<p className="text-xs sm:text-sm font-medium text-slate-500">
 							Manage your restaurant employees
 						</p>
 					</div>
@@ -155,7 +155,7 @@ export function StaffManager({
 							placeholder="Search staff..."
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
-							className="h-8 sm:h-12 w-full rounded-full border border-slate-200 bg-white pl-8 sm:pl-11 pr-3 sm:pr-4 text-[11px] sm:text-sm font-medium outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+							className="h-8 sm:h-12 w-full rounded-full border border-slate-200 bg-white pl-8 sm:pl-11 pr-3 sm:pr-4 text-base font-medium outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 						/>
 					</div>
 					<button
@@ -175,7 +175,7 @@ export function StaffManager({
 								type="button"
 								onClick={() => setActiveFilter(filter)}
 								className={cn(
-									"flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-full border px-2.5 sm:px-4 py-1 sm:py-2 text-[11px] sm:text-sm font-bold transition-colors",
+									"flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-full border px-2.5 sm:px-4 py-1 sm:py-2 text-xs sm:text-sm font-bold transition-colors",
 									activeFilter === filter
 										? "border-emerald-700 bg-emerald-700 text-white"
 										: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
@@ -205,7 +205,7 @@ export function StaffManager({
 						setCreatedStaffId(null);
 						setCreateOpen(true);
 					}}
-					className="flex h-8 sm:h-12 w-full items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-emerald-700 text-[11px] sm:text-sm font-black text-white shadow-sm transition-colors hover:bg-emerald-800"
+					className="flex h-8 sm:h-12 w-full items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-emerald-700 text-xs sm:text-sm font-black text-white shadow-sm transition-colors hover:bg-emerald-800"
 				>
 					<Plus className="size-3.5 sm:size-5" />
 					Add Staff
@@ -464,7 +464,7 @@ function MobileStaffCard({
 							<div className="mt-0.5 sm:mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
 								<span
 									className={cn(
-										"rounded-full px-1.5 sm:px-2 py-0.5 text-[8px] sm:text-[10px] font-black tracking-wide",
+										"rounded-full px-1.5 sm:px-2 py-0.5 text-xs font-black tracking-wide",
 										role === "Manager"
 											? "bg-purple-100/50 text-purple-700"
 											: role === "Cashier"
@@ -475,7 +475,7 @@ function MobileStaffCard({
 									{role}
 								</span>
 							</div>
-							<div className="mt-1 sm:mt-2 flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-medium text-slate-500">
+							<div className="mt-1 sm:mt-2 flex items-center gap-1 sm:gap-1.5 text-xs font-medium text-slate-500">
 								<span>ID: {staff.staffId}</span>
 								<button
 									type="button"
@@ -496,7 +496,7 @@ function MobileStaffCard({
 					<div className="flex flex-col items-end gap-1.5 sm:gap-2">
 						<div
 							className={cn(
-								"flex items-center gap-1 sm:gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 sm:py-1 text-[9px] sm:text-[10px] font-bold",
+								"flex items-center gap-1 sm:gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-bold",
 								staff.isActive
 									? "bg-emerald-50 text-emerald-700"
 									: "bg-red-50 text-red-700",
@@ -568,7 +568,7 @@ function MobileStaffCard({
 					)}
 				</div>
 
-				<div className="mt-3 sm:mt-4 flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-[11px] font-medium text-slate-500">
+				<div className="mt-3 sm:mt-4 flex items-center gap-1.5 sm:gap-2 text-xs font-medium text-slate-500">
 					<Calendar className="size-3 sm:size-4" />
 					Joined{" "}
 					{new Date(staff.createdAt).toLocaleDateString("en-US", {
@@ -583,7 +583,7 @@ function MobileStaffCard({
 				<button
 					type="button"
 					onClick={onEditPermissions}
-					className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-3.5 text-[10px] sm:text-xs font-bold text-emerald-700 transition-colors hover:bg-slate-50"
+					className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-3.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-slate-50"
 				>
 					<Lock className="size-3 sm:size-4" />
 					Permissions
@@ -591,7 +591,7 @@ function MobileStaffCard({
 				<button
 					type="button"
 					onClick={() => setMenuOpen(!menuOpen)}
-					className="relative flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-3.5 text-[10px] sm:text-xs font-bold text-emerald-700 transition-colors hover:bg-slate-50"
+					className="relative flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-3.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-slate-50"
 				>
 					<MoreHorizontal className="size-3 sm:size-4" />
 					More
@@ -663,7 +663,7 @@ function PermBadge({
 	return (
 		<span
 			className={cn(
-				"flex items-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[8px] sm:text-[11px] font-bold",
+				"flex items-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs font-bold",
 				colorStyles[color],
 			)}
 		>
@@ -1278,7 +1278,7 @@ function TriStatePermission({
 	return (
 		<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3">
 			<p className="text-xs sm:text-sm font-black text-slate-900">{label}</p>
-			<div className="flex w-full sm:w-auto overflow-hidden rounded-lg sm:rounded-xl border border-slate-200 text-[10px] sm:text-xs font-black">
+			<div className="flex w-full sm:w-auto overflow-hidden rounded-lg sm:rounded-xl border border-slate-200 text-xs font-black">
 				{options.map((opt) => (
 					<button
 						key={String(opt.val)}

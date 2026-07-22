@@ -8,6 +8,7 @@ import {
 	SubscriptionStatus,
 } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { captureServerEvent } from "@/lib/analytics";
 import { db } from "@/lib/db";
 import { sendSubscriptionConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
@@ -33,6 +34,7 @@ type PaystackWebhook = {
 		subscription?: {
 			subscription_code?: string;
 		};
+		subscription_code?: string;
 	};
 };
 
@@ -45,6 +47,28 @@ export async function POST(request: Request) {
 	}
 
 	const payload = JSON.parse(body) as PaystackWebhook;
+
+	if (payload.event === "invoice.payment_failed") {
+		const subCode = payload.data?.subscription?.subscription_code;
+		if (subCode) {
+			await db.subscription.updateMany({
+				where: { paystackSubscriptionCode: subCode },
+				data: { status: SubscriptionStatus.PAST_DUE },
+			});
+		}
+		return NextResponse.json({ ok: true });
+	}
+
+	if (payload.event === "subscription.disable") {
+		const subCode = payload.data?.subscription_code;
+		if (subCode) {
+			await db.subscription.updateMany({
+				where: { paystackSubscriptionCode: subCode },
+				data: { status: SubscriptionStatus.CANCELLED },
+			});
+		}
+		return NextResponse.json({ ok: true });
+	}
 
 	if (payload.event !== "charge.success") {
 		return NextResponse.json({ ok: true });
@@ -156,6 +180,47 @@ export async function POST(request: Request) {
 	}
 
 	if (metadata?.type !== "SUBSCRIPTION") {
+		// If it's a renewal without metadata but has a subscription_code
+		const subCode = payload.data?.subscription?.subscription_code;
+		if (subCode) {
+			const now = new Date();
+			const periodEnd = new Date(now);
+			periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+			const sub = await db.subscription.findFirst({
+				where: { paystackSubscriptionCode: subCode },
+				include: {
+					user: { select: { email: true } },
+					restaurant: { select: { name: true } },
+					plan: { select: { name: true, monthlyPrice: true } },
+				},
+			});
+
+			if (sub) {
+				await db.subscription.update({
+					where: { id: sub.id },
+					data: {
+						status: SubscriptionStatus.ACTIVE,
+						currentPeriodStart: now,
+						currentPeriodEnd: periodEnd,
+					},
+				});
+
+				if (sub.restaurant) {
+					const restaurant = sub.restaurant;
+					await import("@/lib/email").then((m) =>
+						m.sendRenewalSuccessEmail({
+							to: sub.user.email,
+							restaurantName: restaurant.name,
+							amount: `₦${sub.plan.monthlyPrice.toString()}`,
+							planName: sub.plan.name,
+							receiptUrl: (payload.data as { receipt_url?: string })
+								?.receipt_url,
+						}),
+					);
+				}
+			}
+		}
 		return NextResponse.json({ ok: true });
 	}
 
@@ -192,6 +257,60 @@ export async function POST(request: Request) {
 			},
 		});
 	} else {
+		// Before creating a new subscription, find and cancel any active ones
+		const oldSubscriptions = await db.subscription.findMany({
+			where: {
+				userId: metadata.userId,
+				status: {
+					in: [
+						SubscriptionStatus.ACTIVE,
+						SubscriptionStatus.TRIALING,
+						SubscriptionStatus.PAST_DUE,
+					],
+				},
+			},
+		});
+
+		for (const oldSub of oldSubscriptions) {
+			if (oldSub.paystackSubscriptionCode) {
+				// Fetch email token
+				const fetchRes = await fetch(
+					`https://api.paystack.co/subscription/${oldSub.paystackSubscriptionCode}`,
+					{
+						headers: {
+							Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+						},
+					},
+				);
+				if (fetchRes.ok) {
+					const data = (await fetchRes.json()) as {
+						data?: { email_token?: string };
+					};
+					const emailToken = data.data?.email_token;
+					if (emailToken) {
+						// Disable on Paystack
+						await fetch("https://api.paystack.co/subscription/disable", {
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify({
+								code: oldSub.paystackSubscriptionCode,
+								token: emailToken,
+							}),
+						});
+					}
+				}
+			}
+
+			// Mark cancelled in DB
+			await db.subscription.update({
+				where: { id: oldSub.id },
+				data: { status: SubscriptionStatus.CANCELLED },
+			});
+		}
+
 		await db.subscription.create({
 			data: {
 				userId: metadata.userId,
@@ -218,6 +337,11 @@ export async function POST(request: Request) {
 
 	await sendSubscriptionConfirmationEmail({
 		to: payload.data?.customer?.email ?? user.email,
+		planName: plan.name,
+	});
+
+	captureServerEvent("subscription_completed", metadata.userId, {
+		planId: metadata.planId,
 		planName: plan.name,
 	});
 

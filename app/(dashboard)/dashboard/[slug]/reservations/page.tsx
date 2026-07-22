@@ -155,7 +155,7 @@ export default async function ReservationsPage({
 
 			<form
 				action={`/dashboard/${restaurant.slug}/reservations`}
-				className="grid gap-3"
+				className="hidden gap-3 md:grid"
 			>
 				<label className="relative block">
 					<span className="sr-only">Search by code, name, phone or email</span>
@@ -221,7 +221,7 @@ export default async function ReservationsPage({
 			</form>
 
 			{reservationCode ? (
-				<p className="text-xs font-bold text-slate-500">
+				<p className="hidden text-xs font-bold text-slate-500 md:block">
 					Showing reservations matching #{reservationCode.toUpperCase()}.
 				</p>
 			) : null}

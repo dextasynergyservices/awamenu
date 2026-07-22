@@ -2,11 +2,13 @@ import { PaymentStatus, ReservationStatus } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { payReservationAction } from "@/actions/reservation.actions";
+import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
 import { verifyReservationPaymentReference } from "@/lib/payments";
+import { isSubscriptionActive } from "@/lib/subscription";
 
 type ReservationStatusPageProps = {
 	params: Promise<{ slug: string; reservationId: string }>;
@@ -87,6 +89,9 @@ export default async function ReservationStatusPage({
 					phone: true,
 					address: true,
 					whatsappNumber: true,
+					subscription: {
+						select: { status: true, currentPeriodEnd: true },
+					},
 				},
 			},
 			preOrder: {
@@ -135,6 +140,12 @@ export default async function ReservationStatusPage({
 				trackingCode={cleanReservationId}
 				type="reservation"
 			/>
+		);
+	}
+
+	if (!isSubscriptionActive(reservation.restaurant.subscription)) {
+		return (
+			<SubscriptionInactive restaurantName={reservation.restaurant.name} />
 		);
 	}
 

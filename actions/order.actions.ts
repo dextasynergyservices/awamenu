@@ -19,7 +19,9 @@ import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyNewOrder } from "@/lib/order-notifications";
 import { initiateOrderPayment } from "@/lib/payments";
+import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { getStaffSession } from "@/lib/staff-auth";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 import { verifyStaffAction } from "./staff.actions";
 
 const checkoutItemSchema = z.object({
@@ -148,6 +150,17 @@ export async function createOrderAction(formData: FormData) {
 		seatNumber: formData.get("seatNumber") || undefined,
 		items: JSON.parse(String(formData.get("items") ?? "[]")),
 	});
+	const clientIp = await getClientIp();
+	await enforceRateLimit("order", `${clientIp}:${input.slug}`);
+
+	const turnstileOk = await verifyTurnstileToken(
+		formData.get("cf-turnstile-response")?.toString(),
+		clientIp,
+	);
+	if (!turnstileOk) {
+		throw new Error("Verification failed. Please try again.");
+	}
+
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug: input.slug, isActive: true },
 		select: {
