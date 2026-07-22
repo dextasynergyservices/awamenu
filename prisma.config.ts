@@ -3,10 +3,16 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-	throw new Error("DATABASE_URL is required");
+// schema.prisma's `env("DATABASE_URL")` is resolved from the process
+// environment directly, independent of this file's `datasource.url` below —
+// so the fallback has to be set on process.env itself. This only affects the
+// Prisma CLI (generate/validate/migrate/studio), never the app's own
+// PrismaClient at runtime (lib/db.ts reads DATABASE_URL from the real
+// environment). It lets `generate` and `validate` — which don't need a
+// reachable database — run in CI without a DATABASE_URL secret.
+if (!process.env.DATABASE_URL) {
+	process.env.DATABASE_URL =
+		"postgresql://placeholder:placeholder@localhost:5432/placeholder";
 }
 
 export default defineConfig({
@@ -15,6 +21,6 @@ export default defineConfig({
 		path: "prisma/migrations",
 	},
 	datasource: {
-		url: databaseUrl,
+		url: process.env.DATABASE_URL,
 	},
 });
