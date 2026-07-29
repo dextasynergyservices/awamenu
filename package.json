@@ -14,6 +14,7 @@
 		"db:migrate": "prisma migrate dev",
 		"db:deploy": "prisma migrate deploy",
 		"db:seed": "prisma db seed",
+		"db:seed:super-admin": "bun prisma/seed-super-admin.ts",
 		"db:studio": "prisma studio",
 		"db:reset": "prisma migrate reset",
 		"vapid:generate": "web-push generate-vapid-keys"
@@ -48,6 +49,7 @@
 		"clsx": "^2.1.1",
 		"date-fns": "^4.4.0",
 		"framer-motion": "^12.40.0",
+		"gsap": "^3.15.0",
 		"lucide-react": "^1.17.0",
 		"nanoid": "^5.1.11",
 		"next": "16.2.9",

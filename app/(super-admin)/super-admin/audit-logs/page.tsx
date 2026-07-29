@@ -1,7 +1,7 @@
-import { RestaurantTable } from "@/components/super-admin/RestaurantTable";
+import { AuditLogsTable } from "@/components/super-admin/AuditLogsTable";
 import { db } from "@/lib/db";
 
-export default async function SuperAdminRestaurantsPage({
+export default async function SuperAdminAuditLogsPage({
 	searchParams,
 }: {
 	searchParams: Promise<{ q?: string }>;
@@ -9,44 +9,37 @@ export default async function SuperAdminRestaurantsPage({
 	const { q } = await searchParams;
 	const query = q?.trim();
 
-	const restaurants = await db.restaurant.findMany({
+	const logs = await db.auditLog.findMany({
 		where: query
 			? {
 					OR: [
-						{ name: { contains: query, mode: "insensitive" } },
-						{ slug: { contains: query, mode: "insensitive" } },
+						{ adminName: { contains: query, mode: "insensitive" } },
+						{ action: { contains: query, mode: "insensitive" } },
+						{ target: { contains: query, mode: "insensitive" } },
 					],
 				}
 			: undefined,
 		orderBy: { createdAt: "desc" },
-		select: {
-			id: true,
-			name: true,
-			slug: true,
-			isActive: true,
-			createdAt: true,
-			owner: { select: { email: true } },
-			subscription: { select: { plan: { select: { name: true } } } },
-		},
-		take: 100,
+		take: 200,
 	});
 
 	return (
 		<div className="grid gap-6">
 			<div>
 				<h1 className="text-2xl font-black text-slate-950 md:text-3xl">
-					Restaurants
+					Audit Logs
 				</h1>
 				<p className="mt-1 text-sm font-medium text-slate-600">
-					Search, activate/deactivate, and view restaurant details.
+					Track every important action performed by Super Admins.
 				</p>
 			</div>
+
 			<form className="flex gap-2">
 				<input
 					type="text"
 					name="q"
 					defaultValue={query ?? ""}
-					placeholder="Search by name or slug..."
+					placeholder="Search by admin, action, or target..."
 					className="h-11 w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 				/>
 				<button
@@ -56,15 +49,15 @@ export default async function SuperAdminRestaurantsPage({
 					Search
 				</button>
 			</form>
-			<RestaurantTable
-				restaurants={restaurants.map((r) => ({
-					id: r.id,
-					name: r.name,
-					slug: r.slug,
-					isActive: r.isActive,
-					ownerEmail: r.owner.email,
-					planName: r.subscription?.plan.name ?? "No Plan",
-					createdAt: r.createdAt.toISOString(),
+
+			<AuditLogsTable
+				logs={logs.map((log) => ({
+					id: log.id,
+					createdAt: log.createdAt.toISOString(),
+					adminName: log.adminName,
+					action: log.action,
+					target: log.target,
+					status: log.status,
 				}))}
 			/>
 		</div>

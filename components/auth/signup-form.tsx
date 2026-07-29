@@ -57,33 +57,33 @@ export function SignupForm() {
 				});
 			}}
 		>
-			<label className="grid gap-2 text-sm font-medium text-zinc-800">
+			<label className="grid gap-2 text-sm font-bold text-slate-700">
 				Name
 				<input
 					name="name"
 					required
-					className="h-11 border border-zinc-300 px-3 text-base outline-none focus:border-emerald-700 focus:ring-2 focus:ring-yellow-300/60"
+					className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 					autoComplete="name"
 				/>
 			</label>
-			<label className="grid gap-2 text-sm font-medium text-zinc-800">
+			<label className="grid gap-2 text-sm font-bold text-slate-700">
 				Email
 				<input
 					name="email"
 					type="email"
 					required
-					className="h-11 border border-zinc-300 px-3 text-base outline-none focus:border-emerald-700 focus:ring-2 focus:ring-yellow-300/60"
+					className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 					autoComplete="email"
 				/>
 			</label>
-			<label className="grid gap-2 text-sm font-medium text-zinc-800">
+			<label className="grid gap-2 text-sm font-bold text-slate-700">
 				Password
 				<input
 					name="password"
 					type="password"
 					required
 					minLength={8}
-					className="h-11 border border-zinc-300 px-3 text-base outline-none focus:border-emerald-700 focus:ring-2 focus:ring-yellow-300/60"
+					className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 					autoComplete="new-password"
 				/>
 			</label>
@@ -92,14 +92,14 @@ export function SignupForm() {
 					turnstileTokenRef.current = token;
 				}}
 			/>
-			{error ? <p className="text-sm text-red-600">{error}</p> : null}
+			{error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
 			<LoadingButton
 				type="submit"
 				loading={isPending}
 				success={isSuccess}
 				loadingText="Creating..."
 				successText="Created"
-				className="h-11 bg-emerald-700 px-4 text-sm font-semibold uppercase tracking-widest text-white ring-offset-2 transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 disabled:opacity-60"
+				className="h-11 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
 			>
 				Create Account
 			</LoadingButton>

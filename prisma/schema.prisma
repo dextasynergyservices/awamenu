@@ -150,12 +150,14 @@ enum NotificationType {
 // ─── Auth (better-auth managed) ──────────────────────
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  emailVerified Boolean  @default(false)
-  name          String?
-  image         String?
-  role          UserRole @default(RESTAURANT_OWNER)
+  id               String   @id @default(cuid())
+  email            String   @unique
+  emailVerified    Boolean  @default(false)
+  name             String?
+  image            String?
+  role             UserRole @default(RESTAURANT_OWNER)
+  isActive         Boolean  @default(true)
+  suspensionReason String?
 
   onboardingStatus OnboardingStatus @default(PENDING_PLAN)
 
@@ -763,7 +765,8 @@ model Rating {
   valueForMoney  Int?
   overallRating  Int
 
-  comment String?
+  comment  String?
+  isHidden Boolean @default(false)
 
   customerName  String?
   customerPhone String?
@@ -800,4 +803,30 @@ model OrderEvent {
 
   @@index([orderId])
   @@index([staffId])
+}
+
+// ─── Super Admin ──────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  adminName String
+  action    String
+  target    String
+  status    String   @default("success")
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model PlatformSetting {
+  id                String  @id @default(cuid())
+  platformName      String  @default("AwaMenu")
+  logoUrl           String?
+  paystackPublicKey String?
+  paystackSecretKey String?
+  maintenanceMode   Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
 }
