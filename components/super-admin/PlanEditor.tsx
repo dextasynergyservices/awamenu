@@ -7,6 +7,7 @@ import { SubmitButton } from "@/components/ui/action-button";
 
 type PlanEditorProps = {
 	plan?: Plan;
+	onSaved?: () => void;
 };
 
 const featureFields = [
@@ -19,11 +20,11 @@ const featureFields = [
 ] as const;
 
 const inputClassName =
-	"h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+	"h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500";
 const labelClassName =
 	"mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500";
 
-export function PlanEditor({ plan }: PlanEditorProps) {
+export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 	const isEdit = Boolean(plan);
 	const action = isEdit ? updatePlanAction : createPlanAction;
 
@@ -76,7 +77,7 @@ export function PlanEditor({ plan }: PlanEditorProps) {
 						name="description"
 						defaultValue={plan?.description ?? ""}
 						rows={2}
-						className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 					/>
 				</div>
 				<div>
@@ -168,6 +169,7 @@ export function PlanEditor({ plan }: PlanEditorProps) {
 			<SubmitButton
 				loadingText={isEdit ? "Saving..." : "Creating..."}
 				successText="Saved"
+				onSuccess={onSaved}
 				className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white hover:bg-emerald-800 sm:w-auto sm:justify-self-end"
 			>
 				{isEdit ? "Save Changes" : "Create Plan"}

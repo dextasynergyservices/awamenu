@@ -26,84 +26,113 @@ export function RestaurantTable({
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white">
-			<table className="w-full min-w-[720px] text-left text-sm">
-				<thead>
-					<tr className="border-b border-slate-100 text-xs font-black uppercase tracking-wide text-slate-500">
-						<th className="p-4">Restaurant</th>
-						<th className="p-4">Owner</th>
-						<th className="p-4">Plan</th>
-						<th className="p-4">Status</th>
-						<th className="p-4">Joined</th>
-						<th className="p-4">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{restaurants.map((restaurant) => (
-						<tr
-							key={restaurant.id}
-							className="border-b border-slate-50 last:border-0"
+		<>
+			<div className="grid gap-2 md:hidden">
+				{restaurants.map((restaurant) => (
+					<Link
+						key={restaurant.id}
+						href={`/super-admin/restaurants/${restaurant.id}`}
+						className="flex min-h-11 items-center justify-between gap-2 rounded-xl border border-slate-100 bg-white p-3"
+					>
+						<div className="min-w-0">
+							<p className="truncate text-sm font-black text-slate-900">
+								{restaurant.name}
+							</p>
+							<p className="truncate text-xs font-medium text-slate-400">
+								{restaurant.planName} · {restaurant.ownerEmail}
+							</p>
+						</div>
+						<span
+							className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black ${
+								restaurant.isActive
+									? "bg-emerald-100 text-emerald-700"
+									: "bg-red-100 text-red-700"
+							}`}
 						>
-							<td className="p-4">
-								<Link
-									href={`/super-admin/restaurants/${restaurant.id}`}
-									className="font-black text-slate-900 hover:text-emerald-700"
-								>
-									{restaurant.name}
-								</Link>
-								<p className="text-xs font-medium text-slate-400">
-									/{restaurant.slug}
-								</p>
-							</td>
-							<td className="p-4 font-medium text-slate-600">
-								{restaurant.ownerEmail}
-							</td>
-							<td className="p-4 font-semibold text-slate-700">
-								{restaurant.planName}
-							</td>
-							<td className="p-4">
-								<span
-									className={`rounded-full px-2.5 py-1 text-xs font-black ${
-										restaurant.isActive
-											? "bg-emerald-100 text-emerald-700"
-											: "bg-red-100 text-red-700"
-									}`}
-								>
-									{restaurant.isActive ? "Active" : "Inactive"}
-								</span>
-							</td>
-							<td className="p-4 font-medium text-slate-500">
-								{new Date(restaurant.createdAt).toLocaleDateString()}
-							</td>
-							<td className="p-4">
-								<form action={toggleRestaurantActiveAction}>
-									<input
-										type="hidden"
-										name="restaurantId"
-										value={restaurant.id}
-									/>
-									<input
-										type="hidden"
-										name="isActive"
-										value={(!restaurant.isActive).toString()}
-									/>
-									<SubmitButton
-										loadingText="Updating..."
-										successText="Updated"
-										className={`inline-flex h-9 items-center justify-center rounded-lg px-3 text-xs font-black ${
+							{restaurant.isActive ? "Active" : "Inactive"}
+						</span>
+					</Link>
+				))}
+			</div>
+			<div className="hidden overflow-x-auto rounded-2xl border border-slate-100 bg-white md:block">
+				<table className="w-full min-w-[720px] text-left text-sm">
+					<thead>
+						<tr className="border-b border-slate-100 text-xs font-black uppercase tracking-wide text-slate-500">
+							<th className="p-4">Restaurant</th>
+							<th className="p-4">Owner</th>
+							<th className="p-4">Plan</th>
+							<th className="p-4">Status</th>
+							<th className="p-4">Joined</th>
+							<th className="p-4">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{restaurants.map((restaurant) => (
+							<tr
+								key={restaurant.id}
+								className="border-b border-slate-50 last:border-0"
+							>
+								<td className="p-4">
+									<Link
+										href={`/super-admin/restaurants/${restaurant.id}`}
+										className="font-black text-slate-900 hover:text-emerald-700"
+									>
+										{restaurant.name}
+									</Link>
+									<p className="text-xs font-medium text-slate-400">
+										/{restaurant.slug}
+									</p>
+								</td>
+								<td className="p-4 font-medium text-slate-600">
+									{restaurant.ownerEmail}
+								</td>
+								<td className="p-4 font-semibold text-slate-700">
+									{restaurant.planName}
+								</td>
+								<td className="p-4">
+									<span
+										className={`rounded-full px-2.5 py-1 text-xs font-black ${
 											restaurant.isActive
-												? "border border-red-100 bg-white text-red-600 hover:bg-red-50"
-												: "bg-emerald-700 text-white hover:bg-emerald-800"
+												? "bg-emerald-100 text-emerald-700"
+												: "bg-red-100 text-red-700"
 										}`}
 									>
-										{restaurant.isActive ? "Deactivate" : "Activate"}
-									</SubmitButton>
-								</form>
-							</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-		</div>
+										{restaurant.isActive ? "Active" : "Inactive"}
+									</span>
+								</td>
+								<td className="p-4 font-medium text-slate-500">
+									{new Date(restaurant.createdAt).toLocaleDateString()}
+								</td>
+								<td className="p-4">
+									<form action={toggleRestaurantActiveAction}>
+										<input
+											type="hidden"
+											name="restaurantId"
+											value={restaurant.id}
+										/>
+										<input
+											type="hidden"
+											name="isActive"
+											value={(!restaurant.isActive).toString()}
+										/>
+										<SubmitButton
+											loadingText="Updating..."
+											successText="Updated"
+											className={`inline-flex h-9 items-center justify-center rounded-lg px-3 text-xs font-black ${
+												restaurant.isActive
+													? "border border-red-100 bg-white text-red-600 hover:bg-red-50"
+													: "bg-emerald-700 text-white hover:bg-emerald-800"
+											}`}
+										>
+											{restaurant.isActive ? "Deactivate" : "Activate"}
+										</SubmitButton>
+									</form>
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</>
 	);
 }

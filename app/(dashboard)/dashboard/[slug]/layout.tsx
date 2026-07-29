@@ -23,10 +23,30 @@ export default async function DashboardLayout({
 			slug: true,
 			logoUrl: true,
 			primaryColor: true,
+			isActive: true,
 		},
 	});
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
+
+	if (!restaurant.isActive) {
+		return (
+			<main className="grid min-h-screen place-items-center bg-[#f6faf7] px-4 py-8">
+				<section className="mx-auto max-w-lg rounded-3xl border border-red-100 bg-white p-5 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+					<p className="text-sm font-black uppercase tracking-wide text-red-700">
+						Restaurant Suspended
+					</p>
+					<h1 className="mt-3 text-2xl font-black text-slate-950">
+						{restaurant.name} is currently suspended
+					</h1>
+					<p className="mt-3 text-sm font-bold leading-6 text-slate-600">
+						Access to this dashboard has been paused by AwaMenu. Contact support
+						for more information.
+					</p>
+				</section>
+			</main>
+		);
+	}
 
 	const subscription = await db.subscription.findFirst({
 		where: { userId: user.id },

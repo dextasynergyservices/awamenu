@@ -2,6 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
@@ -156,7 +157,7 @@ export async function resetPasswordWithTokenAction(formData: FormData) {
 		throw new Error("No password login setup for this account.");
 	}
 
-	const hashedPassword = await bcrypt.hash(input.newPassword, 10);
+	const hashedPassword = await hashPassword(input.newPassword);
 
 	await db.account.update({
 		where: { id: credentialAccount.id },
@@ -192,15 +193,15 @@ export async function updateAdminPasswordAction(formData: FormData) {
 		throw new Error("No password login setup for this account.");
 	}
 
-	const isValid = await bcrypt.compare(
-		input.currentPassword,
-		credentialAccount.password,
-	);
+	const isValid = await verifyPassword({
+		hash: credentialAccount.password,
+		password: input.currentPassword,
+	});
 	if (!isValid) {
 		throw new Error("Incorrect current password.");
 	}
 
-	const hashedPassword = await bcrypt.hash(input.newPassword, 10);
+	const hashedPassword = await hashPassword(input.newPassword);
 
 	await db.account.update({
 		where: { id: credentialAccount.id },

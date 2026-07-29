@@ -10,6 +10,18 @@ export async function requireUser() {
 		redirect("/login");
 	}
 
+	const record = await db.user.findUnique({
+		where: { id: session.user.id },
+		select: { isActive: true, suspensionReason: true },
+	});
+
+	if (record && !record.isActive) {
+		await db.session.deleteMany({ where: { userId: session.user.id } });
+		redirect(
+			`/login?suspended=1&reason=${encodeURIComponent(record.suspensionReason ?? "")}`,
+		);
+	}
+
 	return session.user;
 }
 
