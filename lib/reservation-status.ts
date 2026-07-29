@@ -1,6 +1,4 @@
-// src/lib/reservation-status.ts
-
-export const ReservationStatusList = {
+export const ReservationStatus = {
 	PENDING_APPROVAL: "PENDING_APPROVAL",
 	APPROVED: "APPROVED",
 	ACTIVE: "ACTIVE",
@@ -12,4 +10,4 @@ export const ReservationStatusList = {
 } as const;
 
 export type ReservationStatus =
-	(typeof ReservationStatusList)[keyof typeof ReservationStatusList];
+	(typeof ReservationStatus)[keyof typeof ReservationStatus];

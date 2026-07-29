@@ -1,6 +1,5 @@
 "use client";
 
-import { PaymentStatus, ReservationStatus } from "@prisma/client";
 import {
 	Check,
 	ChevronRight,
@@ -20,7 +19,8 @@ import {
 } from "@/actions/reservation.actions";
 import { ReservationActionForm } from "@/components/reservation/ReservationActionForm";
 import { SubmitButton } from "@/components/ui/action-button";
-import { ReservationStatusList } from "@/lib/reservation-status";
+import { PaymentStatus } from "@/lib/payment-status";
+import { ReservationStatus } from "@/lib/reservation-status";
 import { cn } from "@/lib/utils";
 
 type ReservationPreOrderItem = {
@@ -80,26 +80,26 @@ function formatDate(value: Date | string) {
 	}).format(date);
 }
 
-// function statusClass(status: ReservationStatus) {
-// 	switch (status) {
-// 		case ReservationStatus.PENDING_APPROVAL:
-// 			return "bg-yellow-50 text-yellow-700";
-// 		case ReservationStatus.APPROVED:
-// 			return "bg-emerald-50 text-emerald-700";
-// 		case ReservationStatus.ACTIVE:
-// 			return "bg-emerald-50 text-emerald-700";
-// 		case ReservationStatus.CHECKED_IN:
-// 			return "bg-blue-50 text-blue-700";
-// 		case ReservationStatus.DECLINED:
-// 			return "bg-red-50 text-red-700";
-// 		case ReservationStatus.CANCELLED:
-// 			return "bg-red-50 text-red-700";
-// 		case ReservationStatus.EXPIRED:
-// 			return "bg-slate-100 text-slate-600";
-// 		default:
-// 			return "bg-slate-100 text-slate-600";
-// 	}
-// }
+function statusClass(status: ReservationStatus) {
+	switch (status) {
+		case ReservationStatus.PENDING_APPROVAL:
+			return "bg-yellow-50 text-yellow-700";
+		case ReservationStatus.APPROVED:
+			return "bg-emerald-50 text-emerald-700";
+		case ReservationStatus.ACTIVE:
+			return "bg-emerald-50 text-emerald-700";
+		case ReservationStatus.CHECKED_IN:
+			return "bg-blue-50 text-blue-700";
+		case ReservationStatus.DECLINED:
+			return "bg-red-50 text-red-700";
+		case ReservationStatus.CANCELLED:
+			return "bg-red-50 text-red-700";
+		case ReservationStatus.EXPIRED:
+			return "bg-slate-100 text-slate-600";
+		default:
+			return "bg-slate-100 text-slate-600";
+	}
+}
 
 function paymentClass(status: PaymentStatus) {
 	return status === PaymentStatus.PAID
@@ -283,7 +283,7 @@ export function ReservationsList({
 											</td>
 											<td className="px-2 md:px-6 py-3 md:py-4">
 												<span
-													className={`inline-flex rounded-full px-2 py-0.5 md:px-3 md:py-1 text-xs font-black whitespace-nowrap ${ReservationStatusList[reservation.status]}`}
+													className={`inline-flex rounded-full px-2 py-0.5 md:px-3 md:py-1 text-xs font-black whitespace-nowrap ${statusClass(reservation.status)}`}
 												>
 													{reservation.status.replaceAll("_", " ")}
 												</span>
@@ -345,7 +345,7 @@ function ReservationMobileCard({
 				</p>
 				<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
 					<span
-						className={`inline-flex rounded-full px-2 py-0.5 text-xs font-black whitespace-nowrap ${ReservationStatusList[reservation.status]}`}
+						className={`inline-flex rounded-full px-2 py-0.5 text-xs font-black whitespace-nowrap ${statusClass(reservation.status)}`}
 					>
 						{reservation.status.replaceAll("_", " ")}
 					</span>
@@ -421,7 +421,7 @@ function ReservationDetailsModal({
 									Reservation #{reservation.id.slice(-6).toUpperCase()}
 								</h2>
 								<span
-									className={`rounded-full px-2 py-0.5 md:px-3 md:py-1 text-xs font-black ${ReservationStatusList[reservation.status]}`}
+									className={`rounded-full px-2 py-0.5 md:px-3 md:py-1 text-xs font-black ${statusClass(reservation.status)}`}
 								>
 									{reservation.status.replaceAll("_", " ")}
 								</span>
