@@ -4,12 +4,12 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────
@@ -47,6 +47,7 @@ enum OrderType {
 }
 
 enum OrderStatus {
+  PENDING_APPROVAL
   PENDING_PAYMENT
   CONFIRMED
   PREPARING
@@ -68,16 +69,33 @@ enum DineInPaymentMethod {
   TRANSFER_OR_CARD
 }
 
+enum PaymentMethod {
+  CASH
+  POS
+  TRANSFER
+  PAYSTACK
+}
+
+enum DineInServiceMode {
+  SELF_SERVED
+  SERVED_BY_WAITER
+}
+
 enum PaymentPolicy {
   PAY_BEFORE_SERVICE
   PAY_AFTER_SERVICE
+  FLEXIBLE
 }
 
 enum ReservationStatus {
+  PENDING_APPROVAL
+  APPROVED
   ACTIVE
   CHECKED_IN
+  COMPLETED
   EXPIRED
   CANCELLED
+  DECLINED
 }
 
 // ─── Table Booking Configuration Enums ───────────────
@@ -112,40 +130,42 @@ enum RatingContext {
 
 // Who the notification is for
 enum NotificationAudience {
-  ADMIN   // Restaurant owner / dashboard users
-  STAFF   // Staff members of the restaurant
-  BOTH    // Sent to both admin and staff
+  ADMIN // Restaurant owner / dashboard users
+  STAFF // Staff members of the restaurant
+  BOTH // Sent to both admin and staff
 }
 
 // What triggered the notification
 enum NotificationType {
-  NEW_ORDER              // A new order was placed (any type)
-  ORDER_STATUS_CHANGED   // Admin/staff updated an order's status
-  ORDER_CANCELLED        // An order was cancelled
-  NEW_RESERVATION        // A customer booked a table
-  RESERVATION_CANCELLED  // A reservation was cancelled
-  RESERVATION_EXPIRED    // QStash fired expiry — table freed
-  PAYMENT_RECEIVED       // Staff recorded a dine-in payment
-  LOW_STOCK_ALERT        // (future) menu item stock low
+  NEW_ORDER // A new order was placed (any type)
+  ORDER_STATUS_CHANGED // Admin/staff updated an order's status
+  ORDER_CANCELLED // An order was cancelled
+  NEW_RESERVATION // A customer booked a table
+  RESERVATION_CANCELLED // A reservation was cancelled
+  RESERVATION_EXPIRED // QStash fired expiry — table freed
+  PAYMENT_RECEIVED // Staff recorded a dine-in payment
+  LOW_STOCK_ALERT // (future) menu item stock low
 }
 
 // ─── Auth (better-auth managed) ──────────────────────
 
 model User {
-  id            String       @id @default(cuid())
-  email         String       @unique
-  emailVerified Boolean      @default(false)
-  name          String?
-  image         String?
-  role          UserRole     @default(RESTAURANT_OWNER)
+  id               String   @id @default(cuid())
+  email            String   @unique
+  emailVerified    Boolean  @default(false)
+  name             String?
+  image            String?
+  role             UserRole @default(RESTAURANT_OWNER)
+  isActive         Boolean  @default(true)
+  suspensionReason String?
 
   onboardingStatus OnboardingStatus @default(PENDING_PLAN)
 
-  restaurants        Restaurant[]
-  sessions           Session[]
-  accounts           Account[]
-  subscriptions      Subscription[]
-  pushSubscriptions  PushSubscription[]  // VAPID Web Push subscriptions
+  restaurants       Restaurant[]
+  sessions          Session[]
+  accounts          Account[]
+  subscriptions     Subscription[]
+  pushSubscriptions PushSubscription[] // VAPID Web Push subscriptions
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -164,16 +184,34 @@ model Session {
 }
 
 model Account {
-  id           String  @id @default(cuid())
-  userId       String
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider     String
-  providerId   String
-  accessToken  String?
-  refreshToken String?
-  idToken      String?
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  provider              String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  @@unique([provider, providerId])
+  @@unique([provider, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
 }
 
 // ─── Staff Accounts ───────────────────────────────────
@@ -183,13 +221,21 @@ model StaffMember {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  name         String
-  staffId      String     @unique
-  pinHash      String
-  isActive     Boolean    @default(true)
+  name     String
+  staffId  String  @unique
+  pinHash  String? // Optional — staff login is ID-only
+  isActive Boolean @default(true)
+
+  // Per-staff permission overrides (null = inherit restaurant default)
+  canHandleDineIn        Boolean?
+  canHandlePickup        Boolean?
+  canHandleDelivery      Boolean?
+  canRecordCashPayment   Boolean?
+  canApproveReservations Boolean?
 
   orders            Order[]            @relation("AttendingStaff")
   pushSubscriptions PushSubscription[] // VAPID Web Push subscriptions for staff
+  orderEvents       OrderEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -206,20 +252,22 @@ model Plan {
   name        String
   description String?
 
-  monthlyPrice Decimal @db.Decimal(10, 2) @default(0)
-  yearlyPrice  Decimal @db.Decimal(10, 2) @default(0)
+  monthlyPrice Decimal @default(0) @db.Decimal(10, 2)
+  yearlyPrice  Decimal @default(0) @db.Decimal(10, 2)
 
   maxCategories Int @default(2)
   maxMenuItems  Int @default(8)
 
-  multipleTemplates        Boolean  @default(false)
-  advancedAnalytics        Boolean  @default(false)
-  removeAwamenuBranding    Boolean  @default(false)
-  whatsappIntegration      Boolean  @default(true)
-  prioritySupport          Boolean  @default(false)
-  basicSupport             Boolean  @default(false)
+  multipleTemplates     Boolean @default(false)
+  advancedAnalytics     Boolean @default(false)
+  removeAwamenuBranding Boolean @default(false)
+  whatsappIntegration   Boolean @default(true)
+  prioritySupport       Boolean @default(false)
+  basicSupport          Boolean @default(false)
 
   availableTemplates String[] @default(["classic"])
+
+  paystackPlanCode String? // E.g., PLN_xxxxx for Paystack Subscriptions
 
   isActive Boolean @default(true)
 
@@ -232,11 +280,12 @@ model Plan {
 // ─── Subscriptions ────────────────────────────────────
 
 model Subscription {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  planId String
-  plan   Plan   @relation(fields: [planId], references: [id])
+  id             String  @id @default(cuid())
+  userId         String
+  user           User    @relation(fields: [userId], references: [id])
+  planId         String
+  plan           Plan    @relation(fields: [planId], references: [id])
+  originalPlanId String?
 
   status SubscriptionStatus @default(TRIALING)
 
@@ -273,13 +322,24 @@ model Restaurant {
 
   whatsappNumber String?
 
-  dineInEnabled           Boolean       @default(true)
-  pickupEnabled           Boolean       @default(true)
-  deliveryEnabled         Boolean       @default(true)
-  tableReservationEnabled Boolean       @default(false)
-  tablesEnabled           Boolean       @default(false)
+  dineInEnabled           Boolean @default(true)
+  pickupEnabled           Boolean @default(true)
+  deliveryEnabled         Boolean @default(true)
+  tableReservationEnabled Boolean @default(false)
+  tablesEnabled           Boolean @default(false)
 
   dineInPaymentPolicy PaymentPolicy @default(PAY_BEFORE_SERVICE)
+
+  // ─── Staff Permission Defaults ──────────────────────
+  // Global defaults for all staff. Individual staff can override.
+  staffDefaultDineIn              Boolean @default(true)
+  staffDefaultPickup              Boolean @default(false)
+  staffDefaultDelivery            Boolean @default(false)
+  staffDefaultCashPayment         Boolean @default(true)
+  staffDefaultApproveReservations Boolean @default(false)
+
+  staffDashboardPassword      String? // Master password for the shared staff dashboard
+  staffDashboardAutoLockHours Int     @default(24) // Hours before session auto-locks
 
   isActive Boolean @default(true)
 
@@ -292,6 +352,7 @@ model Restaurant {
 
   subscription       Subscription?
   categories         MenuCategory[]
+  banners            RestaurantBanner[]
   orders             Order[]
   tables             TableSeat[]
   reservations       Reservation[]
@@ -299,7 +360,8 @@ model Restaurant {
   analytics          ScanEvent[]
   staff              StaffMember[]
   ratings            Rating[]
-  notifications      Notification[]      // All notifications for this restaurant
+  notifications      Notification[] // All notifications for this restaurant
+  bankAccounts       RestaurantBankAccount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -308,7 +370,36 @@ model Restaurant {
   @@index([ownerId])
 }
 
+model RestaurantBankAccount {
+  id            String     @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  accountName   String
+  accountNumber String
+  bankName      String
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([restaurantId])
+}
+
 // ─── Menu ─────────────────────────────────────────────
+
+model RestaurantBanner {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  imageUrl     String
+  title        String?
+  subtitle     String?
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([restaurantId])
+}
 
 model MenuCategory {
   id           String     @id @default(cuid())
@@ -363,32 +454,45 @@ model Order {
 
   tableNumber         String?
   tableId             String?
+  table               TableSeat?           @relation("TableOrders", fields: [tableId], references: [id])
   tableLabel          String?
   dineInPaymentPolicy PaymentPolicy?
   dineInPaymentMethod DineInPaymentMethod?
+  dineInServiceMode   DineInServiceMode?
+  waiterName          String?
 
-  dineInAmountPaid        Decimal?  @db.Decimal(10, 2)
+  dineInAmountPaid        Decimal?             @db.Decimal(10, 2)
   dineInPaymentRecordedAt DateTime?
   dineInPaidMethod        DineInPaymentMethod?
 
   attendingStaffId String?
   attendingStaff   StaffMember? @relation("AttendingStaff", fields: [attendingStaffId], references: [id])
 
-  deliveryAddress String?
-  deliveryNotes   String?
-  deliveryFee     Decimal @db.Decimal(10, 2) @default(0)
+  deliveryAddress   String?
+  deliveryNotes     String?
+  statusNote        String?
+  orderFor          String? // "SELF" | "SOMEONE_ELSE"
+  senderPhone       String?
+  senderTableNumber String?
+  receiverPhone     String?
+  receiverAltPhone  String?
+  receiverName      String?
+  seatNumber        String?
+  deliveryFee       Decimal @default(0) @db.Decimal(10, 2)
 
   subtotal Decimal @db.Decimal(10, 2)
   total    Decimal @db.Decimal(10, 2)
 
-  items OrderItem[]
+  items    OrderItem[]
+  payments OrderPayment[]
+  events   OrderEvent[]
 
   whatsappNotified   Boolean   @default(false)
   whatsappNotifiedAt DateTime?
 
   rating Rating?
 
-  linkedReservation Reservation? @relation(fields: [id], references: [preOrderId])
+  linkedReservation Reservation? @relation("ReservationPreOrder")
 
   cancelledById    String?
   cancelledAt      DateTime?
@@ -418,6 +522,19 @@ model OrderItem {
   @@index([orderId])
 }
 
+model OrderPayment {
+  id           String        @id @default(cuid())
+  orderId      String
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount       Decimal       @db.Decimal(10, 2)
+  method       PaymentMethod
+  reference    String? // E.g., Paystack ref, bank transfer ref
+  recordedById String? // ID of staff or admin who recorded this
+  createdAt    DateTime      @default(now())
+
+  @@index([orderId])
+}
+
 // ─── Tables & Reservations ────────────────────────────
 
 model ReservationSetting {
@@ -425,74 +542,79 @@ model ReservationSetting {
   restaurantId String     @unique
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  bookingMode          TableBookingMode   @default(FREE_BOOKING)
-  paymentTiming        TablePaymentTiming @default(PAY_ON_ARRIVAL)
-  inclusionType        TableInclusionType @default(TABLE_FEE_ONLY)
-  defaultTableFee      Decimal?           @db.Decimal(10, 2)
+  bookingMode     TableBookingMode   @default(FREE_BOOKING)
+  paymentTiming   TablePaymentTiming @default(PAY_ON_ARRIVAL)
+  inclusionType   TableInclusionType @default(TABLE_FEE_ONLY)
+  defaultTableFee Decimal?           @db.Decimal(10, 2)
 
-  advanceBookingHours  Int     @default(0)
-  holdDurationMinutes  Int     @default(60)
-  minPartySize         Int     @default(1)
-  maxPartySize         Int     @default(0)
-  cancellationPolicy   String?
-  bookingDescription   String?
+  advanceBookingHours Int     @default(0)
+  holdDurationMinutes Int     @default(60)
+  minPartySize        Int     @default(1)
+  maxPartySize        Int     @default(0)
+  cancellationPolicy  String?
+  bookingDescription  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model TableSeat {
-  id           String        @id @default(cuid())
+  id           String     @id @default(cuid())
   restaurantId String
-  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  label        String
-  description  String?
-  capacity     Int           @default(2)
-  isActive     Boolean       @default(true)
-  sortOrder    Int           @default(0)
+  label       String
+  description String?
+  imageUrl    String?
+  capacity    Int     @default(2)
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
 
-  bookingModeOverride    TableBookingMode?
-  paymentTimingOverride  TablePaymentTiming?
-  inclusionTypeOverride  TableInclusionType?
-  tableFee               Decimal? @db.Decimal(10, 2)
-  minimumSpend           Decimal? @db.Decimal(10, 2)
+  bookingModeOverride   TableBookingMode?
+  paymentTimingOverride TablePaymentTiming?
+  inclusionTypeOverride TableInclusionType?
+  tableFee              Decimal?            @db.Decimal(10, 2)
+  minimumSpend          Decimal?            @db.Decimal(10, 2)
 
   reservations Reservation[]
-  orders       Order[]
+  orders       Order[]       @relation("TableOrders")
 
   @@index([restaurantId])
 }
 
 model Reservation {
-  id           String            @id @default(cuid())
+  id           String     @id @default(cuid())
   restaurantId String
-  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id])
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
   tableId      String
-  table        TableSeat         @relation(fields: [tableId], references: [id])
+  table        TableSeat  @relation(fields: [tableId], references: [id])
 
   customerName  String
   customerPhone String
   customerEmail String?
-  partySize     Int              @default(1)
+  partySize     Int     @default(1)
 
   startsAt  DateTime
   endsAt    DateTime?
   expiresAt DateTime
-  status    ReservationStatus   @default(ACTIVE)
+  status    ReservationStatus @default(PENDING_APPROVAL)
 
   qstashMessageId String?
+  approvedAt      DateTime?
+  declinedAt      DateTime?
+  declineReason   String?
 
-  effectiveBookingMode    TableBookingMode
-  effectivePaymentTiming  TablePaymentTiming
-  effectiveInclusionType  TableInclusionType
-  effectiveTableFee       Decimal? @db.Decimal(10, 2)
+  effectiveBookingMode   TableBookingMode
+  effectivePaymentTiming TablePaymentTiming
+  effectiveInclusionType TableInclusionType
+  effectiveTableFee      Decimal?           @db.Decimal(10, 2)
 
   reservationPaymentStatus PaymentStatus @default(PENDING)
   reservationPaymentRef    String?
   reservationAmountPaid    Decimal?      @db.Decimal(10, 2)
 
   preOrderId String? @unique
+  preOrder   Order?  @relation("ReservationPreOrder", fields: [preOrderId], references: [id])
 
   specialRequests String?
 
@@ -505,6 +627,35 @@ model Reservation {
   @@index([tableId])
   @@index([startsAt])
   @@index([customerPhone])
+}
+
+// ─── Customer Access ─────────────────────────────────
+
+model CustomerProfile {
+  id               String  @id @default(cuid())
+  fullName         String?
+  whatsappNumber   String? @unique
+  alternativePhone String?
+  email            String? @unique
+  deliveryAddress  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([whatsappNumber])
+  @@index([email])
+}
+
+model CustomerOtp {
+  id         String    @id @default(cuid())
+  identifier String
+  channel    String
+  code       String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([identifier, createdAt])
 }
 
 // ─── In-App Notifications ─────────────────────────────
@@ -524,25 +675,25 @@ model Reservation {
 //      NotificationBell shows badge
 
 model Notification {
-  id           String               @id @default(cuid())
+  id           String     @id @default(cuid())
   restaurantId String
-  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  type         NotificationType
-  audience     NotificationAudience // Who should receive this
+  type     NotificationType
+  audience NotificationAudience // Who should receive this
 
-  title        String               // Short heading, e.g. "New Order #A3F2"
-  body         String               // Detail line, e.g. "Dine-in · Table 5 · ₦4,500"
+  title String // Short heading, e.g. "New Order #A3F2"
+  body  String // Detail line, e.g. "Dine-in · Table 5 · ₦4,500"
 
   // Optional deep-link — where clicking the notification navigates to
   // e.g. "/dashboard/burgerpalace/orders?orderId=xxx"
-  actionUrl    String?
+  actionUrl String?
 
   // Contextual data (orderId, reservationId, etc.) stored as JSON
   // Used by the client to update local state without a refetch
-  metadata     Json?
+  metadata Json?
 
-  reads        NotificationRead[]
+  reads NotificationRead[]
 
   createdAt DateTime @default(now())
 
@@ -557,10 +708,10 @@ model NotificationRead {
   notificationId String
   notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
-  recipientType  String       // "admin" | "staff"
-  recipientId    String       // userId (admin) or staffMemberId (staff)
+  recipientType String // "admin" | "staff"
+  recipientId   String // userId (admin) or staffMemberId (staff)
 
-  readAt         DateTime     @default(now())
+  readAt DateTime @default(now())
 
   @@unique([notificationId, recipientType, recipientId])
   @@index([recipientType, recipientId])
@@ -569,23 +720,23 @@ model NotificationRead {
 // VAPID Web Push subscriptions — stored per recipient so we can
 // send to all devices a user/staff member has installed the PWA on.
 model PushSubscription {
-  id             String       @id @default(cuid())
+  id String @id @default(cuid())
 
   // Belongs to either a User (admin) or StaffMember — not both
-  userId         String?
-  user           User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  staffMemberId  String?
-  staffMember    StaffMember? @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staffMemberId String?
+  staffMember   StaffMember? @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
 
-  restaurantId   String       // Denormalised for easy querying by tenant
+  restaurantId String // Denormalised for easy querying by tenant
 
   // The Web Push subscription object from the browser
-  endpoint       String       @unique
-  p256dh         String       // Public key
-  auth           String       // Auth secret
+  endpoint String @unique
+  p256dh   String // Public key
+  auth     String // Auth secret
 
-  userAgent      String?
-  createdAt      DateTime     @default(now())
+  userAgent String?
+  createdAt DateTime @default(now())
 
   @@index([restaurantId])
   @@index([userId])
@@ -595,26 +746,27 @@ model PushSubscription {
 // ─── Ratings ──────────────────────────────────────────
 
 model Rating {
-  id           String        @id @default(cuid())
+  id           String     @id @default(cuid())
   restaurantId String
-  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
 
-  orderId       String?  @unique
-  order         Order?   @relation(fields: [orderId], references: [id])
-  reservationId String?  @unique
+  orderId       String?      @unique
+  order         Order?       @relation(fields: [orderId], references: [id])
+  reservationId String?      @unique
   reservation   Reservation? @relation(fields: [reservationId], references: [id])
 
-  context       RatingContext
+  context RatingContext
 
-  foodQuality      Int?
-  deliverySpeed    Int?
-  packaging        Int?
-  serviceQuality   Int?
-  ambiance         Int?
-  valueForMoney    Int?
-  overallRating    Int
+  foodQuality    Int?
+  deliverySpeed  Int?
+  packaging      Int?
+  serviceQuality Int?
+  ambiance       Int?
+  valueForMoney  Int?
+  overallRating  Int
 
-  comment          String?
+  comment  String?
+  isHidden Boolean @default(false)
 
   customerName  String?
   customerPhone String?
@@ -636,4 +788,45 @@ model ScanEvent {
 
   @@index([restaurantId, scannedAt])
 }
-```
+
+// ─── Order Events ─────────────────────────────────────
+
+model OrderEvent {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description String
+  staffId     String?
+  staff       StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  isAutomatic Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+
+  @@index([orderId])
+  @@index([staffId])
+}
+
+// ─── Super Admin ──────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  adminName String
+  action    String
+  target    String
+  status    String   @default("success")
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model PlatformSetting {
+  id                String  @id @default(cuid())
+  platformName      String  @default("AwaMenu")
+  logoUrl           String?
+  paystackPublicKey String?
+  paystackSecretKey String?
+  maintenanceMode   Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+}
