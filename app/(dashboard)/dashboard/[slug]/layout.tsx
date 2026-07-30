@@ -1,10 +1,26 @@
 import { NotificationAudience } from "@prisma/client";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminDashboardShell } from "@/components/admin/admin-dashboard-shell";
+import { RestaurantBrandProvider } from "@/components/shared/RestaurantBrandContext";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { LOGO_ICON_URL } from "@/lib/logo";
+import { getRestaurantBrand } from "@/lib/restaurant-brand";
 import { isSubscriptionActive } from "@/lib/subscription";
 import { getThemeStyle } from "@/lib/theme-style";
+
+export async function generateMetadata({
+	params,
+}: {
+	params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+	const { slug } = await params;
+	const restaurant = await getRestaurantBrand(slug);
+	const icon = restaurant?.logoUrl ?? LOGO_ICON_URL;
+
+	return { icons: { icon, shortcut: icon, apple: icon } };
+}
 
 export default async function DashboardLayout({
 	children,
@@ -113,6 +129,11 @@ export default async function DashboardLayout({
 	}));
 
 	const style = getThemeStyle(restaurant.primaryColor);
+	const brand = {
+		name: restaurant.name,
+		logoUrl: restaurant.logoUrl,
+		primaryColor: restaurant.primaryColor,
+	};
 
 	return (
 		<div style={style} className="h-full">
@@ -126,7 +147,9 @@ export default async function DashboardLayout({
 				initialNotifications={notifications}
 				initialUnreadCount={unreadCount}
 			>
-				{children}
+				<RestaurantBrandProvider brand={brand}>
+					{children}
+				</RestaurantBrandProvider>
 			</AdminDashboardShell>
 		</div>
 	);

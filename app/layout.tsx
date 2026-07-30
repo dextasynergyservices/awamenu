@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Montserrat, Open_Sans, Roboto } from "next/font/google";
 import "./globals.css";
 import { PosthogProvider } from "@/components/shared/PosthogProvider";
+import { LOGO_ICON_URL } from "@/lib/logo";
 import { cn } from "@/lib/utils";
 
 const montserrat = Montserrat({
@@ -27,6 +28,11 @@ export const metadata: Metadata = {
 	description:
 		"Modern restaurant menu management, ordering, and reservation platform.",
 	manifest: "/manifest.webmanifest",
+	icons: {
+		icon: LOGO_ICON_URL,
+		shortcut: LOGO_ICON_URL,
+		apple: LOGO_ICON_URL,
+	},
 	appleWebApp: {
 		capable: true,
 		statusBarStyle: "default",
@@ -56,7 +62,6 @@ export default function RootLayout({
 		>
 			<head>
 				<meta name="theme-color" content="#047857" />
-				<link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
 			</head>
 			<body className="min-h-full flex flex-col">
 				<PosthogProvider />

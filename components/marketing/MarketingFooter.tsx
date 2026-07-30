@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { LOGO_DESKTOP_URL } from "@/lib/logo";
 
 const footerLinks: Record<string, { label: string; href: string }[]> = {
 	Product: [
@@ -18,11 +20,14 @@ export function MarketingFooter() {
 			<div className="mx-auto max-w-6xl px-6 py-12 lg:px-8">
 				<div className="grid gap-10 md:grid-cols-[1.2fr_1fr_1fr]">
 					<div>
-						<Link
-							href="/"
-							className="text-2xl font-black italic tracking-tight text-yellow-300"
-						>
-							AwaMenu
+						<Link href="/" className="inline-block">
+							<Image
+								src={LOGO_DESKTOP_URL}
+								alt="AwaMenu"
+								width={240}
+								height={31}
+								className="h-8 w-auto"
+							/>
 						</Link>
 						<p className="mt-3 max-w-xs text-sm font-medium leading-6 text-white/70">
 							Your restaurant menu, online in minutes — QR menus, ordering, and
