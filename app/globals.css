@@ -158,3 +158,113 @@ strong {
 		display: none;
 	}
 }
+
+/* FlipText — each character flips on its X axis, staggered via --flip-delay. */
+.flip-char {
+	transform-origin: 50% 100%;
+	backface-visibility: hidden;
+	animation-name: flip-char-loop;
+	animation-duration: var(--flip-duration, 2.2s);
+	animation-delay: var(--flip-delay, 0s);
+	animation-iteration-count: var(--flip-iteration, infinite);
+	animation-timing-function: ease-in-out;
+}
+
+@keyframes flip-char-loop {
+	0%,
+	40% {
+		transform: rotateX(0deg);
+	}
+	50% {
+		transform: rotateX(-90deg);
+	}
+	60%,
+	100% {
+		transform: rotateX(0deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.flip-char {
+		animation: none;
+	}
+}
+
+/*
+ * Homepage hero entrance — pure CSS, deliberately not JS/GSAP-driven.
+ * Server-rendered HTML paints before any client JS loads or hydrates, so a
+ * JS-only reveal (even one using useLayoutEffect) always has a window where
+ * the browser already painted the final, visible state first — that's the
+ * flash. CSS keyframes apply their "from" state (via animation-fill-mode:
+ * both) starting at first paint, before any JS is involved, so there's
+ * nothing to flash. If JS never loads at all, the animation still plays out
+ * and settles on `to` on its own — content never gets stuck hidden.
+ */
+@keyframes hero-slide-from-top {
+	from {
+		opacity: 0;
+		transform: translateY(-32px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes hero-slide-from-left {
+	from {
+		opacity: 0;
+		transform: translateX(-50px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes hero-slide-from-right {
+	from {
+		opacity: 0;
+		transform: translateX(60px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+@keyframes hero-slide-from-bottom-right {
+	from {
+		opacity: 0;
+		transform: translate(40px, 30px);
+	}
+	to {
+		opacity: 1;
+		transform: translate(0, 0);
+	}
+}
+
+.hero-anim-nav {
+	animation: hero-slide-from-top 0.8s ease-out 0.9s both;
+}
+
+.hero-anim-eyebrow {
+	animation: hero-slide-from-left 0.8s ease-out 2.3s both;
+}
+
+.hero-anim-title {
+	animation: hero-slide-from-right 0.8s ease-out 2.7s both;
+}
+
+.hero-anim-ctas {
+	animation: hero-slide-from-bottom-right 0.8s ease-out 3.8s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.hero-anim-nav,
+	.hero-anim-eyebrow,
+	.hero-anim-title,
+	.hero-anim-ctas {
+		animation: none;
+	}
+}

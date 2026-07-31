@@ -13,6 +13,7 @@ import {
 	TrendingUp,
 	Users,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -20,6 +21,7 @@ import { LoadingButton } from "@/components/ui/action-button";
 import { MobileModal } from "@/components/ui/MobileModal";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { authClient } from "@/lib/auth-client";
+import { LOGO_DESKTOP_URL, LOGO_ICON_URL } from "@/lib/logo";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -80,8 +82,16 @@ export function SuperAdminShell({
 
 			<aside className="fixed top-0 left-0 z-40 hidden h-screen w-[264px] flex-col border-emerald-100 border-r bg-white md:flex">
 				<div className="px-6 pt-8 pb-7">
-					<Link href={basePath} className="text-xl font-black text-slate-950">
-						AwaMenu <span className="text-emerald-700">Admin</span>
+					<Link href={basePath} className="flex items-center gap-2">
+						<Image
+							src={LOGO_DESKTOP_URL}
+							alt="AwaMenu"
+							width={200}
+							height={26}
+							className="h-7 w-auto"
+							priority
+						/>
+						<span className="text-sm font-black text-emerald-700">Admin</span>
 					</Link>
 				</div>
 				<nav className="grid gap-2 px-4">
@@ -128,8 +138,16 @@ export function SuperAdminShell({
 			<div className="min-w-0 max-w-full overflow-x-hidden pt-[73px] pb-24 md:ml-[264px] md:pt-8 md:pb-10">
 				<header className="fixed inset-x-0 top-0 z-30 max-w-full overflow-hidden border-emerald-100 border-b bg-white/92 px-3 py-3 backdrop-blur md:hidden">
 					<div className="flex min-h-11 items-center justify-between gap-2">
-						<Link href={basePath} className="text-sm font-black text-slate-950">
-							AwaMenu <span className="text-emerald-700">Admin</span>
+						<Link href={basePath} className="flex items-center gap-1.5">
+							<Image
+								src={LOGO_ICON_URL}
+								alt="AwaMenu"
+								width={28}
+								height={28}
+								className="size-7 shrink-0 rounded-md object-contain"
+								priority
+							/>
+							<span className="text-sm font-black text-emerald-700">Admin</span>
 						</Link>
 						<LoadingButton
 							type="button"

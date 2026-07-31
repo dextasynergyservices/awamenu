@@ -12,7 +12,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { RATING_METRIC_LABELS, type RatingMetric } from "@/lib/rating";
+import { RATING_METRIC_LABELS, type RatingMetric } from "@/lib/rating-metrics";
 
 const ORDER_TYPE_COLORS: Record<string, string> = {
 	DINE_IN: "#059669",

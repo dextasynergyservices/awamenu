@@ -1,6 +1,5 @@
 "use client";
 
-import { PaymentStatus, ReservationStatus } from "@prisma/client";
 import {
 	Check,
 	ChevronRight,
@@ -20,6 +19,8 @@ import {
 } from "@/actions/reservation.actions";
 import { ReservationActionForm } from "@/components/reservation/ReservationActionForm";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PaymentStatus } from "@/lib/payment-status";
+import { ReservationStatus } from "@/lib/reservation-status";
 import { cn } from "@/lib/utils";
 
 type ReservationPreOrderItem = {

@@ -4,7 +4,7 @@ import { z } from "zod";
 export const env = createEnv({
 	server: {
 		BETTER_AUTH_SECRET: z.string().min(1),
-		BETTER_AUTH_URL: z.string().url(),
+		BETTER_AUTH_URL: z.string().url().optional(),
 		DATABASE_URL: z.string().min(1),
 		DIRECT_DATABASE_URL: z.string().min(1).optional(),
 		PAYSTACK_SECRET_KEY: z.string().min(1).optional(),
@@ -25,7 +25,7 @@ export const env = createEnv({
 		POSTHOG_PROJECT_API_KEY: z.string().min(1).optional(),
 	},
 	client: {
-		NEXT_PUBLIC_APP_URL: z.string().url(),
+		NEXT_PUBLIC_APP_URL: z.string().url().optional(),
 		NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL: z.string().url().optional(),
 		NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().min(1).optional(),
 		NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
@@ -35,10 +35,21 @@ export const env = createEnv({
 	},
 	runtimeEnv: {
 		BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-		BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+		// Falls back to Vercel's auto-injected deployment URL so a first-time
+		// deploy doesn't deadlock on not yet knowing its own domain.
+		BETTER_AUTH_URL:
+			process.env.BETTER_AUTH_URL ??
+			(process.env.VERCEL_URL
+				? `https://${process.env.VERCEL_URL}`
+				: undefined),
 		DATABASE_URL: process.env.DATABASE_URL,
 		DIRECT_DATABASE_URL: process.env.DIRECT_DATABASE_URL,
-		NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+		// Same Vercel-URL fallback as BETTER_AUTH_URL above.
+		NEXT_PUBLIC_APP_URL:
+			process.env.NEXT_PUBLIC_APP_URL ??
+			(process.env.VERCEL_URL
+				? `https://${process.env.VERCEL_URL}`
+				: undefined),
 		NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL:
 			process.env.NEXT_PUBLIC_CLOUDINARY_DELIVERY_URL,
 		PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY,

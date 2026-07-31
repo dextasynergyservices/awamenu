@@ -1,10 +1,10 @@
 "use client";
 
-import { PaymentPolicy } from "@prisma/client";
 import { Settings } from "lucide-react";
 import { updateRestaurantSettingsAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PaymentPolicy } from "@/lib/payment-policy";
 
 type RestaurantSettingsProps = {
 	slug: string;

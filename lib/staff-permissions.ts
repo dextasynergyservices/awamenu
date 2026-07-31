@@ -1,5 +1,3 @@
-import type { Restaurant, StaffMember } from "@prisma/client";
-
 /**
  * Resolved staff permissions after merging restaurant defaults
  * with per-staff overrides (null = use default).
@@ -12,23 +10,21 @@ export type StaffPermissions = {
 	approveReservations: boolean;
 };
 
-type RestaurantDefaults = Pick<
-	Restaurant,
-	| "staffDefaultDineIn"
-	| "staffDefaultPickup"
-	| "staffDefaultDelivery"
-	| "staffDefaultCashPayment"
-	| "staffDefaultApproveReservations"
->;
+type RestaurantDefaults = {
+	staffDefaultDineIn: boolean;
+	staffDefaultPickup: boolean;
+	staffDefaultDelivery: boolean;
+	staffDefaultCashPayment: boolean;
+	staffDefaultApproveReservations: boolean;
+};
 
-type StaffOverrides = Pick<
-	StaffMember,
-	| "canHandleDineIn"
-	| "canHandlePickup"
-	| "canHandleDelivery"
-	| "canRecordCashPayment"
-	| "canApproveReservations"
->;
+type StaffOverrides = {
+	canHandleDineIn: boolean | null;
+	canHandlePickup: boolean | null;
+	canHandleDelivery: boolean | null;
+	canRecordCashPayment: boolean | null;
+	canApproveReservations: boolean | null;
+};
 
 /**
  * Resolve effective staff permissions by merging restaurant-level

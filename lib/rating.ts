@@ -4,14 +4,7 @@ import {
 	PaymentPolicy,
 	RatingContext,
 } from "@prisma/client";
-
-export type RatingMetric =
-	| "foodQuality"
-	| "deliverySpeed"
-	| "packaging"
-	| "serviceQuality"
-	| "ambiance"
-	| "valueForMoney";
+import type { RatingMetric } from "@/lib/rating-metrics";
 
 type RatableOrder = {
 	type: OrderType;
@@ -90,12 +83,3 @@ export const RATING_METRICS_BY_CONTEXT: Record<RatingContext, RatingMetric[]> =
 			"valueForMoney",
 		],
 	};
-
-export const RATING_METRIC_LABELS: Record<RatingMetric, string> = {
-	foodQuality: "Food Quality",
-	deliverySpeed: "Delivery Speed",
-	packaging: "Packaging",
-	serviceQuality: "Service Quality",
-	ambiance: "Ambiance",
-	valueForMoney: "Value for Money",
-};
