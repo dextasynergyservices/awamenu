@@ -9,7 +9,6 @@ import {
 	Smartphone,
 } from "lucide-react";
 import Link from "next/link";
-import { HeroIntroAnimation } from "@/components/marketing/HeroIntroAnimation";
 import { MarketingBottomNav } from "@/components/marketing/MarketingBottomNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
@@ -175,7 +174,6 @@ export default async function Home() {
 							</div>
 						</div>
 					</div>
-					<HeroIntroAnimation />
 					<div className="relative mx-auto hidden w-full max-w-6xl px-4 pb-8 sm:px-6 md:block lg:px-8">
 						<div className="grid gap-3 rounded-[2rem] border border-yellow-300/20 bg-white/8 p-3 shadow-[0_24px_70px_rgba(0,0,0,0.22)] backdrop-blur md:grid-cols-5">
 							{[

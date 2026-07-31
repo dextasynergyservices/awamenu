@@ -1,12 +1,12 @@
-import type { Plan } from "@prisma/client";
 import {
 	createPlanAction,
 	updatePlanAction,
 } from "@/actions/super-admin.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import type { db } from "@/lib/db";
 
 type PlanEditorProps = {
-	plan?: Plan;
+	plan?: NonNullable<Awaited<ReturnType<typeof db.plan.findUnique>>>;
 	onSaved?: () => void;
 };
 

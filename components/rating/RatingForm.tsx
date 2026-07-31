@@ -4,7 +4,7 @@ import { Star } from "lucide-react";
 import { useState } from "react";
 import { submitRatingAction } from "@/actions/rating.actions";
 import { SubmitButton } from "@/components/ui/action-button";
-import { RATING_METRIC_LABELS, type RatingMetric } from "@/lib/rating";
+import { RATING_METRIC_LABELS, type RatingMetric } from "@/lib/rating-metrics";
 
 type RatingFormProps = {
 	orderId: string;

@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { LOGO_DESKTOP_URL, LOGO_ICON_URL } from "@/lib/logo";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
@@ -25,14 +27,23 @@ export function MarketingHeader({ variant = "light" }: MarketingHeaderProps) {
 						: "border border-slate-100 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.05)]",
 				)}
 			>
-				<Link
-					href="/"
-					className={cn(
-						"text-xl font-black italic tracking-tight sm:text-2xl",
-						isDark ? "text-yellow-300" : "text-emerald-700",
-					)}
-				>
-					AwaMenu
+				<Link href="/" className="flex items-center">
+					<Image
+						src={LOGO_ICON_URL}
+						alt="AwaMenu"
+						width={40}
+						height={40}
+						className="size-9 shrink-0 rounded-lg object-contain sm:hidden"
+						priority
+					/>
+					<Image
+						src={LOGO_DESKTOP_URL}
+						alt="AwaMenu"
+						width={240}
+						height={31}
+						className="hidden h-8 w-auto sm:block"
+						priority
+					/>
 				</Link>
 				<nav
 					className={cn(

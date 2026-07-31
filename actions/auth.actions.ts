@@ -151,7 +151,7 @@ export async function resetPasswordWithTokenAction(formData: FormData) {
 	}
 
 	const credentialAccount = user.accounts.find(
-		(a) => a.provider === "credential",
+		(a: (typeof user.accounts)[number]) => a.provider === "credential",
 	);
 	if (!credentialAccount) {
 		throw new Error("No password login setup for this account.");
@@ -187,7 +187,7 @@ export async function updateAdminPasswordAction(formData: FormData) {
 	if (!userDb) throw new Error("User not found.");
 
 	const credentialAccount = userDb.accounts.find(
-		(a) => a.provider === "credential",
+		(a: (typeof userDb.accounts)[number]) => a.provider === "credential",
 	);
 	if (!credentialAccount?.password) {
 		throw new Error("No password login setup for this account.");

@@ -2,6 +2,7 @@
 
 import { defaultCache } from "@serwist/next/worker";
 import { type PrecacheEntry, Serwist } from "serwist";
+import { LOGO_ICON_URL } from "@/lib/logo";
 
 declare const self: ServiceWorkerGlobalScope & {
 	__SW_MANIFEST: (PrecacheEntry | string)[] | undefined;
@@ -30,8 +31,8 @@ self.addEventListener("push", (event) => {
 		const title = data.title ?? "AwaMenu";
 		const options: NotificationOptions = {
 			body: data.body ?? "",
-			icon: "/icons/icon-192x192.png",
-			badge: "/icons/icon-72x72.png",
+			icon: LOGO_ICON_URL,
+			badge: LOGO_ICON_URL,
 			tag: `awamenu-${Date.now()}`,
 			data: { url: data.url },
 		};
