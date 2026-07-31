@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import type { Account } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { z } from "zod";
@@ -151,7 +152,7 @@ export async function resetPasswordWithTokenAction(formData: FormData) {
 	}
 
 	const credentialAccount = user.accounts.find(
-		(a) => a.provider === "credential",
+		(a: Account) => a.provider === "credential",
 	);
 	if (!credentialAccount) {
 		throw new Error("No password login setup for this account.");
@@ -187,7 +188,7 @@ export async function updateAdminPasswordAction(formData: FormData) {
 	if (!userDb) throw new Error("User not found.");
 
 	const credentialAccount = userDb.accounts.find(
-		(a) => a.provider === "credential",
+		(a: Account) => a.provider === "credential",
 	);
 	if (!credentialAccount?.password) {
 		throw new Error("No password login setup for this account.");
