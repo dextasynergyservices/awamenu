@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	createBannerAction,
 	createCategoryAction,
+	createMenuItemAction,
 	deleteCategoryAction,
 	deleteMenuItemAction,
 	removeBannerAction,
@@ -29,7 +30,7 @@ import {
 	updateMenuItemAction,
 } from "@/actions/menu.actions";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
-import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
+import { SubmitButton } from "@/components/ui/action-button";
 import type { BannerItem } from "@/lib/banners";
 
 const MOBILE_ITEMS_BATCH = 8;
@@ -177,6 +178,7 @@ export function MobileMenuBuilder({
 	);
 	const [searchTerm, setSearchTerm] = useState("");
 	const [visibleCount, setVisibleCount] = useState(MOBILE_ITEMS_BATCH);
+	const [isCreatingItem, setIsCreatingItem] = useState(false);
 	const [editingItem, setEditingItem] = useState<MobileItem | null>(null);
 	const [itemImageOverrides, setItemImageOverrides] = useState<
 		Record<string, string>
@@ -338,17 +340,16 @@ export function MobileMenuBuilder({
 						) : null}
 					</div>
 
-					<FormSubmitButton
-						form="new-menu-item-form"
-						loadingText="Creating..."
-						successText="Created"
+					<button
+						type="button"
+						onClick={() => setIsCreatingItem(true)}
 						className="fixed right-5 bottom-28 z-30 grid gap-1 text-center text-xs font-medium text-slate-700"
 					>
 						<span className="grid size-12 place-items-center rounded-full bg-emerald-700 text-white shadow-lg">
 							<Plus className="size-5" aria-hidden="true" />
 						</span>
 						Add item
-					</FormSubmitButton>
+					</button>
 				</section>
 			) : null}
 
@@ -366,6 +367,16 @@ export function MobileMenuBuilder({
 					restaurantId={restaurantId}
 					slug={slug}
 					bannerItems={bannerItems}
+				/>
+			) : null}
+
+			{isCreatingItem ? (
+				<MobileItemCreateModal
+					restaurantId={restaurantId}
+					slug={slug}
+					categories={categories}
+					sortOrder={items.length + 1}
+					onClose={() => setIsCreatingItem(false)}
 				/>
 			) : null}
 
@@ -1442,6 +1453,191 @@ function MobileItemEditModal({
 					>
 						<Trash2 className="size-3.5" aria-hidden="true" />
 						Delete item
+					</SubmitButton>
+				</form>
+			</div>
+		</div>
+	);
+}
+
+function MobileItemCreateModal({
+	restaurantId,
+	slug,
+	categories,
+	sortOrder,
+	onClose,
+}: {
+	restaurantId: string;
+	slug: string;
+	categories: MobileCategory[];
+	sortOrder: number;
+	onClose: () => void;
+}) {
+	const inputId = "mobile-new-item-image";
+	const hiddenImageInputRef = useRef<HTMLInputElement>(null);
+	const [previewUrl, setPreviewUrl] = useState("");
+	const [isUploading, setIsUploading] = useState(false);
+	const [uploadError, setUploadError] = useState<string | null>(null);
+
+	return (
+		<div className="fixed inset-0 z-50 grid items-end bg-slate-950/45 p-3">
+			<button
+				type="button"
+				className="absolute inset-0"
+				onClick={onClose}
+				aria-label="Close create item modal"
+			/>
+			<div className="relative max-h-[88vh] overflow-y-auto rounded-[1.25rem] bg-white p-3.5">
+				<div className="flex items-start justify-between gap-4">
+					<div>
+						<h3 className="text-sm font-black text-slate-950">Add new item</h3>
+						<p className="mt-1 text-xs font-medium text-slate-500">
+							Create a new menu item.
+						</p>
+					</div>
+					<button
+						type="button"
+						onClick={onClose}
+						className="grid size-11 place-items-center rounded-full bg-slate-50 text-slate-600"
+						aria-label="Close create item modal"
+					>
+						<X className="size-5" aria-hidden="true" />
+					</button>
+				</div>
+
+				<form action={createMenuItemAction} className="mt-4 grid gap-3">
+					<input type="hidden" name="restaurantId" value={restaurantId} />
+					<input type="hidden" name="slug" value={slug} />
+					<input type="hidden" name="sortOrder" value={sortOrder} />
+					<input
+						type="hidden"
+						id={inputId}
+						ref={hiddenImageInputRef}
+						name="imageUrl"
+						value={previewUrl}
+						readOnly
+					/>
+
+					<label className="grid gap-1 text-xs font-black text-slate-700">
+						Category
+						<select
+							name="categoryId"
+							required
+							defaultValue={categories[0]?.id}
+							className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-bold text-slate-950 outline-none focus:border-emerald-700"
+						>
+							{categories.map((category) => (
+								<option key={category.id} value={category.id}>
+									{category.name}
+								</option>
+							))}
+						</select>
+					</label>
+					<label className="grid gap-1 text-xs font-black text-slate-700">
+						Item name
+						<input
+							name="name"
+							required
+							placeholder="e.g. Jollof Rice Special"
+							className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-bold text-slate-950 outline-none focus:border-emerald-700"
+						/>
+					</label>
+					<label className="grid gap-1 text-xs font-black text-slate-700">
+						Description
+						<textarea
+							name="description"
+							rows={3}
+							placeholder="Short description of the item"
+							className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base font-medium text-slate-950 outline-none focus:border-emerald-700"
+						/>
+					</label>
+					<label className="grid gap-1 text-xs font-black text-slate-700">
+						Price
+						<input
+							name="price"
+							type="number"
+							min="0"
+							step="0.01"
+							required
+							placeholder="0.00"
+							className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-bold text-slate-950 outline-none focus:border-emerald-700"
+						/>
+					</label>
+					<div className="grid grid-cols-2 gap-2">
+						<label className="flex min-h-11 items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700">
+							Published
+							<input
+								name="isAvailable"
+								type="checkbox"
+								defaultChecked
+								className="size-5 accent-emerald-700"
+							/>
+						</label>
+						<label className="flex min-h-11 items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700">
+							Today&apos;s Special
+							<input
+								name="isTodaySpecial"
+								type="checkbox"
+								className="size-5 accent-emerald-700"
+							/>
+						</label>
+					</div>
+					<label className="grid gap-2">
+						<span className="text-xs font-black text-slate-700">
+							Photo upload
+						</span>
+						<input
+							type="file"
+							accept="image/webp,image/jpeg,image/png"
+							className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"
+							onChange={async (event) => {
+								const fileInput = event.currentTarget;
+								const file = fileInput.files?.[0];
+								const hiddenInput = hiddenImageInputRef.current;
+								if (!file || !hiddenInput) return;
+								setUploadError(null);
+								try {
+									setIsUploading(true);
+									await uploadItemPhoto(restaurantId, file, hiddenInput);
+									setPreviewUrl(hiddenInput.value);
+								} catch (error) {
+									setUploadError(
+										error instanceof Error
+											? error.message
+											: "Unable to upload item photo.",
+									);
+								} finally {
+									setIsUploading(false);
+									fileInput.value = "";
+								}
+							}}
+						/>
+					</label>
+					{isUploading ? (
+						<p className="text-xs font-black text-emerald-700">Uploading...</p>
+					) : null}
+					{uploadError ? (
+						<p className="text-xs font-black text-red-600">{uploadError}</p>
+					) : null}
+					{previewUrl ? (
+						<div className="relative h-36 overflow-hidden rounded-xl bg-emerald-50">
+							<Image
+								src={previewUrl}
+								alt="Item preview"
+								fill
+								className="object-cover"
+								sizes="360px"
+								unoptimized
+							/>
+						</div>
+					) : null}
+					<SubmitButton
+						loadingText="Creating..."
+						successText="Created"
+						onSuccess={onClose}
+						className="min-h-11 rounded-xl bg-emerald-700 px-4 text-xs font-black text-white"
+					>
+						Create item
 					</SubmitButton>
 				</form>
 			</div>

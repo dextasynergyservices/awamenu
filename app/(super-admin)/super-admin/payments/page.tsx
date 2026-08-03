@@ -1,6 +1,8 @@
 import { PaymentsTable } from "@/components/super-admin/PaymentsTable";
 import { db } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminPaymentsPage() {
 	const subscriptions = await db.subscription.findMany({
 		where: { restaurantId: { not: null } },

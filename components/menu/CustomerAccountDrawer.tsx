@@ -11,7 +11,8 @@ import {
 	X,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import {
 	getCustomerHubDataAction,
 	requestCustomerOtpAction,
@@ -19,6 +20,16 @@ import {
 	verifyCustomerOtpAction,
 } from "@/actions/customer.actions";
 import { cn } from "@/lib/utils";
+
+const emptySubscribe = () => () => {};
+
+function useMounted() {
+	return useSyncExternalStore(
+		emptySubscribe,
+		() => true,
+		() => false,
+	);
+}
 
 type CustomerOrder = {
 	id: string;
@@ -123,6 +134,7 @@ export function CustomerAccountDrawer({
 	restaurantSlug,
 }: CustomerAccountDrawerProps) {
 	const [open, setOpen] = useState(false);
+	const mounted = useMounted();
 	const [identityType, setIdentityType] = useState<IdentityType>("phone");
 	const [identifier, setIdentifier] = useState("");
 	const [channel, setChannel] = useState<OtpChannel>("whatsapp");
@@ -243,183 +255,188 @@ export function CustomerAccountDrawer({
 				<UserRound className="size-5" aria-hidden="true" />
 			</button>
 
-			{open ? (
-				<div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/45 backdrop-blur-[2px]">
-					<button
-						type="button"
-						className="absolute inset-0 cursor-default"
-						aria-label="Close customer account"
-						onClick={() => setOpen(false)}
-					/>
-					<section className="relative z-10 grid max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl md:mb-6 md:rounded-[1.75rem]">
-						<header className="flex items-start justify-between gap-4 border-slate-100 border-b px-4 py-4 md:px-5">
-							<div>
-								<p className="text-xs font-black uppercase tracking-wide text-emerald-700">
-									Customer access
-								</p>
-								<h2 className="mt-1 text-sm md:text-xl font-black text-slate-950">
-									{hubData ? "Your AwaMenu" : "Verify your details"}
-								</h2>
-							</div>
+			{open && mounted
+				? createPortal(
+						<div className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/45 backdrop-blur-[2px] md:items-center md:p-4">
 							<button
 								type="button"
+								className="absolute inset-0 cursor-default"
+								aria-label="Close customer account"
 								onClick={() => setOpen(false)}
-								className="grid size-9 place-items-center rounded-xl border border-slate-200 text-slate-500"
-								aria-label="Close"
-							>
-								<X className="size-4" aria-hidden="true" />
-							</button>
-						</header>
-
-						<div className="min-h-0 overflow-y-auto px-4 py-4 md:px-5">
-							{hubData ? (
-								<CustomerHub
-									data={hubData}
-									identifier={identifier}
-									activeTab={activeTab}
-									onLogout={handleLogout}
-									onSelectOrder={setSelectedOrder}
-									onProfileSaved={(profile) =>
-										setHubData((current) =>
-											current ? { ...current, profile } : current,
-										)
-									}
-								/>
-							) : otpRequested ? (
-								<form onSubmit={handleVerifyOtp} className="grid gap-4">
-									<p className="text-xs md:text-sm font-semibold leading-6 text-slate-600">
-										Enter the 6-digit code sent to{" "}
-										<span className="font-black text-slate-900">
-											{identifier}
-										</span>{" "}
-										via{" "}
-										{channel === "whatsapp"
-											? "WhatsApp"
-											: channel === "sms"
-												? "SMS"
-												: "email"}
-										.
-									</p>
-									<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
-										Verification code
-										<input
-											value={code}
-											onChange={(event) => setCode(event.target.value)}
-											inputMode="numeric"
-											maxLength={6}
-											required
-											className="min-h-12 rounded-xl border border-slate-200 px-3 text-base font-semibold outline-none focus:border-emerald-700"
-										/>
-									</label>
-									<ErrorMessage message={error} />
-									<div className="grid grid-cols-2 gap-3">
-										<button
-											type="button"
-											onClick={() => {
-												setOtpRequested(false);
-												setCode("");
-											}}
-											className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-xs md:text-sm font-black text-slate-700"
-										>
-											Back
-										</button>
-										<button
-											type="submit"
-											disabled={loading}
-											className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
-										>
-											{loading ? "Checking..." : "Verify"}
-										</button>
+							/>
+							<section className="relative z-10 grid max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl md:max-h-[85vh] md:rounded-[1.75rem]">
+								<header className="flex items-start justify-between gap-4 border-slate-100 border-b px-4 py-4 md:px-5">
+									<div>
+										<p className="text-xs font-black uppercase tracking-wide text-emerald-700">
+											Customer access
+										</p>
+										<h2 className="mt-1 text-sm md:text-xl font-black text-slate-950">
+											{hubData ? "Your AwaMenu" : "Verify your details"}
+										</h2>
 									</div>
-								</form>
-							) : (
-								<form onSubmit={handleRequestOtp} className="grid gap-4">
-									<div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
-										<SegmentButton
-											active={identityType === "phone"}
-											onClick={() => {
-												setIdentityType("phone");
-												setChannel("whatsapp");
-											}}
-										>
-											<Phone className="size-3.5 md:size-4" />
-											Phone
-										</SegmentButton>
-										<SegmentButton
-											active={identityType === "email"}
-											onClick={() => {
-												setIdentityType("email");
-												setChannel("email");
-											}}
-										>
-											<Mail className="size-3.5 md:size-4" />
-											Email
-										</SegmentButton>
-									</div>
+									<button
+										type="button"
+										onClick={() => setOpen(false)}
+										className="grid size-9 place-items-center rounded-xl border border-slate-200 text-slate-500"
+										aria-label="Close"
+									>
+										<X className="size-4" aria-hidden="true" />
+									</button>
+								</header>
 
-									<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
-										{identityType === "phone"
-											? "Phone number"
-											: "Email address"}
-										<input
-											value={identifier}
-											onChange={(event) => setIdentifier(event.target.value)}
-											type={identityType === "email" ? "email" : "tel"}
-											required
-											className="min-h-12 rounded-xl border border-slate-200 px-3 text-base font-semibold outline-none focus:border-emerald-700"
+								<div className="min-h-0 overflow-y-auto px-4 py-4 md:px-5">
+									{hubData ? (
+										<CustomerHub
+											data={hubData}
+											identifier={identifier}
+											activeTab={activeTab}
+											onLogout={handleLogout}
+											onSelectOrder={setSelectedOrder}
+											onProfileSaved={(profile) =>
+												setHubData((current) =>
+													current ? { ...current, profile } : current,
+												)
+											}
 										/>
-									</label>
-
-									{identityType === "phone" ? (
-										<div className="grid gap-2">
-											<p className="text-xs md:text-sm font-black text-slate-700">
-												Receive code through
+									) : otpRequested ? (
+										<form onSubmit={handleVerifyOtp} className="grid gap-4">
+											<p className="text-xs md:text-sm font-semibold leading-6 text-slate-600">
+												Enter the 6-digit code sent to{" "}
+												<span className="font-black text-slate-900">
+													{identifier}
+												</span>{" "}
+												via{" "}
+												{channel === "whatsapp"
+													? "WhatsApp"
+													: channel === "sms"
+														? "SMS"
+														: "email"}
+												.
 											</p>
-											<div className="grid grid-cols-2 gap-2">
-												<SegmentButton
-													active={channel === "whatsapp"}
-													onClick={() => setChannel("whatsapp")}
+											<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
+												Verification code
+												<input
+													value={code}
+													onChange={(event) => setCode(event.target.value)}
+													inputMode="numeric"
+													maxLength={6}
+													required
+													className="min-h-12 rounded-xl border border-slate-200 px-3 text-base font-semibold outline-none focus:border-emerald-700"
+												/>
+											</label>
+											<ErrorMessage message={error} />
+											<div className="grid grid-cols-2 gap-3">
+												<button
+													type="button"
+													onClick={() => {
+														setOtpRequested(false);
+														setCode("");
+													}}
+													className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-xs md:text-sm font-black text-slate-700"
 												>
-													WhatsApp
+													Back
+												</button>
+												<button
+													type="submit"
+													disabled={loading}
+													className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
+												>
+													{loading ? "Checking..." : "Verify"}
+												</button>
+											</div>
+										</form>
+									) : (
+										<form onSubmit={handleRequestOtp} className="grid gap-4">
+											<div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
+												<SegmentButton
+													active={identityType === "phone"}
+													onClick={() => {
+														setIdentityType("phone");
+														setChannel("whatsapp");
+													}}
+												>
+													<Phone className="size-3.5 md:size-4" />
+													Phone
 												</SegmentButton>
 												<SegmentButton
-													active={channel === "sms"}
-													onClick={() => setChannel("sms")}
+													active={identityType === "email"}
+													onClick={() => {
+														setIdentityType("email");
+														setChannel("email");
+													}}
 												>
-													SMS
+													<Mail className="size-3.5 md:size-4" />
+													Email
 												</SegmentButton>
 											</div>
-										</div>
-									) : null}
 
-									<ErrorMessage message={error} />
-									<button
-										type="submit"
-										disabled={loading}
-										className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
-									>
-										{loading ? "Sending..." : "Send code"}
-									</button>
-								</form>
-							)}
-						</div>
+											<label className="grid gap-2 text-xs md:text-sm font-black text-slate-700">
+												{identityType === "phone"
+													? "Phone number"
+													: "Email address"}
+												<input
+													value={identifier}
+													onChange={(event) =>
+														setIdentifier(event.target.value)
+													}
+													type={identityType === "email" ? "email" : "tel"}
+													required
+													className="min-h-12 rounded-xl border border-slate-200 px-3 text-base font-semibold outline-none focus:border-emerald-700"
+												/>
+											</label>
 
-						{hubData ? (
-							<CustomerBottomNav
-								activeTab={activeTab}
-								onChange={setActiveTab}
-							/>
-						) : null}
-					</section>
+											{identityType === "phone" ? (
+												<div className="grid gap-2">
+													<p className="text-xs md:text-sm font-black text-slate-700">
+														Receive code through
+													</p>
+													<div className="grid grid-cols-2 gap-2">
+														<SegmentButton
+															active={channel === "whatsapp"}
+															onClick={() => setChannel("whatsapp")}
+														>
+															WhatsApp
+														</SegmentButton>
+														<SegmentButton
+															active={channel === "sms"}
+															onClick={() => setChannel("sms")}
+														>
+															SMS
+														</SegmentButton>
+													</div>
+												</div>
+											) : null}
 
-					{selectedOrder ? (
-						<CustomerOrderModal
-							order={selectedOrder}
-							onClose={() => setSelectedOrder(null)}
-						/>
-					) : null}
-				</div>
-			) : null}
+											<ErrorMessage message={error} />
+											<button
+												type="submit"
+												disabled={loading}
+												className="min-h-12 rounded-xl bg-emerald-700 px-4 text-xs md:text-sm font-black text-white disabled:opacity-60"
+											>
+												{loading ? "Sending..." : "Send code"}
+											</button>
+										</form>
+									)}
+								</div>
+
+								{hubData ? (
+									<CustomerBottomNav
+										activeTab={activeTab}
+										onChange={setActiveTab}
+									/>
+								) : null}
+							</section>
+
+							{selectedOrder ? (
+								<CustomerOrderModal
+									order={selectedOrder}
+									onClose={() => setSelectedOrder(null)}
+								/>
+							) : null}
+						</div>,
+						document.body,
+					)
+				: null}
 		</>
 	);
 }

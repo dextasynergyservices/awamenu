@@ -9,6 +9,8 @@ import {
 	LayoutDashboard,
 	LogOut,
 	MonitorSmartphone,
+	PanelLeftClose,
+	PanelLeftOpen,
 	Settings,
 	Users,
 	Utensils,
@@ -76,9 +78,26 @@ export function AdminDashboardShell({
 	const [logoutSuccess, setLogoutSuccess] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
 	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [isCollapsed, setIsCollapsed] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return (
+			window.localStorage.getItem("awamenu_admin_sidebar_collapsed") === "true"
+		);
+	});
 	const basePath = `/dashboard/${slug}`;
 	const mobileSubtitle =
 		pathname === `${basePath}/menu` ? "Menu Builder" : "Restaurant Management";
+
+	function toggleSidebar() {
+		setIsCollapsed((prev) => {
+			const next = !prev;
+			window.localStorage.setItem(
+				"awamenu_admin_sidebar_collapsed",
+				String(next),
+			);
+			return next;
+		});
+	}
 
 	// Initialize notification store with server-fetched data
 	const setNotifications = useNotificationStore((s) => s.setNotifications);
@@ -114,21 +133,49 @@ export function AdminDashboardShell({
 			{/* Offline Banner */}
 			<OfflineBanner />
 
-			<aside className="fixed top-0 left-0 z-40 hidden h-screen w-[264px] overflow-y-auto border-emerald-100 border-r bg-white md:flex md:flex-col">
-				<div className="px-6 pb-7 pt-8">
-					<Link href={basePath} className="flex items-center gap-3">
+			<aside
+				className={cn(
+					"fixed top-0 left-0 z-40 hidden h-screen overflow-y-auto border-emerald-100 border-r bg-white transition-all duration-300 md:flex md:flex-col",
+					isCollapsed ? "w-20" : "w-[264px]",
+				)}
+			>
+				<div
+					className={cn(
+						"flex items-center pb-7 pt-8",
+						isCollapsed ? "justify-center px-2" : "justify-between px-6",
+					)}
+				>
+					<Link href={basePath} className="flex items-center gap-3 min-w-0">
 						<RestaurantLogo
 							name={restaurantName}
 							logoUrl={restaurantLogoUrl}
-							className="size-10 rounded-xl"
-							fallbackClassName="size-10 rounded-xl text-lg"
+							className="size-10 shrink-0 rounded-xl"
+							fallbackClassName="size-10 rounded-xl text-lg shrink-0"
 						/>
-						<span className="truncate text-xl font-black text-slate-950">
-							{restaurantName}
-						</span>
+						{!isCollapsed ? (
+							<span className="truncate text-xl font-black text-slate-950">
+								{restaurantName}
+							</span>
+						) : null}
 					</Link>
+					<button
+						type="button"
+						onClick={toggleSidebar}
+						className={cn(
+							"grid size-8 place-items-center rounded-xl bg-slate-50 text-slate-500 hover:bg-slate-100 transition-colors",
+							isCollapsed && "mt-2",
+						)}
+						title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+						aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+					>
+						{isCollapsed ? (
+							<PanelLeftOpen className="size-4" />
+						) : (
+							<PanelLeftClose className="size-4" />
+						)}
+					</button>
 				</div>
-				<nav className="grid gap-2 px-4">
+				<nav className={cn("grid gap-2", isCollapsed ? "px-2" : "px-4")}>
 					{navItems.map((item) => {
 						const href = `${basePath}${item.href}`;
 						const Icon = item.icon;
@@ -140,47 +187,91 @@ export function AdminDashboardShell({
 							<Link
 								key={item.label}
 								href={href}
+								title={item.label}
 								className={cn(
-									"flex min-h-13 items-center gap-4 rounded-2xl px-4 text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
+									"flex min-h-13 items-center rounded-2xl text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
+									isCollapsed ? "justify-center px-0" : "gap-4 px-4",
 									isActive &&
 										"bg-emerald-100 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-800",
 								)}
 							>
-								<Icon className="size-5" aria-hidden="true" />
-								{item.label}
+								<Icon className="size-5 shrink-0" aria-hidden="true" />
+								{!isCollapsed ? <span>{item.label}</span> : null}
 							</Link>
 						);
 					})}
 				</nav>
-				<div className="mt-auto p-5">
+				<div className="mt-auto p-4">
 					{!isPaid && (
-						<div className="rounded-2xl border border-lime-100 bg-lime-50 p-5">
-							<div>
-								<p className="text-sm font-black text-emerald-800">
-									Upgrade to Premium
-								</p>
-								<p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-									Unlock advanced features and boost your business.
-								</p>
-							</div>
-							<Link
-								href={`${basePath}/settings`}
-								className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white"
-							>
-								Upgrade Now
-							</Link>
+						<div
+							className={cn(
+								"rounded-2xl border border-lime-100 bg-lime-50",
+								isCollapsed ? "p-2.5 text-center" : "p-5",
+							)}
+						>
+							{!isCollapsed ? (
+								<>
+									<div>
+										<p className="text-sm font-black text-emerald-800">
+											Upgrade to Premium
+										</p>
+										<p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+											Unlock advanced features and boost your business.
+										</p>
+									</div>
+									<Link
+										href={`${basePath}/settings`}
+										className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white"
+									>
+										Upgrade Now
+									</Link>
+								</>
+							) : (
+								<Link
+									href={`${basePath}/settings`}
+									title="Upgrade to Premium"
+									className="grid size-10 place-items-center rounded-xl bg-emerald-700 font-black text-white"
+								>
+									★
+								</Link>
+							)}
 						</div>
 					)}
-					<p className="mt-6 text-center text-xs font-medium text-slate-400">
-						© 2026 AwaMenu
-					</p>
+					{!isCollapsed ? (
+						<p className="mt-6 text-center text-xs font-medium text-slate-400">
+							© 2026 AwaMenu
+						</p>
+					) : null}
 				</div>
 			</aside>
 
-			<div className="min-w-0 max-w-full overflow-x-hidden pt-[73px] pb-24 md:ml-[264px] md:pt-[106px] md:pb-0">
-				<header className="fixed top-0 inset-x-0 z-30 max-w-full overflow-hidden border-emerald-100 border-b bg-white/92 px-3 py-3 backdrop-blur md:left-[264px] md:px-8 md:py-5">
+			<div
+				className={cn(
+					"min-w-0 max-w-full overflow-x-hidden pt-[73px] pb-24 transition-all duration-300 md:pt-[96px] md:pb-0",
+					isCollapsed ? "md:ml-20" : "md:ml-[264px]",
+				)}
+			>
+				<header
+					className={cn(
+						"fixed top-0 inset-x-0 z-30 max-w-full overflow-hidden border-emerald-100 border-b bg-white/92 px-3 py-3 backdrop-blur transition-all duration-300 md:px-8 md:py-4",
+						isCollapsed ? "md:left-20" : "md:left-[264px]",
+					)}
+				>
 					<div className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
 						<div className="flex min-w-0 items-center gap-2 sm:gap-4">
+							<button
+								type="button"
+								onClick={toggleSidebar}
+								className="hidden size-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 md:grid"
+								title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+								aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+							>
+								{isCollapsed ? (
+									<PanelLeftOpen className="size-5" />
+								) : (
+									<PanelLeftClose className="size-5" />
+								)}
+							</button>
 							<div className="min-w-0 md:hidden">
 								<div className="flex items-center gap-2">
 									<RestaurantLogo
@@ -200,10 +291,10 @@ export function AdminDashboardShell({
 								</div>
 							</div>
 							<div className="hidden min-w-0 md:block">
-								<p className="text-sm font-medium text-slate-600">
+								<p className="text-xs font-semibold text-slate-500">
 									Welcome back,
 								</p>
-								<h1 className="truncate text-[2rem] font-black leading-tight text-slate-950">
+								<h1 className="truncate text-xl md:text-2xl font-black leading-tight text-slate-950">
 									{restaurantName}
 								</h1>
 							</div>
