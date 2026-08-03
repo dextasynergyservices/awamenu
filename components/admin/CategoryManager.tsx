@@ -42,7 +42,10 @@ export function CategoryManager({
 	);
 
 	return (
-		<section className="rounded-3xl border border-slate-100 bg-white p-4">
+		<section
+			id="category-manager"
+			className="scroll-mt-24 rounded-3xl border border-slate-100 bg-white p-4"
+		>
 			<div className="flex items-start justify-between gap-4">
 				<div>
 					<h2 className="text-xl font-black text-slate-950">Categories</h2>

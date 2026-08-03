@@ -269,13 +269,17 @@ model Plan {
   maxCategories Int @default(1)
   maxMenuItems  Int @default(8)
 
-  multipleTemplates     Boolean @default(false)
   advancedAnalytics     Boolean @default(false)
   removeAwamenuBranding Boolean @default(false)
   whatsappIntegration   Boolean @default(true)
   prioritySupport       Boolean @default(false)
   basicSupport          Boolean @default(false)
 
+  // Sole source of truth for menu-layout entitlement. A plan grants exactly
+  // the layouts listed here; "classic" is always re-added by the resolver, so
+  // a plan can never end up with none. (Replaces the former
+  // `multipleTemplates` boolean, which duplicated what this already encodes
+  // and could contradict it.)
   availableTemplates String[] @default(["classic"])
 
   paystackPlanCode          String? // Legacy monthly Paystack subscription plan code.

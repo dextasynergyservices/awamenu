@@ -7,6 +7,7 @@ import { MobileMenuBuilder } from "@/components/admin/MobileMenuBuilder";
 import { PlanLimitBanner } from "@/components/admin/PlanLimitBanner";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 type MenuBuilderPageProps = {
 	params: Promise<{ slug: string }>;
@@ -28,18 +29,6 @@ export default async function MenuBuilderPage({
 			slug: true,
 			currency: true,
 			activeTemplate: true,
-			subscription: {
-				select: {
-					plan: {
-						select: {
-							name: true,
-							tier: true,
-							maxCategories: true,
-							maxMenuItems: true,
-						},
-					},
-				},
-			},
 			categories: {
 				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
 				select: {
@@ -76,24 +65,10 @@ export default async function MenuBuilderPage({
 			},
 		},
 	});
-	const freePlan = restaurant.subscription
-		? null
-		: await db.plan.findUnique({
-				where: { tier: "FREE" },
-				select: {
-					name: true,
-					tier: true,
-					maxCategories: true,
-					maxMenuItems: true,
-				},
-			});
-	const plan = restaurant.subscription?.plan ??
-		freePlan ?? {
-			name: "Free",
-			tier: "FREE" as const,
-			maxCategories: 2,
-			maxMenuItems: 8,
-		};
+	// Single resolver instead of a local Free-plan fallback — this also means
+	// a lapsed subscription correctly reports Free limits here rather than
+	// the stale paid plan's.
+	const plan = await getRestaurantPlanFeatures(restaurant.id);
 	const categoryCount = restaurant.categories.length;
 	const menuItemCount = restaurant.categories.reduce(
 		(total, category) => total + category.items.length,
@@ -138,12 +113,12 @@ export default async function MenuBuilderPage({
 				maxCategories={plan.maxCategories}
 				maxMenuItems={plan.maxMenuItems}
 				activeTemplate={restaurant.activeTemplate}
-				planTier={plan.tier}
+				availableTemplates={plan.availableTemplates}
 			/>
 
 			<div className="hidden gap-5 md:grid">
 				<PlanLimitBanner
-					planName={plan.name}
+					planName={plan.planName}
 					categoryCount={categoryCount}
 					maxCategories={plan.maxCategories}
 					menuItemCount={menuItemCount}
@@ -169,7 +144,7 @@ export default async function MenuBuilderPage({
 						slug={restaurant.slug}
 						canCreateItem={isWithinLimit(menuItemCount, plan.maxMenuItems)}
 						activeTemplate={restaurant.activeTemplate}
-						planTier={plan.tier}
+						availableTemplates={plan.availableTemplates}
 						categories={categories}
 					/>
 				</div>
