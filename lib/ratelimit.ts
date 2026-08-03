@@ -7,6 +7,7 @@ export type RatelimitKind =
 	| "order"
 	| "reservation"
 	| "staffPin"
+	| "staffLogin"
 	| "sse"
 	| "admin";
 
@@ -29,6 +30,12 @@ function createLimiter(kind: RatelimitKind, redis: Redis): Ratelimit {
 				redis,
 				limiter: Ratelimit.slidingWindow(10, "5 m"),
 				prefix: "ratelimit:staff-pin",
+			});
+		case "staffLogin":
+			return new Ratelimit({
+				redis,
+				limiter: Ratelimit.slidingWindow(5, "5 m"),
+				prefix: "ratelimit:staff-login",
 			});
 		case "sse":
 			return new Ratelimit({

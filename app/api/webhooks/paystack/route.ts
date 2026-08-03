@@ -9,6 +9,11 @@ import {
 } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { captureServerEvent } from "@/lib/analytics";
+import {
+	addBillingPeriod,
+	getPlanIntervalPrice,
+	parseBillingInterval,
+} from "@/lib/billing";
 import { db } from "@/lib/db";
 import { sendSubscriptionConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
@@ -24,6 +29,8 @@ type PaystackWebhook = {
 			type?: string;
 			userId?: string;
 			planId?: string;
+			billingInterval?: string;
+			restaurantId?: string;
 			orderId?: string;
 			reservationId?: string;
 		};
@@ -184,19 +191,26 @@ export async function POST(request: Request) {
 		const subCode = payload.data?.subscription?.subscription_code;
 		if (subCode) {
 			const now = new Date();
-			const periodEnd = new Date(now);
-			periodEnd.setMonth(periodEnd.getMonth() + 1);
 
 			const sub = await db.subscription.findFirst({
 				where: { paystackSubscriptionCode: subCode },
 				include: {
 					user: { select: { email: true } },
 					restaurant: { select: { name: true } },
-					plan: { select: { name: true, monthlyPrice: true } },
+					plan: {
+						select: {
+							name: true,
+							monthlyPrice: true,
+							quarterlyPrice: true,
+							yearlyPrice: true,
+						},
+					},
 				},
 			});
 
 			if (sub) {
+				const billingInterval = parseBillingInterval(sub.billingInterval);
+				const periodEnd = addBillingPeriod(now, billingInterval);
 				await db.subscription.update({
 					where: { id: sub.id },
 					data: {
@@ -206,13 +220,23 @@ export async function POST(request: Request) {
 					},
 				});
 
+				if (sub.restaurantId) {
+					await db.menuCategory.updateMany({
+						where: {
+							restaurantId: sub.restaurantId,
+							hiddenByDowngrade: true,
+						},
+						data: { isActive: true, hiddenByDowngrade: false },
+					});
+				}
+
 				if (sub.restaurant) {
 					const restaurant = sub.restaurant;
 					await import("@/lib/email").then((m) =>
 						m.sendRenewalSuccessEmail({
 							to: sub.user.email,
 							restaurantName: restaurant.name,
-							amount: `₦${sub.plan.monthlyPrice.toString()}`,
+							amount: `₦${getPlanIntervalPrice(sub.plan, billingInterval).toLocaleString()}`,
 							planName: sub.plan.name,
 							receiptUrl: (payload.data as { receipt_url?: string })
 								?.receipt_url,
@@ -232,15 +256,17 @@ export async function POST(request: Request) {
 	}
 
 	const now = new Date();
-	const periodEnd = new Date(now);
-	periodEnd.setMonth(periodEnd.getMonth() + 1);
+	const billingInterval = parseBillingInterval(metadata.billingInterval);
+	const periodEnd = addBillingPeriod(now, billingInterval);
 
+	// Deliberately not filtered by planId — that's what's changing on an
+	// upgrade/downgrade, so filtering on it would never match the existing
+	// row and would silently create an orphaned duplicate instead of
+	// updating the restaurant's actual subscription.
 	const existingSubscription = await db.subscription.findFirst({
-		where: {
-			userId: metadata.userId,
-			planId: metadata.planId,
-			restaurantId: null,
-		},
+		where: metadata.restaurantId
+			? { restaurantId: metadata.restaurantId }
+			: { userId: metadata.userId, restaurantId: null },
 		orderBy: { createdAt: "desc" },
 	});
 
@@ -248,7 +274,28 @@ export async function POST(request: Request) {
 		await db.subscription.update({
 			where: { id: existingSubscription.id },
 			data: {
+				planId: metadata.planId,
 				status: SubscriptionStatus.ACTIVE,
+				billingInterval,
+				currentPeriodStart: now,
+				currentPeriodEnd: periodEnd,
+				paymentRef: payload.data?.reference,
+				paystackCustomerCode: payload.data?.customer?.customer_code,
+				paystackSubscriptionCode: payload.data?.subscription?.subscription_code,
+			},
+		});
+	} else if (metadata.restaurantId) {
+		// Shouldn't normally happen — a restaurant gets a subscription row at
+		// creation — but create one tied to this restaurant defensively
+		// rather than falling into the onboarding cleanup path below, which
+		// would incorrectly cancel this same user's OTHER restaurants.
+		await db.subscription.create({
+			data: {
+				userId: metadata.userId,
+				restaurantId: metadata.restaurantId,
+				planId: metadata.planId,
+				status: SubscriptionStatus.ACTIVE,
+				billingInterval,
 				currentPeriodStart: now,
 				currentPeriodEnd: periodEnd,
 				paymentRef: payload.data?.reference,
@@ -316,6 +363,7 @@ export async function POST(request: Request) {
 				userId: metadata.userId,
 				planId: metadata.planId,
 				status: SubscriptionStatus.ACTIVE,
+				billingInterval,
 				currentPeriodStart: now,
 				currentPeriodEnd: periodEnd,
 				paymentRef: payload.data?.reference,
@@ -325,9 +373,23 @@ export async function POST(request: Request) {
 		});
 	}
 
-	const user = await db.user.update({
+	// Only the onboarding flow (no restaurantId yet) needs this — an existing
+	// restaurant owner upgrading their plan has already finished onboarding.
+	if (!metadata.restaurantId) {
+		await db.user.update({
+			where: { id: metadata.userId },
+			data: { onboardingStatus: OnboardingStatus.PENDING_SETUP },
+		});
+	} else {
+		// A confirmed payment means they're renewing/upgrading out of a forced
+		// Free downgrade — restore exactly the categories the system hid.
+		await db.menuCategory.updateMany({
+			where: { restaurantId: metadata.restaurantId, hiddenByDowngrade: true },
+			data: { isActive: true, hiddenByDowngrade: false },
+		});
+	}
+	const user = await db.user.findUniqueOrThrow({
 		where: { id: metadata.userId },
-		data: { onboardingStatus: OnboardingStatus.PENDING_SETUP },
 		select: { email: true },
 	});
 	const plan = await db.plan.findUniqueOrThrow({
@@ -343,6 +405,7 @@ export async function POST(request: Request) {
 	captureServerEvent("subscription_completed", metadata.userId, {
 		planId: metadata.planId,
 		planName: plan.name,
+		billingInterval,
 	});
 
 	return NextResponse.json({ ok: true });

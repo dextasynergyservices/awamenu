@@ -3,6 +3,11 @@
 import { redirect } from "next/navigation";
 import { env } from "@/env";
 import { requireUser } from "@/lib/auth-guards";
+import {
+	getPlanIntervalPrice,
+	getPlanPaystackCode,
+	parseBillingInterval,
+} from "@/lib/billing";
 import { db } from "@/lib/db";
 import {
 	initiateCardAddPayment,
@@ -126,6 +131,9 @@ export async function changePlanAction(formData: FormData) {
 		const user = await requireUser();
 		const planId = formData.get("planId") as string;
 		const slug = formData.get("slug") as string;
+		const billingInterval = parseBillingInterval(
+			formData.get("billingInterval"),
+		);
 
 		if (!planId || !slug) {
 			throw new Error("Missing required fields");
@@ -144,15 +152,29 @@ export async function changePlanAction(formData: FormData) {
 			const originalPlan = await db.plan.findUniqueOrThrow({
 				where: { id: originalPlanId },
 			});
+			const currentBillingInterval = parseBillingInterval(
+				subscription.billingInterval,
+			);
+			const newPrice = getPlanIntervalPrice(newPlan, billingInterval);
+			const originalPrice = getPlanIntervalPrice(
+				originalPlan,
+				currentBillingInterval,
+			);
+			const samePlanAndInterval =
+				subscription.planId === newPlan.id &&
+				currentBillingInterval === billingInterval;
 
 			// If the new plan price is less than or equal to the original paid plan, it's a downgrade (or restoring paid plan)
-			if (Number(newPlan.monthlyPrice) <= Number(originalPlan.monthlyPrice)) {
+			if (!samePlanAndInterval && newPrice <= originalPrice) {
 				await db.subscription.update({
 					where: { id: subscription.id },
-					data: { planId: newPlan.id },
+					data: { planId: newPlan.id, billingInterval },
 				});
 
-				if (subscription.paystackSubscriptionCode && newPlan.paystackPlanCode) {
+				if (
+					subscription.paystackSubscriptionCode &&
+					getPlanPaystackCode(newPlan, billingInterval)
+				) {
 					// Fire and forget updating the subscription plan on Paystack
 					// Usually we need an email token, but often POST /subscription/:code works, or we just rely on DB sync
 					// Since we don't strictly require Paystack sync for downgraded amounts immediately, we skip for safety.
@@ -166,8 +188,13 @@ export async function changePlanAction(formData: FormData) {
 		const url = await initiateSubscriptionPayment({
 			userId: user.id,
 			planId: planId,
+			billingInterval,
 			customerEmail: user.email,
-			callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings`,
+			restaurantId: subscription?.restaurantId ?? undefined,
+			// planId included so the settings page knows which plan to verify
+			// against on return — its own subscription record still shows the
+			// *old* plan at that point, since nothing has been confirmed yet.
+			callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings?planId=${planId}&billing=${billingInterval}`,
 		});
 
 		redirect(url);
@@ -238,7 +265,10 @@ export async function turnOnAutoRenewAction(authorizationCode?: string) {
 
 		if (
 			!subscription?.paystackCustomerCode ||
-			!subscription.plan.paystackPlanCode
+			!getPlanPaystackCode(
+				subscription.plan,
+				parseBillingInterval(subscription.billingInterval),
+			)
 		) {
 			if (subscription) {
 				await db.subscription.update({
@@ -260,7 +290,10 @@ export async function turnOnAutoRenewAction(authorizationCode?: string) {
 			},
 			body: JSON.stringify({
 				customer: subscription.paystackCustomerCode,
-				plan: subscription.plan.paystackPlanCode,
+				plan: getPlanPaystackCode(
+					subscription.plan,
+					parseBillingInterval(subscription.billingInterval),
+				),
 				authorization: authorizationCode,
 			}),
 		});

@@ -1,10 +1,37 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { changePlanAction } from "@/actions/billing.actions";
-import { SubmitButton } from "@/components/ui/action-button";
+import { ChangePlanPicker } from "@/components/admin/ChangePlanPicker";
 import { requireUser } from "@/lib/auth-guards";
+import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
+
+function formatLimit(value: number, label: string) {
+	return value === -1 ? `Unlimited ${label}` : `${value} ${label}`;
+}
+
+function planFeatures(plan: {
+	maxCategories: number;
+	maxMenuItems: number;
+	whatsappIntegration: boolean;
+	advancedAnalytics: boolean;
+	removeAwamenuBranding: boolean;
+	prioritySupport: boolean;
+	basicSupport: boolean;
+}) {
+	return [
+		formatLimit(plan.maxCategories, "Categories"),
+		formatLimit(plan.maxMenuItems, "Items"),
+		plan.whatsappIntegration ? "WhatsApp included" : "WhatsApp not included",
+		plan.advancedAnalytics ? "Advanced analytics" : "Basic analytics",
+		plan.removeAwamenuBranding ? "Remove branding" : "AwaMenu branding shown",
+		plan.prioritySupport
+			? "Priority support"
+			: plan.basicSupport
+				? "Basic support"
+				: "Standard support",
+	];
+}
 
 export default async function ChangePlanPage({
 	params,
@@ -47,56 +74,23 @@ export default async function ChangePlanPage({
 				</p>
 			</div>
 
-			<div className="grid gap-4 md:grid-cols-3">
-				{plans.map((plan) => {
-					const isCurrent = plan.id === currentPlanId;
-
-					return (
-						<form
-							key={plan.id}
-							action={changePlanAction}
-							className={`relative overflow-hidden rounded-3xl border p-6 transition-all ${
-								isCurrent
-									? "border-emerald-500 bg-emerald-50 shadow-sm"
-									: "border-slate-200 bg-white shadow-sm hover:border-emerald-200 hover:shadow-md"
-							}`}
-						>
-							{isCurrent && (
-								<div className="absolute top-0 right-0 rounded-bl-xl bg-emerald-500 px-3 py-1 text-xs font-black uppercase tracking-wider text-white">
-									Current Plan
-								</div>
-							)}
-							<input type="hidden" name="planId" value={plan.id} />
-							<input type="hidden" name="slug" value={slug} />
-
-							<h2 className="text-sm font-black text-slate-950 md:text-xl">
-								{plan.name}
-							</h2>
-							<p className="mt-1 min-h-12 text-xs font-medium text-slate-600 md:mt-2 md:text-sm">
-								{plan.description}
-							</p>
-							<p className="mt-4 text-xl font-black text-slate-950 md:mt-6 md:text-3xl">
-								₦{Number(plan.monthlyPrice).toLocaleString()}
-								<span className="text-xs font-medium text-slate-500 md:text-sm">
-									/mo
-								</span>
-							</p>
-							<SubmitButton
-								disabled={isCurrent}
-								loadingText="Processing..."
-								successText="Redirecting..."
-								className={`mt-4 h-11 w-full rounded-2xl px-4 text-xs font-black transition-colors md:mt-6 md:h-12 md:text-sm ${
-									isCurrent
-										? "bg-slate-100 text-slate-400 cursor-not-allowed"
-										: "bg-emerald-700 text-white hover:bg-emerald-800"
-								}`}
-							>
-								{isCurrent ? "Current Plan" : "Switch to this Plan"}
-							</SubmitButton>
-						</form>
-					);
-				})}
-			</div>
+			<ChangePlanPicker
+				slug={slug}
+				currentPlanId={currentPlanId}
+				currentBillingInterval={parseBillingInterval(
+					restaurant.subscription?.billingInterval,
+				)}
+				plans={plans.map((plan) => ({
+					id: plan.id,
+					tier: plan.tier,
+					name: plan.name,
+					description: plan.description,
+					monthlyPrice: Number(plan.monthlyPrice),
+					quarterlyPrice: Number(plan.quarterlyPrice),
+					yearlyPrice: Number(plan.yearlyPrice),
+					features: planFeatures(plan),
+				}))}
+			/>
 		</div>
 	);
 }

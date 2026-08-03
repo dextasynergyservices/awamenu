@@ -20,6 +20,21 @@ export const auth = betterAuth({
 		enabled: true,
 		autoSignIn: true,
 	},
+	// Default rate limiting is enabled automatically in production, but with
+	// in-memory storage — on Vercel's serverless runtime that counter resets
+	// on effectively every cold start, making it close to a no-op. Backing it
+	// with the database instead makes it durable across invocations. Stricter
+	// per-path rules on the credential-guessing endpoints specifically, since
+	// the global default (100 req/10s) is far too loose to deter brute force.
+	rateLimit: {
+		storage: "database",
+		customRules: {
+			"/sign-in/email": { window: 60, max: 5 },
+			"/sign-up/email": { window: 60, max: 5 },
+			"/request-password-reset": { window: 60, max: 3 },
+			"/reset-password": { window: 60, max: 5 },
+		},
+	},
 	plugins: [nextCookies()],
 });
 

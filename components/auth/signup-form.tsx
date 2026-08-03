@@ -1,20 +1,29 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
+import { sendEmailVerificationAction } from "@/actions/email-verification.actions";
 import { verifyTurnstileAction } from "@/actions/turnstile.actions";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { LoadingButton } from "@/components/ui/action-button";
+import { env } from "@/env";
 import { authClient } from "@/lib/auth-client";
 
 export function SignupForm() {
-	const router = useRouter();
 	const searchParams = useSearchParams();
 	const [error, setError] = useState<string | null>(null);
 	const [isSuccess, setIsSuccess] = useState(false);
 	const [isPending, startTransition] = useTransition();
 	const selectedPlan = searchParams.get("plan");
+	const selectedBilling = searchParams.get("billing");
 	const turnstileTokenRef = useRef("");
+	// Starts "ready" when Turnstile isn't configured at all (matches
+	// TurnstileWidget's own no-op behavior); otherwise stays false until its
+	// async challenge actually completes, so submitting can't race an empty
+	// token — that was silently failing signup with "Verification failed."
+	const [turnstileReady, setTurnstileReady] = useState(
+		!env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+	);
 
 	return (
 		<form
@@ -25,7 +34,12 @@ export function SignupForm() {
 				const name = String(formData.get("name") ?? "");
 				const email = String(formData.get("email") ?? "");
 				const password = String(formData.get("password") ?? "");
-				const query = selectedPlan ? `?plan=${selectedPlan}` : "";
+				const nextParams = new URLSearchParams();
+				if (selectedPlan) nextParams.set("plan", selectedPlan);
+				if (selectedBilling) nextParams.set("billing", selectedBilling);
+				const planQuery = nextParams.toString()
+					? `&${nextParams.toString()}`
+					: "";
 
 				startTransition(async () => {
 					setError(null);
@@ -43,7 +57,6 @@ export function SignupForm() {
 						name,
 						email,
 						password,
-						callbackURL: `/onboarding/choose-plan${query}`,
 					});
 
 					if (result.error) {
@@ -51,9 +64,21 @@ export function SignupForm() {
 						return;
 					}
 
+					const verifyFormData = new FormData();
+					verifyFormData.set("email", email);
+					if (selectedPlan) verifyFormData.set("plan", selectedPlan);
+					if (selectedBilling) verifyFormData.set("billing", selectedBilling);
+					// Not awaited — the account already exists either way, and the
+					// code page has its own "Resend" action as a safety net, so
+					// there's no reason to make the user sit through this extra
+					// network round-trip before seeing the next page.
+					sendEmailVerificationAction(verifyFormData).catch(() => {});
+
 					setIsSuccess(true);
-					router.push(`/onboarding/choose-plan${query}`);
-					router.refresh();
+					// A full navigation, not router.push — see VerifyEmailCodeForm
+					// for why: the client-side transition can complete the fetch
+					// without the browser visually swapping to the new page.
+					window.location.href = `/verify-email/code?email=${encodeURIComponent(email)}${planQuery}`;
 				});
 			}}
 		>
@@ -90,18 +115,20 @@ export function SignupForm() {
 			<TurnstileWidget
 				onToken={(token) => {
 					turnstileTokenRef.current = token;
+					setTurnstileReady(true);
 				}}
 			/>
 			{error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
 			<LoadingButton
 				type="submit"
+				disabled={!turnstileReady}
 				loading={isPending}
 				success={isSuccess}
 				loadingText="Creating..."
 				successText="Created"
 				className="h-11 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-800 disabled:opacity-60"
 			>
-				Create Account
+				{turnstileReady ? "Create Account" : "Verifying..."}
 			</LoadingButton>
 		</form>
 	);

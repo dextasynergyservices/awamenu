@@ -80,6 +80,7 @@ export async function assignRestaurantPlanAction(formData: FormData) {
 			data: {
 				planId: input.planId,
 				status: SubscriptionStatus.ACTIVE,
+				billingInterval: "MONTHLY",
 				currentPeriodStart: now,
 				currentPeriodEnd: periodEnd,
 			},
@@ -91,6 +92,7 @@ export async function assignRestaurantPlanAction(formData: FormData) {
 				planId: input.planId,
 				restaurantId: restaurant.id,
 				status: SubscriptionStatus.ACTIVE,
+				billingInterval: "MONTHLY",
 				currentPeriodStart: now,
 				currentPeriodEnd: periodEnd,
 			},
@@ -115,7 +117,12 @@ const planSchema = z.object({
 	description: optionalString(300),
 	tier: z.nativeEnum(PlanTier),
 	monthlyPrice: z.coerce.number().min(0),
+	quarterlyPrice: z.coerce.number().min(0),
 	yearlyPrice: z.coerce.number().min(0),
+	paystackPlanCode: optionalString(120),
+	paystackMonthlyPlanCode: optionalString(120),
+	paystackQuarterlyPlanCode: optionalString(120),
+	paystackYearlyPlanCode: optionalString(120),
 	maxCategories: z.coerce.number().int(),
 	maxMenuItems: z.coerce.number().int(),
 	multipleTemplates: z.boolean(),
@@ -133,7 +140,12 @@ function parsePlanFormData(formData: FormData) {
 		description: formData.get("description"),
 		tier: formData.get("tier"),
 		monthlyPrice: formData.get("monthlyPrice"),
+		quarterlyPrice: formData.get("quarterlyPrice"),
 		yearlyPrice: formData.get("yearlyPrice"),
+		paystackPlanCode: formData.get("paystackPlanCode"),
+		paystackMonthlyPlanCode: formData.get("paystackMonthlyPlanCode"),
+		paystackQuarterlyPlanCode: formData.get("paystackQuarterlyPlanCode"),
+		paystackYearlyPlanCode: formData.get("paystackYearlyPlanCode"),
 		maxCategories: formData.get("maxCategories"),
 		maxMenuItems: formData.get("maxMenuItems"),
 		multipleTemplates: formData.get("multipleTemplates") === "on",
@@ -149,8 +161,12 @@ function parsePlanFormData(formData: FormData) {
 export async function createPlanAction(formData: FormData) {
 	const admin = await requireSuperAdmin();
 	const input = parsePlanFormData(formData);
+	const data = {
+		...input,
+		paystackPlanCode: input.paystackMonthlyPlanCode ?? input.paystackPlanCode,
+	};
 
-	await db.plan.create({ data: input });
+	await db.plan.create({ data });
 
 	await recordAuditLog({
 		adminId: admin.id,
@@ -170,8 +186,12 @@ export async function updatePlanAction(formData: FormData) {
 		planId: formData.get("planId"),
 	});
 	const input = parsePlanFormData(formData);
+	const data = {
+		...input,
+		paystackPlanCode: input.paystackMonthlyPlanCode ?? input.paystackPlanCode,
+	};
 
-	await db.plan.update({ where: { id: planId }, data: input });
+	await db.plan.update({ where: { id: planId }, data });
 
 	await recordAuditLog({
 		adminId: admin.id,

@@ -345,11 +345,24 @@ export async function staffLoginAction(formData: FormData) {
 		},
 	});
 
+	// Keyed on the restaurant, not the client IP alone — a shared staff
+	// password is guessable in relatively few attempts, so this needs to
+	// cap attempts per-restaurant regardless of how many IPs an attacker
+	// spreads guesses across (staff devices on the same network would
+	// otherwise all share one IP-only bucket anyway).
+	const clientIp = await getClientIp();
+	await enforceRateLimit("staffLogin", `${clientIp}:${input.slug}`);
+
 	if (!restaurant?.staffDashboardPassword) {
 		throw new Error("Invalid login credentials.");
 	}
 
-	if (restaurant.staffDashboardPassword !== input.password) {
+	const { verifyPassword } = await import("better-auth/crypto");
+	const valid = await verifyPassword({
+		hash: restaurant.staffDashboardPassword,
+		password: input.password,
+	});
+	if (!valid) {
 		throw new Error("Invalid password.");
 	}
 

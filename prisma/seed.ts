@@ -13,10 +13,11 @@ async function main() {
 		update: {
 			name: "Free",
 			description:
-				"2 Categories · 8 Items · Basic Analytics · WhatsApp · AwaMenu branding shown",
+				"1 Category · 8 Items · Basic Analytics · WhatsApp · AwaMenu branding shown",
 			monthlyPrice: 0,
+			quarterlyPrice: 0,
 			yearlyPrice: 0,
-			maxCategories: 2,
+			maxCategories: 1,
 			maxMenuItems: 8,
 			multipleTemplates: false,
 			advancedAnalytics: false,
@@ -31,10 +32,11 @@ async function main() {
 			tier: PlanTier.FREE,
 			name: "Free",
 			description:
-				"2 Categories · 8 Items · Basic Analytics · WhatsApp · AwaMenu branding shown",
+				"1 Category · 8 Items · Basic Analytics · WhatsApp · AwaMenu branding shown",
 			monthlyPrice: 0,
+			quarterlyPrice: 0,
 			yearlyPrice: 0,
-			maxCategories: 2,
+			maxCategories: 1,
 			maxMenuItems: 8,
 			whatsappIntegration: true,
 			availableTemplates: ["classic"],
@@ -48,7 +50,8 @@ async function main() {
 			description:
 				"10 Categories · 100 Items · Multiple Templates · Advanced Analytics · Remove Branding · Basic Support",
 			monthlyPrice: 5000,
-			yearlyPrice: 0,
+			quarterlyPrice: 14250,
+			yearlyPrice: 54000,
 			maxCategories: 10,
 			maxMenuItems: 100,
 			multipleTemplates: true,
@@ -66,7 +69,8 @@ async function main() {
 			description:
 				"10 Categories · 100 Items · Multiple Templates · Advanced Analytics · Remove Branding · Basic Support",
 			monthlyPrice: 5000,
-			yearlyPrice: 0,
+			quarterlyPrice: 14250,
+			yearlyPrice: 54000,
 			maxCategories: 10,
 			maxMenuItems: 100,
 			multipleTemplates: true,
@@ -85,7 +89,8 @@ async function main() {
 			description:
 				"Unlimited Categories · Unlimited Items · Multiple Templates · Advanced Analytics · Remove Branding · Priority Support",
 			monthlyPrice: 12000,
-			yearlyPrice: 0,
+			quarterlyPrice: 34200,
+			yearlyPrice: 129600,
 			maxCategories: -1,
 			maxMenuItems: -1,
 			multipleTemplates: true,
@@ -103,7 +108,8 @@ async function main() {
 			description:
 				"Unlimited Categories · Unlimited Items · Multiple Templates · Advanced Analytics · Remove Branding · Priority Support",
 			monthlyPrice: 12000,
-			yearlyPrice: 0,
+			quarterlyPrice: 34200,
+			yearlyPrice: 129600,
 			maxCategories: -1,
 			maxMenuItems: -1,
 			multipleTemplates: true,
