@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 const updateSettingsSchema = z.object({
 	slug: z.string().min(1),
@@ -149,6 +150,22 @@ export async function updateRestaurantBrandingAction(formData: FormData) {
 		select: { id: true, slug: true },
 	});
 
+	// The layout picker greys out locked templates, but that's presentation
+	// only — this form posts a plain string, so the entitlement is re-checked
+	// here before it's persisted.
+	//
+	// Coerced to "classic" rather than rejected: the branding form re-submits
+	// whatever template is already stored as a hidden field, so a restaurant
+	// that downgraded while on a paid layout would otherwise be unable to save
+	// even their logo. Normalising on write also stops a stale locked template
+	// from lingering in the database.
+	const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
+	const activeTemplate = (planFeatures.availableTemplates as string[]).includes(
+		input.activeTemplate,
+	)
+		? input.activeTemplate
+		: "classic";
+
 	await db.restaurant.update({
 		where: { id: restaurant.id },
 		data: {
@@ -156,7 +173,7 @@ export async function updateRestaurantBrandingAction(formData: FormData) {
 			coverUrl: input.coverUrl,
 			primaryColor: input.primaryColor,
 			fontFamily: input.fontFamily,
-			activeTemplate: input.activeTemplate,
+			activeTemplate,
 		},
 	});
 

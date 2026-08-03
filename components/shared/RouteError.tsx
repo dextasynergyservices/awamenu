@@ -1,6 +1,8 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
+import { useEffect } from "react";
 
 type RouteErrorProps = {
 	error: Error & { digest?: string };
@@ -28,6 +30,14 @@ export function RouteError({
 	homeLabel = "Go home",
 	variant = "page",
 }: RouteErrorProps) {
+	// Server-render errors already reach Sentry via `onRequestError` in
+	// instrumentation.ts, but errors thrown during client rendering never did —
+	// they only ever painted this card, which is why some production failures
+	// had no corresponding Sentry event to diagnose from.
+	useEffect(() => {
+		Sentry.captureException(error);
+	}, [error]);
+
 	const card = (
 		<section className="mx-auto max-w-lg rounded-3xl border border-red-100 bg-white p-5 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
 			<p className="text-sm font-black uppercase tracking-wide text-red-700">

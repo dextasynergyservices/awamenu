@@ -3,6 +3,7 @@
 import { NotificationAudience } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { requireNotificationAccess } from "@/lib/notification-auth";
 
 const fetchNotificationsSchema = z.object({
 	restaurantId: z.string().min(1),
@@ -19,7 +20,9 @@ const fetchNotificationsSchema = z.object({
 export async function fetchNotificationsAction(
 	input: z.infer<typeof fetchNotificationsSchema>,
 ) {
-	const parsed = fetchNotificationsSchema.parse(input);
+	const raw = fetchNotificationsSchema.parse(input);
+	const auth = await requireNotificationAccess(raw);
+	const parsed = { ...raw, recipientId: auth.recipientId };
 
 	const notifications = await db.notification.findMany({
 		where: {
@@ -76,11 +79,12 @@ export async function fetchNotificationsAction(
 /**
  * Get the unread notification count for a recipient.
  */
-export async function getUnreadCountAction(input: {
+export async function getUnreadCountAction(rawInput: {
 	restaurantId: string;
 	recipientType: "admin" | "staff";
 	recipientId: string;
 }) {
+	const input = await requireNotificationAccess(rawInput);
 	const audienceFilter =
 		input.recipientType === "admin"
 			? [NotificationAudience.ADMIN, NotificationAudience.BOTH]
@@ -119,7 +123,21 @@ const markReadSchema = z.object({
 export async function markNotificationReadAction(
 	input: z.infer<typeof markReadSchema>,
 ) {
-	const parsed = markReadSchema.parse(input);
+	const raw = markReadSchema.parse(input);
+	// The notification's own restaurant is the authorisation subject — the
+	// caller only supplies a notification id here.
+	const notification = await db.notification.findUnique({
+		where: { id: raw.notificationId },
+		select: { restaurantId: true },
+	});
+	if (!notification) throw new Error("Notification not found.");
+
+	const auth = await requireNotificationAccess({
+		restaurantId: notification.restaurantId,
+		recipientType: raw.recipientType,
+		recipientId: raw.recipientId,
+	});
+	const parsed = { ...raw, recipientId: auth.recipientId };
 
 	await db.notificationRead.upsert({
 		where: {
@@ -151,7 +169,9 @@ const markAllReadSchema = z.object({
 export async function markAllNotificationsReadAction(
 	input: z.infer<typeof markAllReadSchema>,
 ) {
-	const parsed = markAllReadSchema.parse(input);
+	const raw = markAllReadSchema.parse(input);
+	const auth = await requireNotificationAccess(raw);
+	const parsed = { ...raw, recipientId: auth.recipientId };
 	const audienceFilter =
 		parsed.recipientType === "admin"
 			? [NotificationAudience.ADMIN, NotificationAudience.BOTH]

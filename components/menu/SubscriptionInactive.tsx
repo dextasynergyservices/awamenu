@@ -17,9 +17,9 @@ export function SubscriptionInactive({
 				This restaurant&apos;s menu is temporarily offline. Please check back
 				later or contact the restaurant directly for orders.
 			</p>
-			<p className="mt-8 text-xs font-bold text-slate-400 uppercase tracking-widest">
-				Powered by AwaMenu
-			</p>
+			{/* Attribution intentionally omitted here — the storefront layout
+			    renders it for every route, and a lapsed restaurant resolves to
+			    Free, so hardcoding it again would double it up. */}
 		</div>
 	);
 }

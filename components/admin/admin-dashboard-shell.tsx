@@ -105,8 +105,11 @@ export function AdminDashboardShell({
 		setNotifications(initialNotifications, initialUnreadCount);
 	}, [setNotifications, initialNotifications, initialUnreadCount]);
 
-	// Connect to SSE stream for real-time updates
+	// Poll for new notifications (see hook — SSE pinned a serverless function
+	// per open dashboard and timed out on Vercel).
 	useNotificationStream(restaurantId, {
+		recipientType: "admin",
+		recipientId: userId,
 		onNotification(notification) {
 			if (
 				notification.type === "NEW_ORDER" ||

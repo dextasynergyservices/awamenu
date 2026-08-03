@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { PoweredByAwaMenu } from "@/components/shared/PoweredByAwaMenu";
 import { useRestaurantBrand } from "@/components/shared/RestaurantBrandContext";
 import { FlipText } from "@/components/ui/FlipText";
 import { LOGO_ICON_URL } from "@/lib/logo";
@@ -47,6 +48,9 @@ export function RestaurantLoadingScreen({
 			>
 				Loading
 			</FlipText>
+			{brand?.showAwamenuBranding ? (
+				<PoweredByAwaMenu variant="inline" className="mt-1" />
+			) : null}
 		</div>
 	);
 

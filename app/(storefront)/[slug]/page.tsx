@@ -13,6 +13,7 @@ import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
+import { getRestaurantPlanFeaturesBySlug } from "@/lib/plan-features";
 import { isSubscriptionActive } from "@/lib/subscription";
 
 type PublicMenuPageProps = {
@@ -53,14 +54,10 @@ export default async function PublicMenuPage({
 			whatsappNumber: true,
 			tableReservationEnabled: true,
 			activeTemplate: true,
+			// Only the liveness check is needed here now — the actual feature
+			// values come from getRestaurantPlanFeaturesBySlug below.
 			subscription: {
-				select: {
-					status: true,
-					currentPeriodEnd: true,
-					plan: {
-						select: { removeAwamenuBranding: true, maxMenuItems: true },
-					},
-				},
+				select: { status: true, currentPeriodEnd: true },
 			},
 			categories: {
 				where: { isActive: true },
@@ -103,12 +100,17 @@ export default async function PublicMenuPage({
 		return <SubscriptionInactive restaurantName={restaurant.name} />;
 	}
 
+	// Resolved through the shared plan resolver rather than read straight off
+	// `subscription.plan`, so a lapsed-but-still-present subscription degrades
+	// to Free here exactly like it does everywhere else.
+	const planFeatures = await getRestaurantPlanFeaturesBySlug(slug);
+
 	// The item cap is restaurant-wide (matches how the admin editor already
 	// enforces it), not per-category — so a downgraded restaurant with one
 	// visible category correctly sees up to the full limit there, while a
 	// restaurant with multiple visible categories doesn't get the limit
 	// multiplied out across each one.
-	const maxMenuItems = restaurant.subscription?.plan.maxMenuItems ?? -1;
+	const maxMenuItems = planFeatures.maxMenuItems;
 	let remainingItemBudget = maxMenuItems;
 	const categories = restaurant.categories
 		.map((category) => {
@@ -123,17 +125,12 @@ export default async function PublicMenuPage({
 			return { ...category, items: capped };
 		})
 		.filter((category) => category.items.length > 0);
-	const showAwamenuBranding =
-		!restaurant.subscription?.plan.removeAwamenuBranding;
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);
-	const validTemplates: MenuGridTemplate[] = [
-		"classic",
-		"grid",
-		"compact",
-		"magazine",
-	];
-	const template = validTemplates.includes(
-		restaurant.activeTemplate as MenuGridTemplate,
+	// Checked against the plan's entitlements, not just "is this a real
+	// template" — a restaurant that picked Magazine on Pro and later dropped
+	// to Free would otherwise keep rendering a paid layout indefinitely.
+	const template = (planFeatures.availableTemplates as string[]).includes(
+		restaurant.activeTemplate,
 	)
 		? (restaurant.activeTemplate as MenuGridTemplate)
 		: "classic";
@@ -169,12 +166,6 @@ export default async function PublicMenuPage({
 				appendOrderId={orderId}
 				tableReservationEnabled={restaurant.tableReservationEnabled}
 			/>
-
-			{showAwamenuBranding ? (
-				<footer className="border-emerald-100 border-t bg-white px-4 py-6 text-center text-sm font-bold text-slate-500 md:hidden">
-					Powered by <span className="text-emerald-700">AwaMenu</span>
-				</footer>
-			) : null}
 
 			{restaurant.tableReservationEnabled ? (
 				<Link

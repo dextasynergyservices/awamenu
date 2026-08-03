@@ -5,7 +5,6 @@ import type {
 } from "@prisma/client";
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/lib/db";
-import { publishNotificationEvent } from "@/lib/redis";
 import { sendWebPush } from "@/lib/web-push";
 
 type DispatchNotificationInput = {
@@ -41,22 +40,11 @@ export async function dispatchNotification(input: DispatchNotificationInput) {
 		},
 	});
 
-	// Fire-and-forget: publish to Redis for SSE + send web push
+	// Fire-and-forget web push. The Redis publish that used to sit here fed the
+	// SSE stream; dashboards now poll this table directly, so mirroring every
+	// notification into Redis was three wasted commands per notification with
+	// no reader.
 	const sideEffects = Promise.allSettled([
-		publishNotificationEvent(input.restaurantId, {
-			id: notification.id,
-			type: input.type,
-			audience: input.audience,
-			title: input.title,
-			body: input.body,
-			actionUrl: input.actionUrl,
-			metadata: input.metadata,
-			createdAt: notification.createdAt.toISOString(),
-		}).catch((error) => {
-			Sentry.captureException(error, {
-				tags: { component: "notification-redis" },
-			});
-		}),
 		sendWebPush({
 			restaurantId: input.restaurantId,
 			title: input.title,

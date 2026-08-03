@@ -5,6 +5,7 @@ import {
 	ChevronRight,
 	FileImage,
 	Folder,
+	FolderPlus,
 	LayoutGrid,
 	ListChecks,
 	type LucideIcon,
@@ -63,7 +64,7 @@ type MobileMenuBuilderProps = {
 	maxCategories: number;
 	maxMenuItems: number;
 	activeTemplate: string;
-	planTier: string;
+	availableTemplates: string[];
 };
 
 const templateLabels: Record<string, string> = {
@@ -161,7 +162,7 @@ export function MobileMenuBuilder({
 	maxCategories,
 	maxMenuItems,
 	activeTemplate,
-	planTier,
+	availableTemplates,
 }: MobileMenuBuilderProps) {
 	const [activeTab, setActiveTab] = useState<MobileTab>("items");
 	const [layoutModalOpen, setLayoutModalOpen] = useState(false);
@@ -325,6 +326,29 @@ export function MobileMenuBuilder({
 									onEdit={() => setEditingItem(item)}
 								/>
 							))
+						) : categories.length === 0 ? (
+							<div className="rounded-[1.35rem] border border-emerald-100 border-dashed bg-emerald-50/60 p-5 text-center">
+								<div className="mx-auto grid size-11 place-items-center rounded-xl bg-white text-emerald-700 shadow-sm">
+									<FolderPlus className="size-5" aria-hidden="true" />
+								</div>
+								<h3 className="mt-3 text-sm font-black text-slate-950">
+									Create a category first
+								</h3>
+								<p className="mt-1 text-xs font-medium leading-5 text-slate-600">
+									Menu items live inside categories like{" "}
+									<span className="font-bold text-slate-800">Starters</span> or{" "}
+									<span className="font-bold text-slate-800">Drinks</span>. Add
+									one to start building your menu.
+								</p>
+								<button
+									type="button"
+									onClick={() => setActiveTab("categories")}
+									className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-black text-white"
+								>
+									<FolderPlus className="size-4" aria-hidden="true" />
+									Add your first category
+								</button>
+							</div>
 						) : (
 							<div className="rounded-[1.35rem] border border-slate-200 bg-white p-6 text-center text-xs font-bold text-slate-500">
 								No menu items yet.
@@ -340,15 +364,22 @@ export function MobileMenuBuilder({
 						) : null}
 					</div>
 
+					{/* With no categories the item sheet would render an empty
+					    category dropdown and fail validation on submit, so the
+					    button routes to the categories tab instead. */}
 					<button
 						type="button"
-						onClick={() => setIsCreatingItem(true)}
+						onClick={() =>
+							categories.length === 0
+								? setActiveTab("categories")
+								: setIsCreatingItem(true)
+						}
 						className="fixed right-5 bottom-28 z-30 grid gap-1 text-center text-xs font-medium text-slate-700"
 					>
 						<span className="grid size-12 place-items-center rounded-full bg-emerald-700 text-white shadow-lg">
 							<Plus className="size-5" aria-hidden="true" />
 						</span>
-						Add item
+						{categories.length === 0 ? "Add category" : "Add item"}
 					</button>
 				</section>
 			) : null}
@@ -402,7 +433,7 @@ export function MobileMenuBuilder({
 				<MenuLayoutModal
 					slug={slug}
 					activeTemplate={activeTemplate}
-					planTier={planTier}
+					availableTemplates={availableTemplates}
 					onClose={() => setLayoutModalOpen(false)}
 				/>
 			) : null}
