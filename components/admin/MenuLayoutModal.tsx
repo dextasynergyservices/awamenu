@@ -4,52 +4,24 @@ import { Lock, X } from "lucide-react";
 import { useState } from "react";
 import { updateRestaurantBrandingAction } from "@/actions/restaurant.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { MENU_TEMPLATES, type MenuTemplateId } from "@/lib/menu-templates";
 import { cn } from "@/lib/utils";
 
-type MenuTemplateId = "classic" | "grid" | "compact" | "magazine";
+// Names/descriptions come from the shared catalog so this picker and the
+// super-admin plan editor can't drift apart. `requiredPlan` is display copy
+// for the locked state only — whether a layout is actually unlocked comes
+// from the plan's availableTemplates.
+const requiredPlanLabels: Record<MenuTemplateId, string> = {
+	classic: "Free",
+	grid: "Starter",
+	compact: "Pro",
+	magazine: "Pro",
+};
 
-const templates: Array<{
-	id: MenuTemplateId;
-	name: string;
-	description: string;
-	level: number;
-	requiredPlan: string;
-}> = [
-	{
-		id: "classic",
-		name: "Classic",
-		description: "Row list with photo, name, and price.",
-		level: 1,
-		requiredPlan: "Free",
-	},
-	{
-		id: "grid",
-		name: "Grid",
-		description: "2-column photo-forward card grid.",
-		level: 2,
-		requiredPlan: "Starter",
-	},
-	{
-		id: "compact",
-		name: "Compact",
-		description: "Dense text list, no photos.",
-		level: 3,
-		requiredPlan: "Pro",
-	},
-	{
-		id: "magazine",
-		name: "Magazine",
-		description: "Large hero-style photo cards.",
-		level: 4,
-		requiredPlan: "Pro",
-	},
-];
-
-function planLevel(planTier: string) {
-	if (planTier === "PRO") return 4;
-	if (planTier === "STARTER") return 2;
-	return 1;
-}
+const templates = MENU_TEMPLATES.map((template) => ({
+	...template,
+	requiredPlan: requiredPlanLabels[template.id],
+}));
 
 function MenuLayoutPreview({ id }: { id: MenuTemplateId }) {
 	if (id === "classic") {
@@ -94,20 +66,26 @@ function MenuLayoutPreview({ id }: { id: MenuTemplateId }) {
 export function MenuLayoutModal({
 	slug,
 	activeTemplate,
-	planTier,
+	availableTemplates,
 	onClose,
 }: {
 	slug: string;
 	activeTemplate: string;
-	planTier: string;
+	/** The plan's actual entitlements, resolved server-side. Previously this
+	 * was derived from a hardcoded tier ladder in this file, which silently
+	 * disagreed with the `Plan.availableTemplates` column the super-admin
+	 * plan editor writes to. */
+	availableTemplates: string[];
 	onClose: () => void;
 }) {
+	const isUnlocked = (id: MenuTemplateId) => availableTemplates.includes(id);
 	const [selected, setSelected] = useState<MenuTemplateId>(
-		templates.some((template) => template.id === activeTemplate)
+		templates.some(
+			(template) => template.id === activeTemplate && isUnlocked(template.id),
+		)
 			? (activeTemplate as MenuTemplateId)
 			: "classic",
 	);
-	const currentLevel = planLevel(planTier);
 
 	return (
 		<div className="fixed inset-0 z-100 grid items-end bg-slate-950/45 p-3 md:place-items-center md:p-4">
@@ -146,7 +124,7 @@ export function MenuLayoutModal({
 
 					<div className="grid grid-cols-2 gap-3">
 						{templates.map((template) => {
-							const isLocked = currentLevel < template.level;
+							const isLocked = !isUnlocked(template.id);
 							return (
 								<label
 									key={template.id}

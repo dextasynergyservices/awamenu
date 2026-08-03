@@ -6,6 +6,11 @@ export type RestaurantBrand = {
 	name: string | null;
 	logoUrl: string | null;
 	primaryColor: string | null;
+	/** Whether this restaurant's plan still carries AwaMenu attribution.
+	 * Carried here (rather than resolved where it's used) so the loading
+	 * screen — which can't run a query — can render the badge on its first
+	 * paint instead of popping it in later. */
+	showAwamenuBranding: boolean;
 };
 
 const RestaurantBrandContext = createContext<RestaurantBrand | null>(null);

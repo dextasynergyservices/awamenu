@@ -6,6 +6,7 @@ import { z } from "zod";
 import { recordAuditLog } from "@/lib/audit-log";
 import { requireSuperAdmin } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { BASE_MENU_TEMPLATE, isMenuTemplateId } from "@/lib/menu-templates";
 
 const optionalString = (max: number) =>
 	z.preprocess(
@@ -125,12 +126,12 @@ const planSchema = z.object({
 	paystackYearlyPlanCode: optionalString(120),
 	maxCategories: z.coerce.number().int(),
 	maxMenuItems: z.coerce.number().int(),
-	multipleTemplates: z.boolean(),
 	advancedAnalytics: z.boolean(),
 	removeAwamenuBranding: z.boolean(),
 	whatsappIntegration: z.boolean(),
 	prioritySupport: z.boolean(),
 	basicSupport: z.boolean(),
+	availableTemplates: z.array(z.string()),
 	isActive: z.boolean(),
 });
 
@@ -148,12 +149,23 @@ function parsePlanFormData(formData: FormData) {
 		paystackYearlyPlanCode: formData.get("paystackYearlyPlanCode"),
 		maxCategories: formData.get("maxCategories"),
 		maxMenuItems: formData.get("maxMenuItems"),
-		multipleTemplates: formData.get("multipleTemplates") === "on",
 		advancedAnalytics: formData.get("advancedAnalytics") === "on",
 		removeAwamenuBranding: formData.get("removeAwamenuBranding") === "on",
 		whatsappIntegration: formData.get("whatsappIntegration") === "on",
 		prioritySupport: formData.get("prioritySupport") === "on",
 		basicSupport: formData.get("basicSupport") === "on",
+		// Unknown ids are dropped and the base layout is always re-added, so a
+		// plan can never end up granting a layout that doesn't render, nor zero
+		// layouts at all.
+		availableTemplates: Array.from(
+			new Set([
+				BASE_MENU_TEMPLATE,
+				...formData
+					.getAll("availableTemplates")
+					.filter((value): value is string => typeof value === "string")
+					.filter(isMenuTemplateId),
+			]),
+		),
 		isActive: formData.get("isActive") === "on",
 	});
 }

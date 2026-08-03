@@ -52,8 +52,11 @@ export function StaffDashboardShell({
 		setNotifications(initialNotifications, initialUnreadCount);
 	}, [setNotifications, initialNotifications, initialUnreadCount]);
 
-	// SSE for real-time notifications
+	// Poll for new notifications (see hook — SSE pinned a serverless function
+	// per open terminal and timed out on Vercel).
 	useNotificationStream(restaurantId, {
+		recipientType: "staff",
+		recipientId: "shared",
 		onNotification(notification) {
 			if (
 				notification.type === "NEW_ORDER" ||

@@ -190,6 +190,9 @@ export default async function DashboardLayout({
 		name: restaurant.name,
 		logoUrl: restaurant.logoUrl,
 		primaryColor: restaurant.primaryColor,
+		// The owner's own dashboard isn't a customer-facing surface, so it
+		// never carries the attribution badge regardless of plan.
+		showAwamenuBranding: false,
 	};
 
 	return (

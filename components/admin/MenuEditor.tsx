@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	FolderPlus,
 	LayoutGrid,
 	Pencil,
 	Plus,
@@ -24,7 +25,7 @@ type MenuEditorProps = {
 	slug: string;
 	canCreateItem: boolean;
 	activeTemplate: string;
-	planTier: string;
+	availableTemplates: string[];
 	categories: Array<{
 		id: string;
 		name: string;
@@ -187,10 +188,14 @@ export function MenuEditor({
 	slug,
 	canCreateItem,
 	activeTemplate,
-	planTier,
+	availableTemplates,
 	categories,
 }: MenuEditorProps) {
 	const firstCategory = categories[0];
+	// Items can only exist inside a category, so with none created the item
+	// form has nothing to attach to. Previously this just greyed out the
+	// submit button, which left owners with no idea what was blocking them.
+	const hasNoCategories = categories.length === 0;
 	const items = categories.flatMap((category) =>
 		category.items.map((item) => ({
 			...item,
@@ -227,68 +232,95 @@ export function MenuEditor({
 						<LayoutGrid className="size-4" aria-hidden="true" />
 						Layout: {templateLabels[activeTemplate] ?? "Classic"}
 					</button>
-					<FormSubmitButton
-						form="new-menu-item-form"
-						disabled={!canCreateItem || categories.length === 0}
-						loadingText="Creating..."
-						successText="Created"
-						className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 disabled:opacity-50"
-					>
-						<Plus className="size-4" aria-hidden="true" />
-						Add new item
-					</FormSubmitButton>
+					{hasNoCategories ? null : (
+						<FormSubmitButton
+							form="new-menu-item-form"
+							disabled={!canCreateItem}
+							loadingText="Creating..."
+							successText="Created"
+							className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 disabled:opacity-50"
+						>
+							<Plus className="size-4" aria-hidden="true" />
+							Add new item
+						</FormSubmitButton>
+					)}
 				</div>
 			</div>
 
-			<form
-				id="new-menu-item-form"
-				action={createMenuItemAction}
-				className="mt-4 grid gap-3"
-			>
-				<input type="hidden" name="restaurantId" value={restaurantId} />
-				<input type="hidden" name="slug" value={slug} />
-				<input type="hidden" name="sortOrder" value={items.length + 1} />
-				<input type="hidden" name="isAvailable" value="on" />
-				<input type="hidden" name="isTodaySpecial" value="" />
-				<div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
-					<select
-						name="categoryId"
-						required
-						defaultValue={firstCategory?.id}
-						className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+			{hasNoCategories ? (
+				<div className="mt-4 rounded-2xl border border-emerald-100 border-dashed bg-emerald-50/60 p-5 text-center">
+					<div className="mx-auto grid size-11 place-items-center rounded-xl bg-white text-emerald-700 shadow-sm">
+						<FolderPlus className="size-5" aria-hidden="true" />
+					</div>
+					<h3 className="mt-3 text-sm font-black text-slate-950">
+						Create a category before adding items
+					</h3>
+					<p className="mx-auto mt-1 max-w-md text-sm font-medium text-slate-600">
+						Every menu item lives inside a category — like{" "}
+						<span className="font-bold text-slate-800">Starters</span>,{" "}
+						<span className="font-bold text-slate-800">Main Dishes</span> or{" "}
+						<span className="font-bold text-slate-800">Drinks</span>. Add your
+						first one and the item form will appear here.
+					</p>
+					<a
+						href="#category-manager"
+						className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-800"
 					>
-						{categories.map((category) => (
-							<option key={category.id} value={category.id}>
-								{category.name}
-							</option>
-						))}
-					</select>
-					<input
-						name="name"
-						required
-						placeholder="Item name"
-						className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-					/>
-					<input
-						name="price"
-						type="number"
-						min="0"
-						step="0.01"
-						required
-						placeholder="Price"
-						className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-					/>
+						<FolderPlus className="size-4" aria-hidden="true" />
+						Add your first category
+					</a>
 				</div>
-				<input
-					name="description"
-					placeholder="Short description"
-					className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
-				/>
-				<ImageUploadField
-					restaurantId={restaurantId}
-					inputId="new-item-image"
-				/>
-			</form>
+			) : (
+				<form
+					id="new-menu-item-form"
+					action={createMenuItemAction}
+					className="mt-4 grid gap-3"
+				>
+					<input type="hidden" name="restaurantId" value={restaurantId} />
+					<input type="hidden" name="slug" value={slug} />
+					<input type="hidden" name="sortOrder" value={items.length + 1} />
+					<input type="hidden" name="isAvailable" value="on" />
+					<input type="hidden" name="isTodaySpecial" value="" />
+					<div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
+						<select
+							name="categoryId"
+							required
+							defaultValue={firstCategory?.id}
+							className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+						>
+							{categories.map((category) => (
+								<option key={category.id} value={category.id}>
+									{category.name}
+								</option>
+							))}
+						</select>
+						<input
+							name="name"
+							required
+							placeholder="Item name"
+							className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+						/>
+						<input
+							name="price"
+							type="number"
+							min="0"
+							step="0.01"
+							required
+							placeholder="Price"
+							className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+						/>
+					</div>
+					<input
+						name="description"
+						placeholder="Short description"
+						className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
+					/>
+					<ImageUploadField
+						restaurantId={restaurantId}
+						inputId="new-item-image"
+					/>
+				</form>
+			)}
 
 			<div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1.2fr]">
 				<select className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none">
@@ -612,7 +644,7 @@ export function MenuEditor({
 				<MenuLayoutModal
 					slug={slug}
 					activeTemplate={activeTemplate}
-					planTier={planTier}
+					availableTemplates={availableTemplates}
 					onClose={() => setLayoutModalOpen(false)}
 				/>
 			) : null}
