@@ -2,7 +2,6 @@ import {
 	ArrowRight,
 	BarChart3,
 	CalendarDays,
-	Check,
 	MessageCircle,
 	QrCode,
 	Settings2,
@@ -13,6 +12,7 @@ import { MarketingBottomNav } from "@/components/marketing/MarketingBottomNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { ScrollRevealAnimations } from "@/components/marketing/ScrollRevealAnimations";
+import { PublicPricingPlans } from "@/components/pricing/PublicPricingPlans";
 import { db } from "@/lib/db";
 
 const HERO_VIDEO_URL_DESKTOP =
@@ -26,6 +26,8 @@ type LandingPlan = {
 	name: string;
 	description: string | null;
 	monthlyPrice: unknown;
+	quarterlyPrice: unknown;
+	yearlyPrice: unknown;
 	maxCategories: number;
 	maxMenuItems: number;
 	advancedAnalytics: boolean;
@@ -107,6 +109,8 @@ export default async function Home() {
 			name: true,
 			description: true,
 			monthlyPrice: true,
+			quarterlyPrice: true,
+			yearlyPrice: true,
 			maxCategories: true,
 			maxMenuItems: true,
 			advancedAnalytics: true,
@@ -245,43 +249,20 @@ export default async function Home() {
 								Choose a plan and launch today.
 							</h2>
 						</div>
-						<div className="scroll-anim-card-group mt-8 flex snap-x gap-4 overflow-x-auto px-4 pb-3 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-6 lg:px-8">
-							{plans.map((plan) => (
-								<div
-									key={plan.id}
-									className="scroll-anim-card flex w-[82vw] min-h-full shrink-0 snap-center flex-col rounded-[2rem] bg-white p-6 shadow-[0_18px_55px_rgba(6,78,59,0.1)] sm:w-auto"
-								>
-									<h3 className="text-2xl font-black text-emerald-950">
-										{plan.name}
-									</h3>
-									<p className="mt-3 min-h-14 text-sm leading-6 text-zinc-600">
-										{plan.description}
-									</p>
-									<p className="mt-6 text-4xl font-black text-emerald-950">
-										₦{Number(plan.monthlyPrice).toLocaleString()}
-										<span className="text-base font-bold text-emerald-700">
-											/mo
-										</span>
-									</p>
-									<ul className="mt-6 grid gap-3 text-sm font-medium text-zinc-700">
-										{planFeatures(plan).map((feature) => (
-											<li key={feature} className="flex gap-2">
-												<Check
-													className="mt-0.5 size-4 shrink-0 text-emerald-700"
-													aria-hidden="true"
-												/>
-												<span>{feature}</span>
-											</li>
-										))}
-									</ul>
-									<Link
-										href={`/signup?plan=${plan.tier.toLowerCase()}`}
-										className="mt-7 inline-flex h-12 items-center justify-center rounded-full bg-emerald-700 px-5 text-sm font-black text-white transition-colors hover:bg-emerald-800 md:mt-auto"
-									>
-										Choose {plan.name}
-									</Link>
-								</div>
-							))}
+						<div className="scroll-anim-card-group mt-8 px-4 sm:px-6 lg:px-8">
+							<PublicPricingPlans
+								compact
+								plans={plans.map((plan) => ({
+									id: plan.id,
+									tier: plan.tier,
+									name: plan.name,
+									description: plan.description,
+									monthlyPrice: Number(plan.monthlyPrice),
+									quarterlyPrice: Number(plan.quarterlyPrice),
+									yearlyPrice: Number(plan.yearlyPrice),
+									features: planFeatures(plan),
+								}))}
+							/>
 						</div>
 					</div>
 				</section>

@@ -28,6 +28,7 @@ import { createOrderAction } from "@/actions/order.actions";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { SubmitButton } from "@/components/ui/action-button";
+import { env } from "@/env";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 import type { BannerItem } from "@/lib/banners";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,13 @@ export function CheckoutFlow({
 	const setQuantity = useCart((state) => state.setQuantity);
 	const [type, setType] = useState<CheckoutOrderType>("PICKUP");
 	const [orderFor, setOrderFor] = useState<"SELF" | "SOMEONE_ELSE">("SELF");
+	// Starts "ready" when Turnstile isn't configured at all (matches
+	// TurnstileWidget's own no-op behavior); otherwise stays false until its
+	// async challenge actually completes, so the submit button can't be
+	// clicked with an empty token — that was silently failing every order.
+	const [turnstileReady, setTurnstileReady] = useState(
+		!env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+	);
 
 	// Auto-fetch customer details
 	const [customerName, setCustomerName] = useState("");
@@ -792,15 +800,18 @@ export function CheckoutFlow({
 							</label>
 						)}
 
-						<TurnstileWidget className="mt-5 sm:mt-6 flex justify-center" />
+						<TurnstileWidget
+							className="mt-5 sm:mt-6 flex justify-center"
+							onToken={() => setTurnstileReady(true)}
+						/>
 
 						<SubmitButton
-							disabled={items.length === 0}
+							disabled={items.length === 0 || !turnstileReady}
 							loadingText="Processing..."
 							successText="Order created"
 							className="mt-5 sm:mt-6 inline-flex min-h-[52px] sm:min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-emerald-700 px-4 sm:px-5 text-xs sm:text-base font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.18)] disabled:opacity-50"
 						>
-							{submitLabel}
+							{turnstileReady ? submitLabel : "Verifying..."}
 							<ArrowRight className="size-3.5 sm:size-5" aria-hidden="true" />
 						</SubmitButton>
 

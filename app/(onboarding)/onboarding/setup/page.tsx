@@ -1,8 +1,10 @@
 import { OnboardingStatus, SubscriptionStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { completeSetupAction } from "@/actions/onboarding.actions";
+import { RestaurantNameSlugFields } from "@/components/onboarding/RestaurantNameSlugFields";
 import { SubmitButton } from "@/components/ui/action-button";
 import { requireUser } from "@/lib/auth-guards";
+import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { verifySubscriptionPaymentReference } from "@/lib/payments";
 
@@ -11,12 +13,14 @@ export default async function SetupPage({
 }: {
 	searchParams: Promise<{
 		planId?: string;
+		billing?: string;
 		reference?: string;
 		trxref?: string;
 	}>;
 }) {
 	const user = await requireUser();
-	const { planId, reference, trxref } = await searchParams;
+	const { planId, billing, reference, trxref } = await searchParams;
+	const billingInterval = parseBillingInterval(billing);
 	const paymentReference = reference ?? trxref;
 	const dbUser = await db.user.findUnique({
 		where: { id: user.id },
@@ -31,6 +35,7 @@ export default async function SetupPage({
 				reference: paymentReference,
 				userId: user.id,
 				planId,
+				billingInterval,
 			});
 		}
 
@@ -51,7 +56,7 @@ export default async function SetupPage({
 		} else {
 			redirect(
 				planId
-					? `/onboarding/checkout?planId=${planId}`
+					? `/onboarding/checkout?planId=${planId}&billing=${billingInterval}`
 					: "/onboarding/choose-plan",
 			);
 		}
@@ -69,23 +74,8 @@ export default async function SetupPage({
 				</h1>
 				<form action={completeSetupAction} className="mt-6 grid gap-4">
 					{planId ? <input type="hidden" name="planId" value={planId} /> : null}
-					<label className="grid gap-2 text-sm font-medium text-zinc-800">
-						Restaurant name
-						<input
-							name="name"
-							required
-							className="h-11 border border-zinc-300 px-3 text-base outline-none focus:border-emerald-700 focus:ring-2 focus:ring-yellow-300/60"
-						/>
-					</label>
-					<label className="grid gap-2 text-sm font-medium text-zinc-800">
-						Slug
-						<input
-							name="slug"
-							required
-							pattern="[a-z0-9]+(-[a-z0-9]+)*"
-							className="h-11 border border-zinc-300 px-3 text-base outline-none focus:border-emerald-700 focus:ring-2 focus:ring-yellow-300/60"
-						/>
-					</label>
+					<input type="hidden" name="billingInterval" value={billingInterval} />
+					<RestaurantNameSlugFields />
 					<label className="grid gap-2 text-sm font-medium text-zinc-800">
 						Phone
 						<input

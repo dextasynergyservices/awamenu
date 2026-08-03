@@ -36,6 +36,7 @@ export async function notifyNewOrder(orderId: string) {
 					name: true,
 					slug: true,
 					currency: true,
+					owner: { select: { email: true } },
 				},
 			},
 			items: {
@@ -55,6 +56,7 @@ export async function notifyNewOrder(orderId: string) {
 			await sendOrderConfirmationEmail({
 				to: order.customerEmail,
 				restaurantName: order.restaurant.name,
+				restaurantReplyToEmail: order.restaurant.owner.email,
 				orderId: order.id,
 				orderUrl,
 				total: formatMoney(total, order.restaurant.currency),

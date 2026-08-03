@@ -50,6 +50,10 @@ export default async function SuperAdminPlansPage() {
 							₦{Number(plan.monthlyPrice).toLocaleString()}
 							<span className="text-xs font-medium text-slate-500">/mo</span>
 						</p>
+						<div className="mt-2 grid gap-1 text-xs font-bold text-slate-500">
+							<p>Quarterly: ₦{Number(plan.quarterlyPrice).toLocaleString()}</p>
+							<p>Yearly: ₦{Number(plan.yearlyPrice).toLocaleString()}</p>
+						</div>
 						<p className="mt-2 text-xs font-medium leading-5 text-slate-500">
 							{plan.description}
 						</p>

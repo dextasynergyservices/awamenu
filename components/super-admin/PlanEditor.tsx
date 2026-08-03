@@ -96,6 +96,21 @@ export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 					/>
 				</div>
 				<div>
+					<label htmlFor="quarterlyPrice" className={labelClassName}>
+						Quarterly Price (₦)
+					</label>
+					<input
+						id="quarterlyPrice"
+						type="number"
+						name="quarterlyPrice"
+						min={0}
+						step="0.01"
+						defaultValue={plan ? Number(plan.quarterlyPrice) : 0}
+						required
+						className={inputClassName}
+					/>
+				</div>
+				<div>
 					<label htmlFor="yearlyPrice" className={labelClassName}>
 						Yearly Price (₦)
 					</label>
@@ -108,6 +123,47 @@ export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 						defaultValue={plan ? Number(plan.yearlyPrice) : 0}
 						required
 						className={inputClassName}
+					/>
+				</div>
+				<div>
+					<label htmlFor="paystackMonthlyPlanCode" className={labelClassName}>
+						Paystack Monthly Plan Code
+					</label>
+					<input
+						id="paystackMonthlyPlanCode"
+						type="text"
+						name="paystackMonthlyPlanCode"
+						defaultValue={
+							plan?.paystackMonthlyPlanCode ?? plan?.paystackPlanCode ?? ""
+						}
+						className={inputClassName}
+						placeholder="PLN_monthly"
+					/>
+				</div>
+				<div>
+					<label htmlFor="paystackQuarterlyPlanCode" className={labelClassName}>
+						Paystack Quarterly Plan Code
+					</label>
+					<input
+						id="paystackQuarterlyPlanCode"
+						type="text"
+						name="paystackQuarterlyPlanCode"
+						defaultValue={plan?.paystackQuarterlyPlanCode ?? ""}
+						className={inputClassName}
+						placeholder="PLN_quarterly"
+					/>
+				</div>
+				<div>
+					<label htmlFor="paystackYearlyPlanCode" className={labelClassName}>
+						Paystack Yearly Plan Code
+					</label>
+					<input
+						id="paystackYearlyPlanCode"
+						type="text"
+						name="paystackYearlyPlanCode"
+						defaultValue={plan?.paystackYearlyPlanCode ?? ""}
+						className={inputClassName}
+						placeholder="PLN_yearly"
 					/>
 				</div>
 				<div>

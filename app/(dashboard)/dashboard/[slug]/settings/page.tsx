@@ -9,6 +9,7 @@ import { RestaurantSettingsForm } from "@/components/admin/RestaurantSettingsFor
 import { SubscriptionDetailsCard } from "@/components/admin/SubscriptionDetailsCard";
 import { env } from "@/env";
 import { requireUser } from "@/lib/auth-guards";
+import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { verifySubscriptionPaymentReference } from "@/lib/payments";
 
@@ -17,11 +18,17 @@ export default async function SettingsPage({
 	searchParams,
 }: {
 	params: Promise<{ slug: string }>;
-	searchParams: Promise<{ reference?: string; trxref?: string }>;
+	searchParams: Promise<{
+		reference?: string;
+		trxref?: string;
+		planId?: string;
+		billing?: string;
+	}>;
 }) {
 	const user = await requireUser();
 	const { slug } = await params;
-	const { reference, trxref } = await searchParams;
+	const { reference, trxref, planId: newPlanId, billing } = await searchParams;
+	const billingInterval = parseBillingInterval(billing);
 	const paymentReference = reference ?? trxref;
 
 	const restaurant = await db.restaurant.findFirst({
@@ -56,11 +63,13 @@ export default async function SettingsPage({
 		redirect("/dashboard");
 	}
 
-	if (paymentReference && restaurant.subscription?.planId) {
+	if (paymentReference && newPlanId) {
 		await verifySubscriptionPaymentReference({
 			reference: paymentReference,
 			userId: user.id,
-			planId: restaurant.subscription.planId,
+			planId: newPlanId,
+			billingInterval,
+			restaurantId: restaurant.id,
 		});
 
 		// Remove reference from URL so we don't re-verify on refresh
@@ -94,6 +103,7 @@ export default async function SettingsPage({
 				{/* Column 1 */}
 				<div className="grid gap-3 md:gap-8">
 					<RestaurantInfoForm
+						restaurantId={restaurant.id}
 						slug={restaurant.slug}
 						name={restaurant.name}
 						description={restaurant.description}
@@ -130,7 +140,7 @@ export default async function SettingsPage({
 					<RestaurantSettingsForm
 						slug={restaurant.slug}
 						dineInPaymentPolicy={restaurant.dineInPaymentPolicy}
-						staffDashboardPassword={restaurant.staffDashboardPassword}
+						hasStaffDashboardPassword={!!restaurant.staffDashboardPassword}
 						staffDashboardAutoLockHours={restaurant.staffDashboardAutoLockHours}
 					/>
 

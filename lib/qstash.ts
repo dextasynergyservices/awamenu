@@ -93,6 +93,12 @@ export async function verifyQstashSignature(input: {
 	url?: string;
 }) {
 	if (!env.QSTASH_CURRENT_SIGNING_KEY || !env.QSTASH_NEXT_SIGNING_KEY) {
+		// Lets this route work in local dev without QStash keys configured.
+		// Never extend this pass-through to production — if these vars are
+		// ever missing there (a Vercel env misconfiguration), the webhook
+		// must reject outright rather than silently accept unsigned
+		// requests with no error to notice.
+		if (process.env.NODE_ENV === "production") return false;
 		return true;
 	}
 
