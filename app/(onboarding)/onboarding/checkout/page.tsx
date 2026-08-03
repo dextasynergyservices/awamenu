@@ -1,18 +1,30 @@
 import { redirect } from "next/navigation";
 import { startSubscriptionCheckoutAction } from "@/actions/onboarding.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import {
+	BILLING_INTERVAL_DETAILS,
+	formatCurrency,
+	getPlanIntervalPrice,
+	getPlanMonthlyEquivalent,
+	getPlanSavingsPercent,
+	parseBillingInterval,
+} from "@/lib/billing";
 import { db } from "@/lib/db";
 
 export default async function CheckoutPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ planId?: string }>;
+	searchParams: Promise<{ planId?: string; billing?: string }>;
 }) {
-	const { planId } = await searchParams;
+	const { planId, billing } = await searchParams;
+	const billingInterval = parseBillingInterval(billing);
 	if (!planId) redirect("/onboarding/choose-plan");
 
 	const plan = await db.plan.findUnique({ where: { id: planId } });
 	if (!plan) redirect("/onboarding/choose-plan");
+	const price = getPlanIntervalPrice(plan, billingInterval);
+	const monthlyEquivalent = getPlanMonthlyEquivalent(plan, billingInterval);
+	const savings = getPlanSavingsPercent(plan, billingInterval);
 
 	return (
 		<main className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
@@ -26,11 +38,21 @@ export default async function CheckoutPage({
 				</h1>
 				<p className="mt-3 text-sm text-zinc-600">{plan.description}</p>
 				<p className="mt-5 text-2xl font-semibold text-zinc-950">
-					₦{Number(plan.monthlyPrice).toLocaleString()}
-					<span className="text-sm font-normal text-emerald-700">/mo</span>
+					{formatCurrency(price)}
+					<span className="text-sm font-normal text-emerald-700">
+						{BILLING_INTERVAL_DETAILS[billingInterval].priceSuffix}
+					</span>
+				</p>
+				<p className="mt-1 text-sm font-semibold text-zinc-500">
+					{price <= 0
+						? "No payment required"
+						: billingInterval === "MONTHLY"
+							? "Billed monthly"
+							: `${formatCurrency(Math.round(monthlyEquivalent))}/mo equivalent${savings > 0 ? ` · save ${savings}%` : ""}`}
 				</p>
 				<form action={startSubscriptionCheckoutAction} className="mt-6">
 					<input type="hidden" name="planId" value={plan.id} />
+					<input type="hidden" name="billingInterval" value={billingInterval} />
 					<SubmitButton
 						loadingText="Processing..."
 						successText="Redirecting..."

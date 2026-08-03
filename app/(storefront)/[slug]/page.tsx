@@ -58,7 +58,7 @@ export default async function PublicMenuPage({
 					status: true,
 					currentPeriodEnd: true,
 					plan: {
-						select: { removeAwamenuBranding: true },
+						select: { removeAwamenuBranding: true, maxMenuItems: true },
 					},
 				},
 			},
@@ -103,13 +103,26 @@ export default async function PublicMenuPage({
 		return <SubscriptionInactive restaurantName={restaurant.name} />;
 	}
 
-	const categories = restaurant.categories.map((category) => ({
-		...category,
-		items: category.items.map((item) => ({
-			...item,
-			price: Number(item.price),
-		})),
-	}));
+	// The item cap is restaurant-wide (matches how the admin editor already
+	// enforces it), not per-category — so a downgraded restaurant with one
+	// visible category correctly sees up to the full limit there, while a
+	// restaurant with multiple visible categories doesn't get the limit
+	// multiplied out across each one.
+	const maxMenuItems = restaurant.subscription?.plan.maxMenuItems ?? -1;
+	let remainingItemBudget = maxMenuItems;
+	const categories = restaurant.categories
+		.map((category) => {
+			const items = category.items.map((item) => ({
+				...item,
+				price: Number(item.price),
+			}));
+			if (maxMenuItems < 0) return { ...category, items };
+
+			const capped = items.slice(0, Math.max(0, remainingItemBudget));
+			remainingItemBudget -= capped.length;
+			return { ...category, items: capped };
+		})
+		.filter((category) => category.items.length > 0);
 	const showAwamenuBranding =
 		!restaurant.subscription?.plan.removeAwamenuBranding;
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);

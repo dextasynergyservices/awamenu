@@ -13,7 +13,10 @@ export const env = createEnv({
 		CLOUDINARY_API_KEY: z.string().min(1).optional(),
 		CLOUDINARY_API_SECRET: z.string().min(1).optional(),
 		RESEND_API_KEY: z.string().min(1).optional(),
+		// Order-related emails only (order confirmations).
 		RESEND_FROM_EMAIL: z.string().email().optional(),
+		// Everything else: signup/verification, welcome, billing, subscriptions.
+		RESEND_ACCOUNTS_FROM_EMAIL: z.string().email().optional(),
 		QSTASH_TOKEN: z.string().min(1).optional(),
 		QSTASH_CURRENT_SIGNING_KEY: z.string().min(1).optional(),
 		QSTASH_NEXT_SIGNING_KEY: z.string().min(1).optional(),
@@ -59,6 +62,7 @@ export const env = createEnv({
 		CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
 		RESEND_API_KEY: process.env.RESEND_API_KEY,
 		RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+		RESEND_ACCOUNTS_FROM_EMAIL: process.env.RESEND_ACCOUNTS_FROM_EMAIL,
 		QSTASH_TOKEN: process.env.QSTASH_TOKEN,
 		QSTASH_CURRENT_SIGNING_KEY: process.env.QSTASH_CURRENT_SIGNING_KEY,
 		QSTASH_NEXT_SIGNING_KEY: process.env.QSTASH_NEXT_SIGNING_KEY,

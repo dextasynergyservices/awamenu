@@ -1,6 +1,7 @@
 import { env } from "@/env";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const VERIFY_TIMEOUT_MS = 8000;
 
 /**
  * Verifies a Cloudflare Turnstile token server-side. Returns `true`
@@ -20,10 +21,15 @@ export async function verifyTurnstileToken(
 		const body = new URLSearchParams({ secret: secretKey, response: token });
 		if (remoteIp) body.set("remoteip", remoteIp);
 
+		// Without a timeout, a slow/unreachable Cloudflare endpoint hangs this
+		// fetch indefinitely — and since this is awaited before account
+		// creation even starts, the entire signup form would sit on "Creating…"
+		// for as long as the network takes to give up on its own.
 		const res = await fetch(VERIFY_URL, {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded" },
 			body,
+			signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
 		});
 		const data = (await res.json()) as { success: boolean };
 		return data.success;

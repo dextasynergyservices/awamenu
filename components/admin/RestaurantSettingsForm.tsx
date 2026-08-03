@@ -9,14 +9,14 @@ import { PaymentPolicy } from "@/lib/payment-policy";
 type RestaurantSettingsProps = {
 	slug: string;
 	dineInPaymentPolicy: PaymentPolicy;
-	staffDashboardPassword?: string | null;
+	hasStaffDashboardPassword: boolean;
 	staffDashboardAutoLockHours?: number | null;
 };
 
 export function RestaurantSettingsForm({
 	slug,
 	dineInPaymentPolicy,
-	staffDashboardPassword,
+	hasStaffDashboardPassword,
 	staffDashboardAutoLockHours,
 }: RestaurantSettingsProps) {
 	return (
@@ -113,13 +113,22 @@ export function RestaurantSettingsForm({
 								Master Password
 							</label>
 							<input
-								type="text"
+								type="password"
 								id="staffDashboardPassword"
 								name="staffDashboardPassword"
-								defaultValue={staffDashboardPassword ?? ""}
-								placeholder="e.g. AwaStaff2026"
+								autoComplete="new-password"
+								placeholder={
+									hasStaffDashboardPassword
+										? "Leave blank to keep current password"
+										: "e.g. AwaStaff2026"
+								}
 								className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 							/>
+							<p className="mt-1 text-xs text-slate-400">
+								{hasStaffDashboardPassword
+									? "A password is already set — for security it's never shown again. Enter a new one only if you want to change it."
+									: "Not set yet — staff can't log in until you set one."}
+							</p>
 						</div>
 
 						<div>

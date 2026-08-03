@@ -2,6 +2,7 @@
 
 import { PaymentPolicy } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
@@ -9,12 +10,20 @@ import { db } from "@/lib/db";
 const updateSettingsSchema = z.object({
 	slug: z.string().min(1),
 	dineInPaymentPolicy: z.nativeEnum(PaymentPolicy),
-	staffDashboardPassword: z.string().optional(),
+	staffDashboardPassword: z.string().min(4).optional(),
 	staffDashboardAutoLockHours: z.coerce.number().min(1).max(720).optional(),
 });
 
 const updateInfoSchema = z.object({
-	slug: z.string().min(1),
+	restaurantId: z.string().min(1),
+	slug: z
+		.string()
+		.min(3)
+		.max(60)
+		.regex(
+			/^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+			"Use lowercase letters, numbers, and hyphens only.",
+		),
 	name: z.string().min(2),
 	description: z.string().optional(),
 	phone: z.string().optional(),
@@ -46,12 +55,22 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 		select: { id: true, slug: true },
 	});
 
+	// Hashed, never stored or re-displayed in plaintext — the settings form
+	// only ever sends a new password here (left blank means "keep current"),
+	// never the existing one, so there's nothing to round-trip.
+	const hashedStaffPassword =
+		input.staffDashboardPassword !== undefined
+			? await (await import("better-auth/crypto")).hashPassword(
+					input.staffDashboardPassword,
+				)
+			: undefined;
+
 	await db.restaurant.update({
 		where: { id: restaurant.id },
 		data: {
 			dineInPaymentPolicy: input.dineInPaymentPolicy,
-			...(input.staffDashboardPassword !== undefined && {
-				staffDashboardPassword: input.staffDashboardPassword,
+			...(hashedStaffPassword !== undefined && {
+				staffDashboardPassword: hashedStaffPassword,
 			}),
 			...(input.staffDashboardAutoLockHours !== undefined && {
 				staffDashboardAutoLockHours: input.staffDashboardAutoLockHours,
@@ -66,6 +85,7 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 export async function updateRestaurantInfoAction(formData: FormData) {
 	const user = await requireUser();
 	const input = updateInfoSchema.parse({
+		restaurantId: formData.get("restaurantId"),
 		slug: formData.get("slug"),
 		name: formData.get("name"),
 		description: formData.get("description") || undefined,
@@ -76,13 +96,24 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 	});
 
 	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug: input.slug, ownerId: user.id },
+		where: { id: input.restaurantId, ownerId: user.id },
 		select: { id: true, slug: true },
 	});
+
+	if (input.slug !== restaurant.slug) {
+		const slugTaken = await db.restaurant.findUnique({
+			where: { slug: input.slug },
+			select: { id: true },
+		});
+		if (slugTaken) {
+			throw new Error("That web address is already taken.");
+		}
+	}
 
 	await db.restaurant.update({
 		where: { id: restaurant.id },
 		data: {
+			slug: input.slug,
 			name: input.name,
 			description: input.description,
 			phone: input.phone,
@@ -94,6 +125,12 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
 	revalidatePath(`/${restaurant.slug}`);
+
+	if (input.slug !== restaurant.slug) {
+		// The dashboard URL itself is slug-based — without this, the page the
+		// admin is looking at would now point at a slug that no longer exists.
+		redirect(`/dashboard/${input.slug}/settings`);
+	}
 }
 
 export async function updateRestaurantBrandingAction(formData: FormData) {

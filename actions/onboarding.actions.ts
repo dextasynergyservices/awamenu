@@ -6,16 +6,23 @@ import { z } from "zod";
 import { env } from "@/env";
 import { captureServerEvent } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth-guards";
+import { addBillingPeriod, parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { sendRestaurantWelcomeEmail } from "@/lib/email";
 import { initiateSubscriptionPayment } from "@/lib/payments";
 
 const choosePlanSchema = z.object({
 	planId: z.string().cuid(),
+	billingInterval: z
+		.enum(["MONTHLY", "QUARTERLY", "YEARLY"])
+		.default("MONTHLY"),
 });
 
 const setupSchema = z.object({
 	planId: z.string().cuid().optional(),
+	billingInterval: z
+		.enum(["MONTHLY", "QUARTERLY", "YEARLY"])
+		.default("MONTHLY"),
 	name: z.string().min(1).max(100),
 	slug: z
 		.string()
@@ -27,36 +34,73 @@ const setupSchema = z.object({
 	whatsappNumber: z.string().max(40).optional(),
 });
 
+async function continueToPlanDestination(
+	userId: string,
+	plan: { id: string; tier: PlanTier },
+	billingInterval = "MONTHLY",
+) {
+	if (plan.tier === PlanTier.FREE) {
+		await db.user.update({
+			where: { id: userId },
+			data: { onboardingStatus: OnboardingStatus.PENDING_SETUP },
+		});
+		redirect(`/onboarding/setup?planId=${plan.id}&billing=${billingInterval}`);
+	}
+
+	await db.user.update({
+		where: { id: userId },
+		data: { onboardingStatus: OnboardingStatus.PENDING_PAYMENT },
+	});
+	redirect(`/onboarding/checkout?planId=${plan.id}&billing=${billingInterval}`);
+}
+
 export async function choosePlanAction(formData: FormData) {
 	const user = await requireUser();
 	const input = choosePlanSchema.parse({
 		planId: formData.get("planId"),
+		billingInterval: parseBillingInterval(formData.get("billingInterval")),
 	});
 	const plan = await db.plan.findUniqueOrThrow({ where: { id: input.planId } });
 
-	if (plan.tier === PlanTier.FREE) {
-		await db.user.update({
-			where: { id: user.id },
-			data: { onboardingStatus: OnboardingStatus.PENDING_SETUP },
-		});
-		redirect(`/onboarding/setup?planId=${plan.id}`);
-	}
+	await continueToPlanDestination(user.id, plan, input.billingInterval);
+}
 
-	await db.user.update({
-		where: { id: user.id },
-		data: { onboardingStatus: OnboardingStatus.PENDING_PAYMENT },
+/**
+ * Resumes the flow for a user who already picked a plan on the pricing page
+ * before signing up — skips the "choose a plan" picker entirely and sends
+ * them straight to checkout (paid tiers) or setup (free tier), instead of
+ * making them re-select the same plan a second time.
+ */
+export async function continueWithPreselectedPlan(
+	tierParam: string,
+	billingParam?: string,
+) {
+	const tier = tierParam.toUpperCase();
+	if (!(Object.values(PlanTier) as string[]).includes(tier)) return;
+
+	const plan = await db.plan.findFirst({
+		where: { tier: tier as PlanTier, isActive: true },
 	});
-	redirect(`/onboarding/checkout?planId=${plan.id}`);
+	if (!plan) return;
+
+	const user = await requireUser();
+	await continueToPlanDestination(
+		user.id,
+		plan,
+		parseBillingInterval(billingParam),
+	);
 }
 
 export async function startSubscriptionCheckoutAction(formData: FormData) {
 	const user = await requireUser();
 	const input = choosePlanSchema.parse({
 		planId: formData.get("planId"),
+		billingInterval: parseBillingInterval(formData.get("billingInterval")),
 	});
 	const authorizationUrl = await initiateSubscriptionPayment({
 		userId: user.id,
 		planId: input.planId,
+		billingInterval: input.billingInterval,
 		customerEmail: user.email,
 	});
 
@@ -67,6 +111,7 @@ export async function completeSetupAction(formData: FormData) {
 	const user = await requireUser();
 	const input = setupSchema.parse({
 		planId: formData.get("planId") || undefined,
+		billingInterval: parseBillingInterval(formData.get("billingInterval")),
 		name: formData.get("name"),
 		slug: formData.get("slug"),
 		phone: formData.get("phone") || undefined,
@@ -106,8 +151,7 @@ export async function completeSetupAction(formData: FormData) {
 			? await db.plan.findUniqueOrThrow({ where: { id: input.planId } })
 			: await db.plan.findUniqueOrThrow({ where: { tier: PlanTier.FREE } });
 		const now = new Date();
-		const periodEnd = new Date(now);
-		periodEnd.setMonth(periodEnd.getMonth() + 1);
+		const periodEnd = addBillingPeriod(now, input.billingInterval);
 
 		subscription = await db.subscription.create({
 			data: {
@@ -115,6 +159,7 @@ export async function completeSetupAction(formData: FormData) {
 				planId: plan.id,
 				restaurantId: restaurant.id,
 				status: SubscriptionStatus.ACTIVE,
+				billingInterval: input.billingInterval,
 				currentPeriodStart: now,
 				currentPeriodEnd: periodEnd,
 			},

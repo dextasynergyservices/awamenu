@@ -4,8 +4,10 @@ import { MapPin, Pencil, Phone, Store } from "lucide-react";
 import { updateRestaurantInfoAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+import { env } from "@/env";
 
 type RestaurantInfoProps = {
+	restaurantId: string;
 	slug: string;
 	name: string;
 	description?: string | null;
@@ -16,6 +18,7 @@ type RestaurantInfoProps = {
 };
 
 export function RestaurantInfoForm({
+	restaurantId,
 	slug,
 	name,
 	description,
@@ -24,6 +27,9 @@ export function RestaurantInfoForm({
 	currency,
 	timezone,
 }: RestaurantInfoProps) {
+	const previewHost = (
+		env.NEXT_PUBLIC_APP_URL ?? "https://awamenu.com"
+	).replace(/^https?:\/\//, "");
 	return (
 		<SettingsCard
 			title="Restaurant Profile"
@@ -40,7 +46,7 @@ export function RestaurantInfoForm({
 			}
 		>
 			<form action={updateRestaurantInfoAction} className="grid gap-6">
-				<input type="hidden" name="slug" value={slug} />
+				<input type="hidden" name="restaurantId" value={restaurantId} />
 
 				<div className="grid gap-6 sm:grid-cols-2">
 					<div className="sm:col-span-2">
@@ -58,6 +64,31 @@ export function RestaurantInfoForm({
 							required
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
+					</div>
+
+					<div className="sm:col-span-2">
+						<label
+							htmlFor="slug"
+							className="mb-1 block text-xs md:text-[11px] font-bold uppercase tracking-wide text-slate-500"
+						>
+							Web Address
+						</label>
+						<input
+							type="text"
+							id="slug"
+							name="slug"
+							defaultValue={slug}
+							required
+							pattern="[a-z0-9]+(-[a-z0-9]+)*"
+							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+						/>
+						<p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
+							Customers use this to view your menu, e.g.{" "}
+							<span className="font-bold text-emerald-700">
+								{previewHost}/{slug}
+							</span>
+							. Changing it breaks any QR codes or links you've already shared.
+						</p>
 					</div>
 
 					<div className="sm:col-span-2">
