@@ -35,6 +35,7 @@ export function MarketingHeader({ variant = "light" }: MarketingHeaderProps) {
 						height={40}
 						className="size-9 shrink-0 rounded-lg object-contain sm:hidden"
 						priority
+						loading="eager"
 					/>
 					<Image
 						src={LOGO_DESKTOP_URL}
@@ -43,6 +44,7 @@ export function MarketingHeader({ variant = "light" }: MarketingHeaderProps) {
 						height={31}
 						className="hidden h-8 w-auto sm:block"
 						priority
+						loading="eager"
 					/>
 				</Link>
 				<nav
