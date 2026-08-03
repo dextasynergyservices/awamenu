@@ -6,6 +6,8 @@ import {
 	Ellipsis,
 	LayoutDashboard,
 	LogOut,
+	PanelLeftClose,
+	PanelLeftOpen,
 	Receipt,
 	Settings,
 	Star,
@@ -62,7 +64,25 @@ export function SuperAdminShell({
 	const router = useRouter();
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [moreOpen, setMoreOpen] = useState(false);
+	const [isCollapsed, setIsCollapsed] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return (
+			window.localStorage.getItem("awamenu_superadmin_sidebar_collapsed") ===
+			"true"
+		);
+	});
 	const basePath = "/super-admin";
+
+	function toggleSidebar() {
+		setIsCollapsed((prev) => {
+			const next = !prev;
+			window.localStorage.setItem(
+				"awamenu_superadmin_sidebar_collapsed",
+				String(next),
+			);
+			return next;
+		});
+	}
 
 	const isMoreActive = moreNavItems.some((item) => {
 		const href = `${basePath}${item.href}`;
@@ -80,21 +100,49 @@ export function SuperAdminShell({
 		<div className="min-h-screen overflow-x-hidden bg-white text-[#10182f]">
 			<OfflineBanner />
 
-			<aside className="fixed top-0 left-0 z-40 hidden h-screen w-[264px] flex-col border-emerald-100 border-r bg-white md:flex">
-				<div className="px-6 pt-8 pb-7">
-					<Link href={basePath} className="flex items-center gap-2">
+			<aside
+				className={cn(
+					"fixed top-0 left-0 z-40 hidden h-screen flex-col border-emerald-100 border-r bg-white transition-all duration-300 md:flex",
+					isCollapsed ? "w-20" : "w-[264px]",
+				)}
+			>
+				<div
+					className={cn(
+						"flex items-center pt-8 pb-7",
+						isCollapsed ? "justify-center px-2" : "justify-between px-6",
+					)}
+				>
+					<Link href={basePath} className="flex items-center gap-2 min-w-0">
 						<Image
-							src={LOGO_DESKTOP_URL}
+							src={isCollapsed ? LOGO_ICON_URL : LOGO_DESKTOP_URL}
 							alt="AwaMenu"
-							width={200}
+							width={isCollapsed ? 28 : 200}
 							height={26}
-							className="h-7 w-auto"
+							className={isCollapsed ? "size-7 object-contain" : "h-7 w-auto"}
 							priority
 						/>
-						<span className="text-sm font-black text-emerald-700">Admin</span>
+						{!isCollapsed ? (
+							<span className="text-sm font-black text-emerald-700">Admin</span>
+						) : null}
 					</Link>
+					<button
+						type="button"
+						onClick={toggleSidebar}
+						className={cn(
+							"grid size-8 place-items-center rounded-xl bg-slate-50 text-slate-500 hover:bg-slate-100 transition-colors",
+							isCollapsed && "mt-2",
+						)}
+						title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+						aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+					>
+						{isCollapsed ? (
+							<PanelLeftOpen className="size-4" />
+						) : (
+							<PanelLeftClose className="size-4" />
+						)}
+					</button>
 				</div>
-				<nav className="grid gap-2 px-4">
+				<nav className={cn("grid gap-2", isCollapsed ? "px-2" : "px-4")}>
 					{navItems.map((item) => {
 						const href = `${basePath}${item.href}`;
 						const Icon = item.icon;
@@ -106,36 +154,49 @@ export function SuperAdminShell({
 							<Link
 								key={item.label}
 								href={href}
+								title={item.label}
 								className={cn(
-									"flex min-h-13 items-center gap-4 rounded-2xl px-4 text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
+									"flex min-h-13 items-center rounded-2xl text-sm font-black text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-800",
+									isCollapsed ? "justify-center px-0" : "gap-4 px-4",
 									isActive &&
 										"bg-emerald-100 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-800",
 								)}
 							>
-								<Icon className="size-5" aria-hidden="true" />
-								{item.label}
+								<Icon className="size-5 shrink-0" aria-hidden="true" />
+								{!isCollapsed ? <span>{item.label}</span> : null}
 							</Link>
 						);
 					})}
 				</nav>
-				<div className="mt-auto p-5">
-					<p className="mb-3 truncate text-xs font-bold text-slate-500">
-						{adminName}
-					</p>
+				<div className={cn("mt-auto p-4", isCollapsed && "text-center")}>
+					{!isCollapsed ? (
+						<p className="mb-3 truncate text-xs font-bold text-slate-500">
+							{adminName}
+						</p>
+					) : null}
 					<LoadingButton
 						type="button"
 						onClick={handleLogout}
 						loading={isLoggingOut}
 						loadingText="Logging out..."
-						className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-red-100 bg-white px-4 text-sm font-black text-red-600 hover:bg-red-50"
+						title="Logout"
+						className={cn(
+							"inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-red-100 bg-white text-sm font-black text-red-600 hover:bg-red-50",
+							isCollapsed ? "w-11 px-0" : "w-full px-4",
+						)}
 					>
-						<LogOut className="size-4" aria-hidden="true" />
-						Logout
+						<LogOut className="size-4 shrink-0" aria-hidden="true" />
+						{!isCollapsed ? <span>Logout</span> : null}
 					</LoadingButton>
 				</div>
 			</aside>
 
-			<div className="min-w-0 max-w-full overflow-x-hidden pt-[73px] pb-24 md:ml-[264px] md:pt-8 md:pb-10">
+			<div
+				className={cn(
+					"min-w-0 max-w-full overflow-x-hidden pt-[73px] pb-24 transition-all duration-300 md:pt-8 md:pb-10",
+					isCollapsed ? "md:ml-20" : "md:ml-[264px]",
+				)}
+			>
 				<header className="fixed inset-x-0 top-0 z-30 max-w-full overflow-hidden border-emerald-100 border-b bg-white/92 px-3 py-3 backdrop-blur md:hidden">
 					<div className="flex min-h-11 items-center justify-between gap-2">
 						<Link href={basePath} className="flex items-center gap-1.5">

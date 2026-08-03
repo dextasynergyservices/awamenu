@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, ImageIcon, Pencil, Upload } from "lucide-react";
+import { BadgeCheck, Check, ImageIcon, Pencil, Upload } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useId, useState } from "react";
@@ -8,6 +8,19 @@ import { updateRestaurantBrandingAction } from "@/actions/restaurant.actions";
 import { uploadRestaurantPhoto } from "@/components/admin/restaurant-photo-upload";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+
+const BRAND_PRESET_COLORS = [
+	{ name: "Emerald", hex: "#10b981" },
+	{ name: "Teal", hex: "#0d9488" },
+	{ name: "Ocean", hex: "#0284c7" },
+	{ name: "Indigo", hex: "#4f46e5" },
+	{ name: "Purple", hex: "#9333ea" },
+	{ name: "Rose", hex: "#e11d48" },
+	{ name: "Terracotta", hex: "#ea580c" },
+	{ name: "Amber", hex: "#d97706" },
+	{ name: "Slate", hex: "#334155" },
+	{ name: "Midnight", hex: "#0f172a" },
+];
 
 type RestaurantBrandingProps = {
 	restaurantId: string;
@@ -119,31 +132,82 @@ export function RestaurantBrandingForm({
 				</div>
 
 				{/* Theme Colors */}
-				<div>
+				<div className="sm:col-span-2">
 					<label
 						htmlFor="primaryColor"
-						className="mb-1 block text-xs md:text-[11px] font-bold uppercase tracking-wide text-slate-500"
+						className="mb-2 block text-xs md:text-[11px] font-bold uppercase tracking-wide text-slate-500"
 					>
-						Primary Color
+						Primary Brand Color
 					</label>
-					<div className="flex gap-2">
-						<input
-							type="color"
-							id="colorPicker"
-							value={color}
-							onChange={(e) => setColor(e.target.value)}
-							className="h-10 w-10 cursor-pointer rounded-lg border border-slate-200 p-0.5"
-						/>
-						<input
-							type="text"
-							id="primaryColor"
-							name="primaryColor"
-							value={color}
-							onChange={(e) => setColor(e.target.value)}
-							placeholder="#10b981"
-							pattern="^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$"
-							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium uppercase text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-						/>
+
+					{/* Presets Grid */}
+					<div className="mb-4 grid grid-cols-5 gap-2 sm:grid-cols-10">
+						{BRAND_PRESET_COLORS.map((preset) => {
+							const isSelected =
+								color.toLowerCase() === preset.hex.toLowerCase();
+							return (
+								<button
+									key={preset.hex}
+									type="button"
+									title={`${preset.name} (${preset.hex})`}
+									onClick={() => setColor(preset.hex)}
+									className="group relative flex aspect-square flex-col items-center justify-center rounded-xl border border-slate-200 p-1 transition-all hover:scale-105"
+									style={{ backgroundColor: preset.hex }}
+								>
+									{isSelected ? (
+										<Check className="size-4 text-white drop-shadow-md" />
+									) : null}
+									<span className="sr-only">{preset.name}</span>
+								</button>
+							);
+						})}
+					</div>
+
+					{/* Custom Picker & Hex Input */}
+					<div className="flex items-center gap-3">
+						<div className="relative flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
+							<input
+								type="color"
+								id="colorPicker"
+								value={color}
+								onChange={(e) => setColor(e.target.value)}
+								className="h-9 w-9 cursor-pointer rounded-lg border-0 bg-transparent p-0"
+							/>
+							<span className="text-xs font-bold text-slate-600">
+								Custom Picker
+							</span>
+						</div>
+						<div className="relative flex-1">
+							<input
+								type="text"
+								id="primaryColor"
+								name="primaryColor"
+								value={color}
+								onChange={(e) => setColor(e.target.value)}
+								placeholder="#10B981"
+								pattern="^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$"
+								className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 font-mono text-sm font-bold uppercase text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+							/>
+						</div>
+					</div>
+
+					{/* Live Theme Preview */}
+					<div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+						<p className="mb-2 text-xs font-bold text-slate-500">
+							Live Brand Button Preview
+						</p>
+						<div className="flex flex-wrap items-center gap-3">
+							<button
+								type="button"
+								style={{ backgroundColor: color }}
+								className="rounded-xl px-5 py-2.5 text-xs font-black text-white shadow-sm"
+							>
+								Order Now
+							</button>
+							<span style={{ color }} className="text-xs font-black">
+								Sample Accent Text
+							</span>
+						</div>
 					</div>
 				</div>
 

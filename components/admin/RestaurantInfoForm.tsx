@@ -1,10 +1,21 @@
 "use client";
 
 import { MapPin, Pencil, Phone, Store } from "lucide-react";
+import { useState } from "react";
 import { updateRestaurantInfoAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
 import { env } from "@/env";
+
+type RestaurantInfoFormValues = {
+	name: string;
+	slug: string;
+	description: string;
+	phone: string;
+	address: string;
+	currency: string;
+	timezone: string;
+};
 
 type RestaurantInfoProps = {
 	restaurantId: string;
@@ -30,6 +41,56 @@ export function RestaurantInfoForm({
 	const previewHost = (
 		env.NEXT_PUBLIC_APP_URL ?? "https://awamenu.com"
 	).replace(/^https?:\/\//, "");
+
+	const [formValues, setFormValues] = useState<RestaurantInfoFormValues>({
+		name,
+		slug,
+		description: description ?? "",
+		phone: phone ?? "",
+		address: address ?? "",
+		currency,
+		timezone,
+	});
+
+	const [prevProps, setPrevProps] = useState<RestaurantInfoFormValues>({
+		name,
+		slug,
+		description: description ?? "",
+		phone: phone ?? "",
+		address: address ?? "",
+		currency,
+		timezone,
+	});
+
+	if (
+		name !== prevProps.name ||
+		slug !== prevProps.slug ||
+		description !== prevProps.description ||
+		phone !== prevProps.phone ||
+		address !== prevProps.address ||
+		currency !== prevProps.currency ||
+		timezone !== prevProps.timezone
+	) {
+		setPrevProps({
+			name,
+			slug,
+			description: description ?? "",
+			phone: phone ?? "",
+			address: address ?? "",
+			currency,
+			timezone,
+		});
+		setFormValues({
+			name,
+			slug,
+			description: description ?? "",
+			phone: phone ?? "",
+			address: address ?? "",
+			currency,
+			timezone,
+		});
+	}
+
 	return (
 		<SettingsCard
 			title="Restaurant Profile"
@@ -60,7 +121,10 @@ export function RestaurantInfoForm({
 							type="text"
 							id="name"
 							name="name"
-							defaultValue={name}
+							value={formValues.name}
+							onChange={(e) =>
+								setFormValues((prev) => ({ ...prev, name: e.target.value }))
+							}
 							required
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
@@ -77,7 +141,10 @@ export function RestaurantInfoForm({
 							type="text"
 							id="slug"
 							name="slug"
-							defaultValue={slug}
+							value={formValues.slug}
+							onChange={(e) =>
+								setFormValues((prev) => ({ ...prev, slug: e.target.value }))
+							}
 							required
 							pattern="[a-z0-9]+(-[a-z0-9]+)*"
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -85,9 +152,10 @@ export function RestaurantInfoForm({
 						<p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
 							Customers use this to view your menu, e.g.{" "}
 							<span className="font-bold text-emerald-700">
-								{previewHost}/{slug}
+								{previewHost}/{formValues.slug}
 							</span>
-							. Changing it breaks any QR codes or links you've already shared.
+							. Changing it breaks any QR codes or links you&apos;ve already
+							shared.
 						</p>
 					</div>
 
@@ -101,7 +169,13 @@ export function RestaurantInfoForm({
 						<textarea
 							id="description"
 							name="description"
-							defaultValue={description ?? ""}
+							value={formValues.description}
+							onChange={(e) =>
+								setFormValues((prev) => ({
+									...prev,
+									description: e.target.value,
+								}))
+							}
 							rows={3}
 							className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
@@ -119,7 +193,13 @@ export function RestaurantInfoForm({
 								type="tel"
 								id="phone"
 								name="phone"
-								defaultValue={phone ?? ""}
+								value={formValues.phone}
+								onChange={(e) =>
+									setFormValues((prev) => ({
+										...prev,
+										phone: e.target.value,
+									}))
+								}
 								className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-3 pr-10 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 							/>
 							<div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
@@ -140,7 +220,13 @@ export function RestaurantInfoForm({
 								type="text"
 								id="address"
 								name="address"
-								defaultValue={address ?? ""}
+								value={formValues.address}
+								onChange={(e) =>
+									setFormValues((prev) => ({
+										...prev,
+										address: e.target.value,
+									}))
+								}
 								className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-3 pr-10 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 							/>
 							<div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
@@ -159,7 +245,13 @@ export function RestaurantInfoForm({
 						<select
 							id="currency"
 							name="currency"
-							defaultValue={currency}
+							value={formValues.currency}
+							onChange={(e) =>
+								setFormValues((prev) => ({
+									...prev,
+									currency: e.target.value,
+								}))
+							}
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						>
 							<option value="NGN">NGN (₦)</option>
@@ -178,7 +270,13 @@ export function RestaurantInfoForm({
 						<select
 							id="timezone"
 							name="timezone"
-							defaultValue={timezone}
+							value={formValues.timezone}
+							onChange={(e) =>
+								setFormValues((prev) => ({
+									...prev,
+									timezone: e.target.value,
+								}))
+							}
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						>
 							<option value="Africa/Lagos">Africa/Lagos</option>
