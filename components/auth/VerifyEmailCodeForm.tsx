@@ -51,7 +51,8 @@ export function VerifyEmailCodeForm({
 			formData.set("code", code);
 
 			try {
-				await verifyEmailWithCodeAction(formData);
+				const result = await verifyEmailWithCodeAction(formData);
+				if (result && "error" in result) throw new Error(result.error);
 				// A full navigation, not router.push — the client-side transition
 				// was completing the fetch (visible in server logs) without the
 				// browser actually swapping the displayed page. A hard navigation
@@ -75,7 +76,8 @@ export function VerifyEmailCodeForm({
 			if (billing) formData.set("billing", billing);
 
 			try {
-				await resendVerificationEmailAction(formData);
+				const result = await resendVerificationEmailAction(formData);
+				if (result && "error" in result) throw new Error(result.error);
 				setResendMessage("A new code has been sent to your email.");
 				setCooldown(RESEND_COOLDOWN_SECONDS);
 			} catch (err) {

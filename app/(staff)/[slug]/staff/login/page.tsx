@@ -36,7 +36,10 @@ export default function StaffLoginPage({
 
 		startTransition(async () => {
 			try {
-				await staffLoginAction(fd);
+				const result = await staffLoginAction(fd);
+				// "Invalid password." and friends come back as data — a thrown
+				// message would reach production as an opaque digest.
+				if ("error" in result) throw new Error(result.error);
 				// ✅ Redirect to the correct staff dashboard
 				router.push(`/${slug}/staff`);
 			} catch (err) {

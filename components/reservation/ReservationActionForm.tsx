@@ -4,9 +4,10 @@ import { AlertTriangle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type React from "react";
 import { useState } from "react";
+import type { ActionResponse } from "@/lib/action-error";
 
 type ReservationActionFormProps = {
-	action: (formData: FormData) => Promise<void>;
+	action: (formData: FormData) => Promise<ActionResponse | undefined>;
 	children: React.ReactNode;
 	className?: string;
 	onSuccess?: () => void;
@@ -35,7 +36,8 @@ export function ReservationActionForm({
 		setError(null);
 
 		try {
-			await action(new FormData(form));
+			const result = await action(new FormData(form));
+			if (result && "error" in result) throw new Error(result.error);
 			onSuccess?.();
 			router.refresh();
 		} catch (err) {

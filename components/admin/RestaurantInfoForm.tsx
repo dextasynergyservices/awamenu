@@ -5,6 +5,7 @@ import { useState } from "react";
 import { updateRestaurantInfoAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { env } from "@/env";
 
 type RestaurantInfoFormValues = {
@@ -92,7 +93,7 @@ export function RestaurantInfoForm({
 				</button>
 			}
 		>
-			<form action={updateRestaurantInfoAction} className="grid gap-6">
+			<ActionForm action={updateRestaurantInfoAction} className="grid gap-6">
 				<input type="hidden" name="restaurantId" value={restaurantId} />
 
 				<div className="grid gap-6 sm:grid-cols-2">
@@ -278,7 +279,7 @@ export function RestaurantInfoForm({
 				>
 					Save Profile
 				</SubmitButton>
-			</form>
+			</ActionForm>
 		</SettingsCard>
 	);
 }

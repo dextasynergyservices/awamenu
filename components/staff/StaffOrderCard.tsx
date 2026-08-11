@@ -120,7 +120,8 @@ export function StaffOrderCard({
 
 		startTransition(async () => {
 			try {
-				await staffUpdateOrderStatusAction(fd);
+				const result = await staffUpdateOrderStatusAction(fd);
+				if ("error" in result) throw new Error(result.error);
 				router.refresh();
 			} catch (err) {
 				setError(

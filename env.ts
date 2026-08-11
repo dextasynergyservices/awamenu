@@ -32,6 +32,15 @@ export const env = createEnv({
 		MONNIFY_API_KEY: z.string().min(1).optional(),
 		MONNIFY_SECRET_KEY: z.string().min(1).optional(),
 		MONNIFY_CONTRACT_CODE: z.string().min(1).optional(),
+		// Twilio delivers the customer login code over WhatsApp or SMS. Absent
+		// credentials simply remove those options rather than breaking sign-in.
+		TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+		TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+		// Preferred over the master Auth Token: revocable on its own.
+		TWILIO_API_KEY_SID: z.string().min(1).optional(),
+		TWILIO_API_KEY_SECRET: z.string().min(1).optional(),
+		TWILIO_WHATSAPP_FROM: z.string().min(1).optional(),
+		TWILIO_SMS_FROM: z.string().min(1).optional(),
 		UPSTASH_REDIS_REST_URL: z.string().url().optional(),
 		UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
 		VAPID_PRIVATE_KEY: z.string().min(1).optional(),
@@ -83,6 +92,12 @@ export const env = createEnv({
 		MONNIFY_API_KEY: process.env.MONNIFY_API_KEY,
 		MONNIFY_SECRET_KEY: process.env.MONNIFY_SECRET_KEY,
 		MONNIFY_CONTRACT_CODE: process.env.MONNIFY_CONTRACT_CODE,
+		TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+		TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+		TWILIO_API_KEY_SID: process.env.TWILIO_API_KEY_SID,
+		TWILIO_API_KEY_SECRET: process.env.TWILIO_API_KEY_SECRET,
+		TWILIO_WHATSAPP_FROM: process.env.TWILIO_WHATSAPP_FROM,
+		TWILIO_SMS_FROM: process.env.TWILIO_SMS_FROM,
 		UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
 		UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
 		VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,

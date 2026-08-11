@@ -37,7 +37,8 @@ export function AdminAccountSettings() {
 			setError(null);
 			setIsSuccess(false);
 			try {
-				await updateAdminPasswordAction(formData);
+				const result = await updateAdminPasswordAction(formData);
+				if (result && "error" in result) throw new Error(result.error);
 				setIsSuccess(true);
 				(event.target as HTMLFormElement).reset();
 			} catch (err) {

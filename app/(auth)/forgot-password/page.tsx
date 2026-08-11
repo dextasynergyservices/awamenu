@@ -54,6 +54,7 @@ export default function ForgotPasswordPage() {
 			setError(null);
 			try {
 				const res = await verifyPasswordResetOtpAction(formData);
+				if ("error" in res) throw new Error(res.error);
 				setResetToken(res.resetToken);
 				setStep("new_password");
 			} catch (err) {
@@ -79,7 +80,8 @@ export default function ForgotPasswordPage() {
 		startTransition(async () => {
 			setError(null);
 			try {
-				await resetPasswordWithTokenAction(formData);
+				const result = await resetPasswordWithTokenAction(formData);
+				if (result && "error" in result) throw new Error(result.error);
 				router.push("/login?reset=success");
 			} catch (err) {
 				setError(

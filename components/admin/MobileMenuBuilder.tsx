@@ -32,6 +32,7 @@ import {
 } from "@/actions/menu.actions";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import type { BannerItem } from "@/lib/banners";
 
 const MOBILE_ITEMS_BATCH = 8;
@@ -645,7 +646,7 @@ function MobileCategoryFormModal({
 					</button>
 				</div>
 
-				<form
+				<ActionForm
 					action={isEditing ? updateCategoryAction : createCategoryAction}
 					className="mt-4 grid gap-3"
 				>
@@ -713,7 +714,7 @@ function MobileCategoryFormModal({
 					>
 						{isEditing ? "Save changes" : "Add category"}
 					</SubmitButton>
-				</form>
+				</ActionForm>
 
 				{isEditing && category ? (
 					<form action={deleteCategoryAction} className="mt-3">
@@ -1320,7 +1321,7 @@ function MobileItemEditModal({
 					</button>
 				</div>
 
-				<form action={updateMenuItemAction} className="mt-4 grid gap-3">
+				<ActionForm action={updateMenuItemAction} className="mt-4 grid gap-3">
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="itemId" value={item.id} />
@@ -1470,9 +1471,9 @@ function MobileItemEditModal({
 					>
 						Save changes
 					</SubmitButton>
-				</form>
+				</ActionForm>
 
-				<form action={deleteMenuItemAction} className="mt-3">
+				<ActionForm action={deleteMenuItemAction} className="mt-3">
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="itemId" value={item.id} />
@@ -1485,7 +1486,7 @@ function MobileItemEditModal({
 						<Trash2 className="size-3.5" aria-hidden="true" />
 						Delete item
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</div>
 		</div>
 	);
@@ -1536,7 +1537,7 @@ function MobileItemCreateModal({
 					</button>
 				</div>
 
-				<form action={createMenuItemAction} className="mt-4 grid gap-3">
+				<ActionForm action={createMenuItemAction} className="mt-4 grid gap-3">
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="sortOrder" value={sortOrder} />
@@ -1670,7 +1671,7 @@ function MobileItemCreateModal({
 					>
 						Create item
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</div>
 		</div>
 	);

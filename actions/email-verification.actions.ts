@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { env } from "@/env";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { db } from "@/lib/db";
 import { sendVerificationEmail } from "@/lib/email";
 
@@ -89,31 +90,35 @@ export async function sendEmailVerificationAction(formData: FormData) {
  * mashing "resend" can't spam themselves (or someone else's inbox).
  */
 export async function resendVerificationEmailAction(formData: FormData) {
-	const input = sendVerificationSchema.parse({
-		email: formData.get("email"),
-		plan: formData.get("plan") || undefined,
-		billing: formData.get("billing") || undefined,
+	return actionResult(async () => {
+		const input = sendVerificationSchema.parse({
+			email: formData.get("email"),
+			plan: formData.get("plan") || undefined,
+			billing: formData.get("billing") || undefined,
+		});
+
+		const user = await db.user.findUnique({ where: { email: input.email } });
+		if (!user) {
+			throw new ActionError("No account found for that email.");
+		}
+		if (user.emailVerified) return;
+
+		const existing = await db.verification.findFirst({
+			where: { identifier: `${TOKEN_IDENTIFIER_PREFIX}${input.email}` },
+			orderBy: { createdAt: "desc" },
+		});
+
+		if (
+			existing &&
+			Date.now() - existing.createdAt.getTime() < RESEND_COOLDOWN_MS
+		) {
+			throw new ActionError(
+				"Please wait a moment before requesting another email.",
+			);
+		}
+
+		await issueAndSendVerification(input.email, input.plan, input.billing);
 	});
-
-	const user = await db.user.findUnique({ where: { email: input.email } });
-	if (!user) {
-		throw new Error("No account found for that email.");
-	}
-	if (user.emailVerified) return;
-
-	const existing = await db.verification.findFirst({
-		where: { identifier: `${TOKEN_IDENTIFIER_PREFIX}${input.email}` },
-		orderBy: { createdAt: "desc" },
-	});
-
-	if (
-		existing &&
-		Date.now() - existing.createdAt.getTime() < RESEND_COOLDOWN_MS
-	) {
-		throw new Error("Please wait a moment before requesting another email.");
-	}
-
-	await issueAndSendVerification(input.email, input.plan, input.billing);
 }
 
 const verifyCodeSchema = z.object({
@@ -126,27 +131,29 @@ const verifyCodeSchema = z.object({
  * lives in `markEmailVerified` below.
  */
 export async function verifyEmailWithCodeAction(formData: FormData) {
-	const input = verifyCodeSchema.parse({
-		email: formData.get("email"),
-		code: formData.get("code"),
+	return actionResult(async () => {
+		const input = verifyCodeSchema.parse({
+			email: formData.get("email"),
+			code: formData.get("code"),
+		});
+
+		const identifier = `${OTP_IDENTIFIER_PREFIX}${input.email}`;
+		const verification = await db.verification.findFirst({
+			where: { identifier },
+			orderBy: { createdAt: "desc" },
+		});
+
+		if (!verification || verification.expiresAt < new Date()) {
+			throw new ActionError("Invalid or expired verification code.");
+		}
+
+		const isValid = await bcrypt.compare(input.code, verification.value);
+		if (!isValid) {
+			throw new ActionError("Invalid verification code.");
+		}
+
+		await markEmailVerified(input.email);
 	});
-
-	const identifier = `${OTP_IDENTIFIER_PREFIX}${input.email}`;
-	const verification = await db.verification.findFirst({
-		where: { identifier },
-		orderBy: { createdAt: "desc" },
-	});
-
-	if (!verification || verification.expiresAt < new Date()) {
-		throw new Error("Invalid or expired verification code.");
-	}
-
-	const isValid = await bcrypt.compare(input.code, verification.value);
-	if (!isValid) {
-		throw new Error("Invalid verification code.");
-	}
-
-	await markEmailVerified(input.email);
 }
 
 /**

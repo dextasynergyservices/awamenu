@@ -93,6 +93,20 @@ enum PaymentPolicy {
   FLEXIBLE
 }
 
+/// How a restaurant sends order updates to its customers.
+///
+/// The message always goes out on AwaMenu's Twilio sender with the
+/// restaurant's name in the body: Twilio permits one WhatsApp Business
+/// Account per (sub)account, so a sender per restaurant would mean a Twilio
+/// subaccount and Meta business verification each. `whatsappNumber` on
+/// Restaurant is unrelated — that stays the number staff/admin open wa.me
+/// links against.
+enum CustomerUpdateChannel {
+  WHATSAPP
+  SMS
+  NONE
+}
+
 enum ReservationStatus {
   PENDING_APPROVAL
   APPROVED
@@ -347,6 +361,11 @@ model Restaurant {
 
   whatsappNumber String?
 
+  /// Channel for automatic order updates to customers. Defaults to WhatsApp,
+  /// which falls back to nothing being sent until the platform's Twilio
+  /// credentials exist — never to an unexpected SMS bill.
+  customerUpdateChannel CustomerUpdateChannel @default(WHATSAPP)
+
   dineInEnabled           Boolean @default(true)
   pickupEnabled           Boolean @default(true)
   deliveryEnabled         Boolean @default(true)
@@ -569,6 +588,21 @@ model Order {
   customerPhone String
   customerEmail String?
 
+  /// Set the moment each lifecycle email is claimed, never after sending.
+  ///
+  /// Seven code paths can mark an order paid (Paystack webhook, the return
+  /// page, staff, admin, split payments…) and several can race — a webhook and
+  /// the customer landing back on the order page arrive within milliseconds of
+  /// each other. Claiming the slot with a conditional UPDATE makes "send this
+  /// email exactly once" a database guarantee rather than a hope.
+  newOrderEmailSentAt     DateTime?
+  confirmationEmailSentAt DateTime?
+  receiptEmailSentAt      DateTime?
+  completionEmailSentAt   DateTime?
+  cancellationEmailSentAt DateTime?
+
+  messages OrderMessage[]
+
   type          OrderType
   status        OrderStatus   @default(CONFIRMED)
   paymentStatus PaymentStatus @default(PENDING)
@@ -629,6 +663,26 @@ model Order {
   @@index([customerPhone])
   @@index([paymentRef])
   @@index([attendingStaffId])
+}
+
+/// One row per message actually sent to a customer about an order.
+///
+/// The unique key is the whole point: several code paths can move an order to
+/// the same status (admin, staff, a webhook), and a customer receiving "your
+/// order is ready" three times is worse than not receiving it at all.
+model OrderMessage {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  status      OrderStatus
+  channel     CustomerUpdateChannel
+  /// Provider message id, for tracing a delivery complaint back to Twilio.
+  providerRef String?
+  sentAt      DateTime              @default(now())
+
+  @@unique([orderId, status])
+  @@index([orderId])
 }
 
 model OrderItem {
