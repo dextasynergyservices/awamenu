@@ -77,7 +77,13 @@ export function VerifyEmailCodeForm({
 
 			try {
 				const result = await resendVerificationEmailAction(formData);
-				if (result && "error" in result) throw new Error(result.error);
+				if (result && "error" in result) {
+					if (result.error === "ALREADY_VERIFIED") {
+						window.location.href = continueUrl(plan, billing);
+						return;
+					}
+					throw new Error(result.error);
+				}
 				setResendMessage("A new code has been sent to your email.");
 				setCooldown(RESEND_COOLDOWN_SECONDS);
 			} catch (err) {
