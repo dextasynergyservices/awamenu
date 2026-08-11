@@ -132,7 +132,8 @@ export function TableEditModal({
 		setDeleteError(null);
 
 		try {
-			await deleteTableSeatAction(new FormData(form));
+			const result = await deleteTableSeatAction(new FormData(form));
+			if ("error" in result) throw new Error(result.error);
 			setDeleteOpen(false);
 			setOpen(false);
 			router.refresh();

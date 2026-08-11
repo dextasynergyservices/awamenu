@@ -2,8 +2,10 @@
 
 import { randomInt } from "node:crypto";
 import { z } from "zod";
+import { ActionError, actionData } from "@/lib/action-error";
 import { db } from "@/lib/db";
 import { sendCustomerOtpEmail } from "@/lib/email";
+import { availableOtpChannels, sendOtpOverTwilio } from "@/lib/otp-delivery";
 
 const identityTypeSchema = z.enum(["phone", "email"]);
 const otpChannelSchema = z.enum(["whatsapp", "sms", "email"]);
@@ -105,80 +107,98 @@ async function ensureCustomerProfile(
 }
 
 export async function requestCustomerOtpAction(input: unknown) {
-	const parsed = requestOtpSchema.parse(input);
-	const identifier = normalizeIdentifier(
-		parsed.identityType,
-		parsed.identifier,
-	);
-
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug: parsed.restaurantSlug, isActive: true },
-		select: { id: true, name: true },
-	});
-
-	// Only email can actually be delivered today — there's no SMS/WhatsApp
-	// provider wired up. This used to fall through and return `{ok: true}` for
-	// every channel, so a customer picking WhatsApp or SMS was shown the
-	// "enter your code" step for a code that was never sent anywhere.
-	if (parsed.identityType !== "email" || parsed.channel !== "email") {
-		throw new Error(
-			"Verification by WhatsApp or SMS isn't available yet — please use your email address instead.",
+	return actionData(async () => {
+		const parsed = requestOtpSchema.parse(input);
+		const identifier = normalizeIdentifier(
+			parsed.identityType,
+			parsed.identifier,
 		);
-	}
 
-	await ensureCustomerProfile(parsed.identityType, identifier);
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug: parsed.restaurantSlug, isActive: true },
+			select: { id: true, name: true },
+		});
 
-	// `crypto.randomInt` rather than `Math.random`, which is not a
-	// cryptographically secure source and makes codes predictable.
-	const code = String(randomInt(100000, 1000000));
-	await db.customerOtp.create({
-		data: {
-			identifier,
-			channel: parsed.channel,
-			code,
-			expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-		},
+		// A channel is only offered if this deployment can actually deliver on
+		// it. The original bug was the opposite of a missing check: every channel
+		// returned success and only email was ever sent, so a customer choosing
+		// WhatsApp waited for a code that went nowhere.
+		if (!availableOtpChannels().includes(parsed.channel)) {
+			throw new ActionError(
+				parsed.channel === "whatsapp"
+					? "WhatsApp sign-in isn't available right now — please use your email address."
+					: "SMS sign-in isn't available right now — please use your email address.",
+			);
+		}
+
+		await ensureCustomerProfile(parsed.identityType, identifier);
+
+		// `crypto.randomInt` rather than `Math.random`, which is not a
+		// cryptographically secure source and makes codes predictable.
+		const code = String(randomInt(100000, 1000000));
+		await db.customerOtp.create({
+			data: {
+				identifier,
+				channel: parsed.channel,
+				code,
+				expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+			},
+		});
+
+		if (parsed.channel === "email") {
+			await sendCustomerOtpEmail({
+				to: identifier,
+				code,
+				restaurantName: restaurant.name,
+			});
+		} else {
+			const sent = await sendOtpOverTwilio({
+				to: identifier,
+				channel: parsed.channel,
+				code,
+				restaurantName: restaurant.name,
+			});
+			// Surfaced rather than swallowed: the customer needs to know to try
+			// another channel instead of staring at a code-entry box.
+			if ("error" in sent) throw new ActionError(sent.error);
+		}
+
+		return { ok: true };
 	});
-
-	await sendCustomerOtpEmail({
-		to: identifier,
-		code,
-		restaurantName: restaurant.name,
-	});
-
-	return { ok: true };
 }
 
 export async function verifyCustomerOtpAction(input: unknown) {
-	const parsed = verifyOtpSchema.parse(input);
-	const identifier = normalizeIdentifier(
-		parsed.identityType,
-		parsed.identifier,
-	);
-	const otp = await db.customerOtp.findFirst({
-		where: {
+	return actionData(async () => {
+		const parsed = verifyOtpSchema.parse(input);
+		const identifier = normalizeIdentifier(
+			parsed.identityType,
+			parsed.identifier,
+		);
+		const otp = await db.customerOtp.findFirst({
+			where: {
+				identifier,
+				code: parsed.code,
+				consumedAt: null,
+				expiresAt: { gt: new Date() },
+			},
+			orderBy: { createdAt: "desc" },
+		});
+
+		if (!otp) {
+			throw new ActionError("Invalid or expired verification code.");
+		}
+
+		await db.customerOtp.update({
+			where: { id: otp.id },
+			data: { consumedAt: new Date() },
+		});
+		await ensureCustomerProfile(parsed.identityType, identifier);
+
+		return getCustomerHubDataAction({
+			restaurantSlug: parsed.restaurantSlug,
+			identityType: parsed.identityType,
 			identifier,
-			code: parsed.code,
-			consumedAt: null,
-			expiresAt: { gt: new Date() },
-		},
-		orderBy: { createdAt: "desc" },
-	});
-
-	if (!otp) {
-		throw new Error("Invalid or expired verification code.");
-	}
-
-	await db.customerOtp.update({
-		where: { id: otp.id },
-		data: { consumedAt: new Date() },
-	});
-	await ensureCustomerProfile(parsed.identityType, identifier);
-
-	return getCustomerHubDataAction({
-		restaurantSlug: parsed.restaurantSlug,
-		identityType: parsed.identityType,
-		identifier,
+		});
 	});
 }
 

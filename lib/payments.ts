@@ -16,7 +16,8 @@ import {
 	parseBillingInterval,
 } from "@/lib/billing";
 import { db } from "@/lib/db";
-import { notifyNewOrder } from "@/lib/order-notifications";
+import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
+import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { scheduleReservationExpiry } from "@/lib/qstash";
 
 type PaystackSubscriptionParams = {
@@ -245,7 +246,12 @@ export async function verifyOrderPaymentReference(
 			paymentRef: payload.data.reference ?? params.reference,
 		},
 	});
-	await notifyNewOrder(params.orderId);
+
+	// Both of these are claim-guarded, so the webhook arriving at the same
+	// instant cannot produce a second receipt.
+	await notifyOrderPaid(params.orderId, { method: "Card or bank transfer" });
+	await notifyOrderConfirmed(params.orderId);
+	await notifyCustomerOrderStatus(params.orderId, OrderStatus.CONFIRMED);
 
 	return true;
 }
@@ -317,6 +323,11 @@ export async function verifyReservationPaymentReference(
 				paymentRef: payload.data.reference ?? params.reference,
 			},
 		});
+
+		await notifyOrderPaid(reservation.preOrderId, {
+			method: "Card or bank transfer",
+		});
+		await notifyOrderConfirmed(reservation.preOrderId);
 	}
 
 	return true;

@@ -4,6 +4,7 @@ import { OnboardingStatus, PlanTier, SubscriptionStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "@/env";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { captureServerEvent } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth-guards";
 import { addBillingPeriod, parseBillingInterval } from "@/lib/billing";
@@ -108,84 +109,88 @@ export async function startSubscriptionCheckoutAction(formData: FormData) {
 }
 
 export async function completeSetupAction(formData: FormData) {
-	const user = await requireUser();
-	const input = setupSchema.parse({
-		planId: formData.get("planId") || undefined,
-		billingInterval: parseBillingInterval(formData.get("billingInterval")),
-		name: formData.get("name"),
-		slug: formData.get("slug"),
-		phone: formData.get("phone") || undefined,
-		address: formData.get("address") || undefined,
-		whatsappNumber: formData.get("whatsappNumber") || undefined,
-	});
+	return actionResult(async () => {
+		const user = await requireUser();
+		const input = setupSchema.parse({
+			planId: formData.get("planId") || undefined,
+			billingInterval: parseBillingInterval(formData.get("billingInterval")),
+			name: formData.get("name"),
+			slug: formData.get("slug"),
+			phone: formData.get("phone") || undefined,
+			address: formData.get("address") || undefined,
+			whatsappNumber: formData.get("whatsappNumber") || undefined,
+		});
 
-	const existing = await db.restaurant.findUnique({
-		where: { slug: input.slug },
-	});
-	if (existing) {
-		throw new Error("Restaurant slug is already taken.");
-	}
+		const existing = await db.restaurant.findUnique({
+			where: { slug: input.slug },
+		});
+		if (existing) {
+			throw new ActionError("Restaurant slug is already taken.");
+		}
 
-	const restaurant = await db.restaurant.create({
-		data: {
-			ownerId: user.id,
-			name: input.name,
-			slug: input.slug,
-			phone: input.phone,
-			address: input.address,
-			whatsappNumber: input.whatsappNumber,
-		},
-	});
-
-	let subscription = await db.subscription.findFirst({
-		where: {
-			userId: user.id,
-			restaurantId: null,
-			status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING] },
-		},
-		orderBy: { createdAt: "desc" },
-	});
-
-	if (!subscription) {
-		const plan = input.planId
-			? await db.plan.findUniqueOrThrow({ where: { id: input.planId } })
-			: await db.plan.findUniqueOrThrow({ where: { tier: PlanTier.FREE } });
-		const now = new Date();
-		const periodEnd = addBillingPeriod(now, input.billingInterval);
-
-		subscription = await db.subscription.create({
+		const restaurant = await db.restaurant.create({
 			data: {
-				userId: user.id,
-				planId: plan.id,
-				restaurantId: restaurant.id,
-				status: SubscriptionStatus.ACTIVE,
-				billingInterval: input.billingInterval,
-				currentPeriodStart: now,
-				currentPeriodEnd: periodEnd,
+				ownerId: user.id,
+				name: input.name,
+				slug: input.slug,
+				phone: input.phone,
+				address: input.address,
+				whatsappNumber: input.whatsappNumber,
 			},
 		});
-	} else {
-		await db.subscription.update({
-			where: { id: subscription.id },
-			data: { restaurantId: restaurant.id },
+
+		let subscription = await db.subscription.findFirst({
+			where: {
+				userId: user.id,
+				restaurantId: null,
+				status: {
+					in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
+				},
+			},
+			orderBy: { createdAt: "desc" },
 		});
-	}
 
-	await db.user.update({
-		where: { id: user.id },
-		data: { onboardingStatus: OnboardingStatus.COMPLETE },
+		if (!subscription) {
+			const plan = input.planId
+				? await db.plan.findUniqueOrThrow({ where: { id: input.planId } })
+				: await db.plan.findUniqueOrThrow({ where: { tier: PlanTier.FREE } });
+			const now = new Date();
+			const periodEnd = addBillingPeriod(now, input.billingInterval);
+
+			subscription = await db.subscription.create({
+				data: {
+					userId: user.id,
+					planId: plan.id,
+					restaurantId: restaurant.id,
+					status: SubscriptionStatus.ACTIVE,
+					billingInterval: input.billingInterval,
+					currentPeriodStart: now,
+					currentPeriodEnd: periodEnd,
+				},
+			});
+		} else {
+			await db.subscription.update({
+				where: { id: subscription.id },
+				data: { restaurantId: restaurant.id },
+			});
+		}
+
+		await db.user.update({
+			where: { id: user.id },
+			data: { onboardingStatus: OnboardingStatus.COMPLETE },
+		});
+
+		await sendRestaurantWelcomeEmail({
+			to: user.email,
+			restaurantName: restaurant.name,
+			dashboardUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${restaurant.slug}`,
+		});
+
+		captureServerEvent("restaurant_signup_completed", user.id, {
+			restaurantId: restaurant.id,
+			slug: restaurant.slug,
+		});
+
+		redirect(`/dashboard/${restaurant.slug}`);
 	});
-
-	await sendRestaurantWelcomeEmail({
-		to: user.email,
-		restaurantName: restaurant.name,
-		dashboardUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${restaurant.slug}`,
-	});
-
-	captureServerEvent("restaurant_signup_completed", user.id, {
-		restaurantId: restaurant.id,
-		slug: restaurant.slug,
-	});
-
-	redirect(`/dashboard/${restaurant.slug}`);
 }

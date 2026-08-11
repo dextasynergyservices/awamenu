@@ -17,6 +17,8 @@ import {
 import { db } from "@/lib/db";
 import { sendSubscriptionConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
+import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
+import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { notifyNewOrder } from "@/lib/order-notifications";
 import { verifyPaystackWebhook } from "@/lib/payments";
 import { scheduleReservationExpiry } from "@/lib/qstash";
@@ -110,6 +112,12 @@ export async function POST(request: Request) {
 					paymentRef: payload.data?.reference,
 				},
 			});
+
+			await notifyOrderPaid(metadata.orderId, {
+				method: "Card or bank transfer",
+			});
+			await notifyOrderConfirmed(metadata.orderId);
+			await notifyCustomerOrderStatus(metadata.orderId, OrderStatus.CONFIRMED);
 			await notifyNewOrder(metadata.orderId);
 		}
 

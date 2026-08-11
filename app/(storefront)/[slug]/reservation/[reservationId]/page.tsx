@@ -6,6 +6,7 @@ import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
+import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
 import { verifyReservationPaymentReference } from "@/lib/payments";
 import { isSubscriptionActive } from "@/lib/subscription";
@@ -267,7 +268,7 @@ export default async function ReservationStatusPage({
 								Admin has approved this table. Complete your online payment to
 								reserve it.
 							</p>
-							<form action={payReservationAction} className="mt-3">
+							<ActionForm action={payReservationAction} className="mt-3">
 								<input
 									type="hidden"
 									name="slug"
@@ -284,7 +285,7 @@ export default async function ReservationStatusPage({
 								>
 									Pay {formatMoney(amountDue, reservation.restaurant.currency)}
 								</button>
-							</form>
+							</ActionForm>
 						</div>
 					) : null}
 

@@ -17,6 +17,9 @@ type RestaurantSettingsProps = {
 	/** Absolute URL staff open to sign in. Built server-side so it's correct
 	 * during SSR (window.location isn't available then). */
 	staffLoginUrl: string;
+	customerUpdateChannel: "WHATSAPP" | "SMS" | "NONE";
+	/** Drives whether WhatsApp can be selected — it's a paid-plan feature. */
+	whatsappIntegration: boolean;
 };
 
 export function RestaurantSettingsForm({
@@ -25,6 +28,8 @@ export function RestaurantSettingsForm({
 	hasStaffDashboardPassword,
 	staffDashboardAutoLockHours,
 	staffLoginUrl,
+	customerUpdateChannel,
+	whatsappIntegration,
 }: RestaurantSettingsProps) {
 	const [copied, setCopied] = useState(false);
 
@@ -42,6 +47,82 @@ export function RestaurantSettingsForm({
 		>
 			<form action={updateRestaurantSettingsAction} className="grid gap-6">
 				<input type="hidden" name="slug" value={slug} />
+
+				<fieldset className="grid gap-3">
+					<legend className="mb-2 text-xs md:text-[13px] font-black text-slate-950">
+						Customer Order Updates
+					</legend>
+					<p className="mb-3 text-xs md:text-[13px] text-slate-500">
+						Message customers automatically when their order is confirmed,
+						ready, delivered or completed. Sent from AwaMenu with your
+						restaurant&apos;s name in the message — your own WhatsApp number is
+						unaffected and staff keep replying from it as usual.
+					</p>
+
+					<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
+						<input
+							type="radio"
+							name="customerUpdateChannel"
+							value="WHATSAPP"
+							defaultChecked={customerUpdateChannel === "WHATSAPP"}
+							disabled={!whatsappIntegration}
+							className="mt-1"
+						/>
+						<div className="min-w-0">
+							<p className="flex flex-wrap items-center gap-2 text-xs md:text-[13px] font-bold text-slate-950">
+								WhatsApp
+								{whatsappIntegration ? null : (
+									<span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-black text-amber-700">
+										Paid plans
+									</span>
+								)}
+							</p>
+							<p className="mt-0.5 text-xs text-slate-500">
+								{whatsappIntegration
+									? "Highest open rates. Uses the phone number the customer gave at checkout."
+									: "Upgrade your plan to message customers on WhatsApp."}
+							</p>
+						</div>
+					</label>
+
+					<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
+						<input
+							type="radio"
+							name="customerUpdateChannel"
+							value="SMS"
+							defaultChecked={customerUpdateChannel === "SMS"}
+							className="mt-1"
+						/>
+						<div>
+							<p className="text-xs md:text-[13px] font-bold text-slate-950">
+								Text message (SMS)
+							</p>
+							<p className="mt-0.5 text-xs text-slate-500">
+								Works on every phone, including customers who don&apos;t use
+								WhatsApp.
+							</p>
+						</div>
+					</label>
+
+					<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50">
+						<input
+							type="radio"
+							name="customerUpdateChannel"
+							value="NONE"
+							defaultChecked={customerUpdateChannel === "NONE"}
+							className="mt-1"
+						/>
+						<div>
+							<p className="text-xs md:text-[13px] font-bold text-slate-950">
+								Don&apos;t send updates
+							</p>
+							<p className="mt-0.5 text-xs text-slate-500">
+								Customers can still track their order from the link on their
+								receipt.
+							</p>
+						</div>
+					</label>
+				</fieldset>
 
 				<fieldset className="grid gap-3">
 					<legend className="mb-2 text-xs md:text-[13px] font-black text-slate-950">

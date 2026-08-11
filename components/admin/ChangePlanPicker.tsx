@@ -4,6 +4,7 @@ import { Check, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { changePlanAction } from "@/actions/billing.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import {
 	BILLING_INTERVAL_DETAILS,
 	BILLING_INTERVALS,
@@ -91,7 +92,7 @@ export function ChangePlanPicker({
 					const isFeatured = plan.tier === "PRO";
 
 					return (
-						<form
+						<ActionForm
 							key={plan.id}
 							action={changePlanAction}
 							className={`relative flex min-h-full flex-col overflow-hidden rounded-3xl border p-6 transition-all duration-300 hover:-translate-y-1 ${
@@ -166,7 +167,7 @@ export function ChangePlanPicker({
 									{isCurrent ? "Current Plan" : "Switch to this Plan"}
 								</SubmitButton>
 							</div>
-						</form>
+						</ActionForm>
 					);
 				})}
 			</div>

@@ -13,6 +13,7 @@ import { requireUser } from "@/lib/auth-guards";
 import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { verifySubscriptionPaymentReference } from "@/lib/payments";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 export default async function SettingsPage({
 	params,
@@ -49,6 +50,7 @@ export default async function SettingsPage({
 			fontFamily: true,
 			activeTemplate: true,
 			dineInPaymentPolicy: true,
+			customerUpdateChannel: true,
 			staffDashboardPassword: true,
 			staffDashboardAutoLockHours: true,
 			bankAccounts: {
@@ -79,6 +81,8 @@ export default async function SettingsPage({
 
 	// Secrets are deliberately not selected — only whether one exists — so a
 	// live gateway key never travels to the browser with the page payload.
+	const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
+
 	const [methodRows, payoutRows, platformSettings] = await Promise.all([
 		db.restaurantPaymentMethod.findMany({
 			where: { restaurantId: restaurant.id },
@@ -200,6 +204,8 @@ export default async function SettingsPage({
 
 					<RestaurantSettingsForm
 						slug={restaurant.slug}
+						customerUpdateChannel={restaurant.customerUpdateChannel}
+						whatsappIntegration={planFeatures.whatsappIntegration}
 						dineInPaymentPolicy={restaurant.dineInPaymentPolicy}
 						hasStaffDashboardPassword={!!restaurant.staffDashboardPassword}
 						staffDashboardAutoLockHours={restaurant.staffDashboardAutoLockHours}

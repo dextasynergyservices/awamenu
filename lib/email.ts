@@ -3,7 +3,7 @@ import { RestaurantWelcome } from "@/emails/RestaurantWelcome";
 import { VerifyEmail } from "@/emails/VerifyEmail";
 import { env, requireEnv } from "@/env";
 
-function getResendClient() {
+export function getResendClient() {
 	return new Resend(requireEnv("RESEND_API_KEY"));
 }
 
@@ -13,7 +13,7 @@ function getResendClient() {
  * confirmations to keep that inbox exclusively about orders). Falls back to
  * `RESEND_FROM_EMAIL` if the dedicated one hasn't been configured yet.
  */
-function getAccountsFromEmail() {
+export function getAccountsFromEmail() {
 	return env.RESEND_ACCOUNTS_FROM_EMAIL ?? requireEnv("RESEND_FROM_EMAIL");
 }
 

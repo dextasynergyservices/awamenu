@@ -19,6 +19,7 @@ import {
 } from "@/actions/menu.actions";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 
 type MenuEditorProps = {
 	restaurantId: string;
@@ -271,7 +272,7 @@ export function MenuEditor({
 					</a>
 				</div>
 			) : (
-				<form
+				<ActionForm
 					id="new-menu-item-form"
 					action={createMenuItemAction}
 					className="mt-4 grid gap-3"
@@ -319,7 +320,7 @@ export function MenuEditor({
 						restaurantId={restaurantId}
 						inputId="new-item-image"
 					/>
-				</form>
+				</ActionForm>
 			)}
 
 			<div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1.2fr]">
@@ -373,7 +374,7 @@ export function MenuEditor({
 													</div>
 												)}
 											</div>
-											<form
+											<ActionForm
 												id={`item-${item.id}`}
 												action={updateMenuItemAction}
 												className="min-w-0 flex-1"
@@ -418,7 +419,7 @@ export function MenuEditor({
 													name="imageUrl"
 													defaultValue={item.imageUrl ?? ""}
 												/>
-											</form>
+											</ActionForm>
 										</div>
 									</td>
 									<td className="px-3 py-3 align-middle">
@@ -496,7 +497,7 @@ export function MenuEditor({
 											>
 												<Pencil className="size-4" aria-hidden="true" />
 											</button>
-											<form action={deleteMenuItemAction}>
+											<ActionForm action={deleteMenuItemAction}>
 												<input
 													type="hidden"
 													name="restaurantId"
@@ -513,7 +514,7 @@ export function MenuEditor({
 													<Trash2 className="size-4" aria-hidden="true" />
 													<span className="sr-only">Delete</span>
 												</SubmitButton>
-											</form>
+											</ActionForm>
 										</div>
 									</td>
 								</tr>
@@ -573,7 +574,10 @@ export function MenuEditor({
 								<X className="size-5" aria-hidden="true" />
 							</button>
 						</div>
-						<form action={updateMenuItemAction} className="mt-5 grid gap-3">
+						<ActionForm
+							action={updateMenuItemAction}
+							className="mt-5 grid gap-3"
+						>
 							<input type="hidden" name="restaurantId" value={restaurantId} />
 							<input type="hidden" name="slug" value={slug} />
 							<input type="hidden" name="itemId" value={editingItem.id} />
@@ -635,7 +639,7 @@ export function MenuEditor({
 							>
 								Save changes
 							</SubmitButton>
-						</form>
+						</ActionForm>
 					</div>
 				</div>
 			) : null}

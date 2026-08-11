@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 
@@ -78,7 +79,7 @@ async function requireOwnedRestaurant(restaurantId: string) {
 	});
 
 	if (!restaurant) {
-		throw new Error("Restaurant not found.");
+		throw new ActionError("Restaurant not found.");
 	}
 
 	return restaurant;
@@ -109,32 +110,34 @@ function isWithinLimit(current: number, max: number) {
 }
 
 export async function createCategoryAction(formData: FormData) {
-	const input = categorySchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		name: formData.get("name"),
-		emoji: formData.get("emoji") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-	});
-	const { maxCategories } = await getPlanLimits(input.restaurantId);
-	const categoryCount = await db.menuCategory.count({
-		where: { restaurantId: input.restaurantId },
-	});
+	return actionResult(async () => {
+		const input = categorySchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			name: formData.get("name"),
+			emoji: formData.get("emoji") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+		});
+		const { maxCategories } = await getPlanLimits(input.restaurantId);
+		const categoryCount = await db.menuCategory.count({
+			where: { restaurantId: input.restaurantId },
+		});
 
-	if (!isWithinLimit(categoryCount, maxCategories)) {
-		throw new Error("Plan category limit reached.");
-	}
+		if (!isWithinLimit(categoryCount, maxCategories)) {
+			throw new ActionError("Plan category limit reached.");
+		}
 
-	await db.menuCategory.create({
-		data: {
-			restaurantId: input.restaurantId,
-			name: input.name,
-			emoji: input.emoji,
-			sortOrder: input.sortOrder,
-		},
+		await db.menuCategory.create({
+			data: {
+				restaurantId: input.restaurantId,
+				name: input.name,
+				emoji: input.emoji,
+				sortOrder: input.sortOrder,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePath(`/${input.slug}`);
 	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
 }
 
 export async function createBannerAction(formData: FormData) {
@@ -203,27 +206,29 @@ export async function removeBannerAction(formData: FormData) {
 }
 
 export async function updateCategoryAction(formData: FormData) {
-	const input = updateCategorySchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		categoryId: formData.get("categoryId"),
-		name: formData.get("name"),
-		emoji: formData.get("emoji") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-		isActive: formData.get("isActive") === "on",
+	return actionResult(async () => {
+		const input = updateCategorySchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			categoryId: formData.get("categoryId"),
+			name: formData.get("name"),
+			emoji: formData.get("emoji") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+			isActive: formData.get("isActive") === "on",
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		await db.menuCategory.update({
+			where: { id: input.categoryId, restaurantId: input.restaurantId },
+			data: {
+				name: input.name,
+				emoji: input.emoji,
+				sortOrder: input.sortOrder,
+				isActive: input.isActive,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePath(`/${input.slug}`);
 	});
-	await requireOwnedRestaurant(input.restaurantId);
-	await db.menuCategory.update({
-		where: { id: input.categoryId, restaurantId: input.restaurantId },
-		data: {
-			name: input.name,
-			emoji: input.emoji,
-			sortOrder: input.sortOrder,
-			isActive: input.isActive,
-		},
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
 }
 
 export async function deleteCategoryAction(formData: FormData) {
@@ -241,116 +246,122 @@ export async function deleteCategoryAction(formData: FormData) {
 }
 
 export async function createMenuItemAction(formData: FormData) {
-	const input = itemSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		categoryId: formData.get("categoryId"),
-		name: formData.get("name"),
-		description: formData.get("description") || undefined,
-		price: formData.get("price"),
-		imageUrl: formData.get("imageUrl") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-		isAvailable: formData.get("isAvailable") === "on",
-		isTodaySpecial: formData.get("isTodaySpecial") === "on",
-	});
-	const { maxMenuItems } = await getPlanLimits(input.restaurantId);
-	const menuItemCount = await db.menuItem.count({
-		where: { category: { restaurantId: input.restaurantId } },
-	});
+	return actionResult(async () => {
+		const input = itemSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			categoryId: formData.get("categoryId"),
+			name: formData.get("name"),
+			description: formData.get("description") || undefined,
+			price: formData.get("price"),
+			imageUrl: formData.get("imageUrl") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+			isAvailable: formData.get("isAvailable") === "on",
+			isTodaySpecial: formData.get("isTodaySpecial") === "on",
+		});
+		const { maxMenuItems } = await getPlanLimits(input.restaurantId);
+		const menuItemCount = await db.menuItem.count({
+			where: { category: { restaurantId: input.restaurantId } },
+		});
 
-	if (!isWithinLimit(menuItemCount, maxMenuItems)) {
-		throw new Error("Plan menu item limit reached.");
-	}
+		if (!isWithinLimit(menuItemCount, maxMenuItems)) {
+			throw new ActionError("Plan menu item limit reached.");
+		}
 
-	const category = await db.menuCategory.findFirst({
-		where: { id: input.categoryId, restaurantId: input.restaurantId },
-		select: { id: true },
+		const category = await db.menuCategory.findFirst({
+			where: { id: input.categoryId, restaurantId: input.restaurantId },
+			select: { id: true },
+		});
+
+		if (!category) {
+			throw new ActionError("Category not found.");
+		}
+
+		await db.menuItem.create({
+			data: {
+				categoryId: input.categoryId,
+				name: input.name,
+				description: input.description,
+				price: input.price,
+				imageUrl: input.imageUrl,
+				sortOrder: input.sortOrder,
+				isAvailable: input.isAvailable,
+				isTodaySpecial: input.isTodaySpecial,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePath(`/${input.slug}`);
 	});
-
-	if (!category) {
-		throw new Error("Category not found.");
-	}
-
-	await db.menuItem.create({
-		data: {
-			categoryId: input.categoryId,
-			name: input.name,
-			description: input.description,
-			price: input.price,
-			imageUrl: input.imageUrl,
-			sortOrder: input.sortOrder,
-			isAvailable: input.isAvailable,
-			isTodaySpecial: input.isTodaySpecial,
-		},
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
 }
 
 export async function updateMenuItemAction(formData: FormData) {
-	const input = updateItemSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		itemId: formData.get("itemId"),
-		categoryId: formData.get("categoryId"),
-		name: formData.get("name"),
-		description: formData.get("description") || undefined,
-		price: formData.get("price"),
-		imageUrl: formData.get("imageUrl") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-		isAvailable: formData.get("isAvailable") === "on",
-		isTodaySpecial: formData.get("isTodaySpecial") === "on",
-	});
-	await requireOwnedRestaurant(input.restaurantId);
-	const item = await db.menuItem.findFirst({
-		where: {
-			id: input.itemId,
-			category: { restaurantId: input.restaurantId },
-		},
-		select: { id: true },
-	});
+	return actionResult(async () => {
+		const input = updateItemSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			itemId: formData.get("itemId"),
+			categoryId: formData.get("categoryId"),
+			name: formData.get("name"),
+			description: formData.get("description") || undefined,
+			price: formData.get("price"),
+			imageUrl: formData.get("imageUrl") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+			isAvailable: formData.get("isAvailable") === "on",
+			isTodaySpecial: formData.get("isTodaySpecial") === "on",
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		const item = await db.menuItem.findFirst({
+			where: {
+				id: input.itemId,
+				category: { restaurantId: input.restaurantId },
+			},
+			select: { id: true },
+		});
 
-	if (!item) {
-		throw new Error("Menu item not found.");
-	}
+		if (!item) {
+			throw new ActionError("Menu item not found.");
+		}
 
-	await db.menuItem.update({
-		where: { id: input.itemId },
-		data: {
-			categoryId: input.categoryId,
-			name: input.name,
-			description: input.description,
-			price: input.price,
-			imageUrl: input.imageUrl,
-			sortOrder: input.sortOrder,
-			isAvailable: input.isAvailable,
-			isTodaySpecial: input.isTodaySpecial,
-		},
+		await db.menuItem.update({
+			where: { id: input.itemId },
+			data: {
+				categoryId: input.categoryId,
+				name: input.name,
+				description: input.description,
+				price: input.price,
+				imageUrl: input.imageUrl,
+				sortOrder: input.sortOrder,
+				isAvailable: input.isAvailable,
+				isTodaySpecial: input.isTodaySpecial,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePath(`/${input.slug}`);
 	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
 }
 
 export async function deleteMenuItemAction(formData: FormData) {
-	const input = itemIdSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		itemId: formData.get("itemId"),
-	});
-	await requireOwnedRestaurant(input.restaurantId);
-	const item = await db.menuItem.findFirst({
-		where: {
-			id: input.itemId,
-			category: { restaurantId: input.restaurantId },
-		},
-		select: { id: true },
-	});
+	return actionResult(async () => {
+		const input = itemIdSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			itemId: formData.get("itemId"),
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		const item = await db.menuItem.findFirst({
+			where: {
+				id: input.itemId,
+				category: { restaurantId: input.restaurantId },
+			},
+			select: { id: true },
+		});
 
-	if (!item) {
-		throw new Error("Menu item not found.");
-	}
+		if (!item) {
+			throw new ActionError("Menu item not found.");
+		}
 
-	await db.menuItem.delete({ where: { id: input.itemId } });
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
+		await db.menuItem.delete({ where: { id: input.itemId } });
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePath(`/${input.slug}`);
+	});
 }

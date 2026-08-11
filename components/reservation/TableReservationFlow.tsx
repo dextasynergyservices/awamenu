@@ -30,6 +30,7 @@ import { createReservationAction } from "@/actions/reservation.actions";
 import { CustomerAccountDrawer } from "@/components/menu/CustomerAccountDrawer";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { cn } from "@/lib/utils";
 
 type TablePolicy = {
@@ -357,7 +358,7 @@ export function TableReservationFlow({
 				phone={phone}
 				whatsappNumber={whatsappNumber}
 			/>
-			<form action={createReservationAction} className="md:pt-25 lg:pt-0">
+			<ActionForm action={createReservationAction} className="md:pt-25 lg:pt-0">
 				<input type="hidden" name="slug" value={restaurantSlug} />
 				<input type="hidden" name="tableId" value={selectedTableId} />
 				<input type="hidden" name="items" value={selectedItemsJson} />
@@ -786,7 +787,7 @@ export function TableReservationFlow({
 						</SubmitButton>
 					</div>
 				</div>
-			</form>
+			</ActionForm>
 		</main>
 	);
 }

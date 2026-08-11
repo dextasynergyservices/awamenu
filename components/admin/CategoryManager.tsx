@@ -8,6 +8,7 @@ import {
 	updateCategoryAction,
 } from "@/actions/menu.actions";
 import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 
 type CategoryManagerProps = {
 	restaurantId: string;
@@ -53,7 +54,7 @@ export function CategoryManager({
 						Create, edit, order, and publish menu categories.
 					</p>
 				</div>
-				<form action={createCategoryAction} className="flex gap-2">
+				<ActionForm action={createCategoryAction} className="flex gap-2">
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="emoji" value="" />
@@ -73,7 +74,7 @@ export function CategoryManager({
 						<Plus className="size-4" aria-hidden="true" />
 						Add category
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</div>
 
 			<div className="mt-4 overflow-hidden rounded-2xl border border-slate-100">
@@ -103,7 +104,7 @@ export function CategoryManager({
 										</div>
 									</td>
 									<td className="px-3 py-3 align-middle">
-										<form
+										<ActionForm
 											id={`category-${category.id}`}
 											action={updateCategoryAction}
 											className="flex items-center gap-3"
@@ -141,7 +142,7 @@ export function CategoryManager({
 												defaultValue={category.sortOrder}
 												className="sr-only"
 											/>
-										</form>
+										</ActionForm>
 									</td>
 									<td className="px-3 py-3 align-middle font-black">
 										{category.items?.length ?? 0}
