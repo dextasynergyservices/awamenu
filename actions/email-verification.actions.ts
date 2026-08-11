@@ -160,7 +160,12 @@ export async function resendVerificationEmailAction(formData: FormData) {
 		if (!user) {
 			throw new ActionError("No account found for that email.");
 		}
-		if (user.emailVerified) return;
+		// Returning silently here made the UI claim "a new code has been sent"
+		// while nothing was sent — the account was already verified and there
+		// was nothing to send. Say so, so the screen can move them on.
+		if (user.emailVerified) {
+			throw new ActionError("ALREADY_VERIFIED");
+		}
 
 		const existing = await db.verification.findFirst({
 			where: { identifier: `${TOKEN_IDENTIFIER_PREFIX}${input.email}` },
@@ -196,6 +201,15 @@ export async function verifyEmailWithCodeAction(formData: FormData) {
 			code: formData.get("code"),
 		});
 
+		// Checked first: once verified, the rows are deleted, so an already-done
+		// account would otherwise be told its code was invalid and be stuck on
+		// this screen forever with no way forward.
+		const existing = await db.user.findUnique({
+			where: { email: input.email },
+			select: { emailVerified: true },
+		});
+		if (existing?.emailVerified) return;
+
 		const identifier = `${OTP_IDENTIFIER_PREFIX}${input.email}`;
 		const verification = await db.verification.findFirst({
 			where: { identifier },
@@ -221,6 +235,15 @@ export async function verifyEmailWithCodeAction(formData: FormData) {
  * navigation, not a form submission.
  */
 export async function verifyEmailWithToken(email: string, token: string) {
+	// An account that is already verified succeeds regardless of the token.
+	// Clicking the emailed link after verifying by code found a deleted row and
+	// said "expired", which reads as a broken account rather than a finished one.
+	const user = await db.user.findUnique({
+		where: { email },
+		select: { emailVerified: true },
+	});
+	if (user?.emailVerified) return true;
+
 	const identifier = `${TOKEN_IDENTIFIER_PREFIX}${email}`;
 	const verification = await db.verification.findFirst({
 		where: { identifier },

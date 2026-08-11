@@ -163,7 +163,7 @@ export default async function Home() {
 							</h1>
 							<div className="hero-anim-ctas mt-7 flex flex-col gap-3 sm:flex-row">
 								{/* <Link
-									href="/signup?plan=free"
+									href="/signup"
 									className="inline-flex h-12 items-center justify-center rounded-full bg-yellow-400 px-7 text-sm font-bold text-emerald-950 shadow-[0_16px_35px_rgba(250,204,21,0.24)] transition-colors hover:bg-yellow-300 sm:h-14 sm:text-base"
 								>
 									Get Started for Free

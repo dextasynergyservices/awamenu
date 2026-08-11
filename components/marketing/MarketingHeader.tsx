@@ -76,7 +76,7 @@ export function MarketingHeader({ variant = "light" }: MarketingHeaderProps) {
 						)}
 					/>
 					<Link
-						href="/signup?plan=free"
+						href="/signup"
 						className="inline-flex h-11 items-center justify-center rounded-full bg-yellow-400 px-4 text-sm font-bold text-emerald-950 transition-colors hover:bg-yellow-300"
 					>
 						Get Started
