@@ -31,6 +31,11 @@ type Props = {
 	isOpen: boolean;
 	onClose: () => void;
 	bankAccounts?: BankAccount[];
+	onlineProviders?: Array<{
+		gateway: string;
+		label: string;
+		checkoutMethods: string;
+	}>;
 };
 
 export function DineInPaymentChoiceModal({
@@ -41,6 +46,7 @@ export function DineInPaymentChoiceModal({
 	isOpen,
 	onClose,
 	bankAccounts = [],
+	onlineProviders = [],
 }: Props) {
 	const [isPending, startTransition] = useTransition();
 	const [view, setView] = useState<
@@ -189,27 +195,44 @@ export function DineInPaymentChoiceModal({
 							</button>
 						))}
 
-						<form action={initiateOrderPaymentAction}>
-							<input type="hidden" name="slug" value={slug} />
-							<input type="hidden" name="orderId" value={orderId} />
-							<button
-								type="submit"
-								disabled={isPending}
-								className="flex w-full items-center gap-4 rounded-2xl border border-emerald-600 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100 disabled:opacity-50"
-							>
-								<div className="grid size-10 place-items-center rounded-xl bg-emerald-600 text-white">
-									<Landmark className="size-5" />
-								</div>
-								<div>
-									<p className="font-black text-emerald-950">
-										Pay with Paystack
-									</p>
-									<p className="text-sm text-emerald-700">
-										Pay online securely using your card or bank
-									</p>
-								</div>
-							</button>
-						</form>
+						{/* One button per live provider. A restaurant running both
+						    Paystack and Monnify offers both here; the label has to name
+						    the provider, because the checkout the customer lands on is
+						    branded and an unexpected name reads as a wrong redirect. */}
+						{(onlineProviders.length > 0
+							? onlineProviders
+							: [
+									{
+										gateway: "",
+										label: "Paystack",
+										checkoutMethods:
+											"Pay online securely using your card or bank",
+									},
+								]
+						).map((provider) => (
+							<form key={provider.gateway} action={initiateOrderPaymentAction}>
+								<input type="hidden" name="slug" value={slug} />
+								<input type="hidden" name="orderId" value={orderId} />
+								<input type="hidden" name="gateway" value={provider.gateway} />
+								<button
+									type="submit"
+									disabled={isPending}
+									className="flex w-full items-center gap-4 rounded-2xl border border-emerald-600 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100 disabled:opacity-50"
+								>
+									<div className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white">
+										<Landmark className="size-5" />
+									</div>
+									<div className="min-w-0">
+										<p className="font-black text-emerald-950">
+											Pay with {provider.label}
+										</p>
+										<p className="text-sm text-emerald-700">
+											{provider.checkoutMethods}
+										</p>
+									</div>
+								</button>
+							</form>
+						))}
 					</div>
 				)}
 

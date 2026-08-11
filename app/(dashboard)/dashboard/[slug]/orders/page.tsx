@@ -10,6 +10,7 @@ import { AdminOrdersPoller } from "@/components/orders/AdminOrdersPoller";
 import { DesktopOrdersList } from "@/components/orders/DesktopOrdersList";
 import { MobileOrdersView } from "@/components/orders/MobileOrdersView";
 import { db } from "@/lib/db";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 type OrdersPageProps = {
 	params: Promise<{ slug: string }>;
@@ -82,6 +83,8 @@ export default async function OrdersPage({
 			currency: true,
 		},
 	});
+
+	const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
 
 	const orderWhere: Prisma.OrderWhereInput = {
 		restaurantId: restaurant.id,
@@ -348,6 +351,7 @@ export default async function OrdersPage({
 							currency={restaurant.currency}
 							slug={restaurant.slug}
 							restaurantName={restaurant.name}
+							whatsappEnabled={planFeatures.whatsappIntegration}
 						/>
 					</div>
 
@@ -358,6 +362,7 @@ export default async function OrdersPage({
 								currency={restaurant.currency}
 								slug={restaurant.slug}
 								restaurantName={restaurant.name}
+								whatsappEnabled={planFeatures.whatsappIntegration}
 							/>
 						) : (
 							<div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center">

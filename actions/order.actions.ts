@@ -18,7 +18,7 @@ import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyNewOrder } from "@/lib/order-notifications";
-import { initiateOrderPayment } from "@/lib/payments";
+import { initiateOrderPaymentForRestaurant } from "@/lib/payments";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { getStaffSession } from "@/lib/staff-auth";
 import { verifyTurnstileToken } from "@/lib/turnstile";
@@ -74,6 +74,20 @@ const createOrderSchema = z
 	.superRefine((input, ctx) => {
 		if (input.existingOrderId) {
 			return;
+		}
+
+		// A contact number is required for every order type, including dine-in.
+		// Staff message customers on WhatsApp at each stage of an order, and
+		// without a number that's impossible — the order silently becomes
+		// unreachable. Orders appended to an existing one are exempt: they
+		// inherit the original order's contact details.
+		if (!input.customerPhone || input.customerPhone.length < 3) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["customerPhone"],
+				message:
+					"A phone number is required so we can reach you about this order.",
+			});
 		}
 
 		if (input.orderFor === "SOMEONE_ELSE") {
@@ -343,6 +357,14 @@ export async function createOrderAction(formData: FormData) {
 export async function initiateOrderPaymentAction(formData: FormData) {
 	const orderId = z.string().cuid().parse(formData.get("orderId"));
 	const slug = z.string().min(1).parse(formData.get("slug"));
+	// Optional: only present when the restaurant offers more than one provider.
+	// `resolveCheckoutGateway` ignores anything the restaurant hasn't enabled, so
+	// a tampered value can't route the money somewhere else.
+	const preferredGateway = z
+		.enum(["PAYSTACK", "FLUTTERWAVE", "MONNIFY"])
+		.nullish()
+		.catch(null)
+		.parse(formData.get("gateway") || null);
 	const order = await db.order.findFirstOrThrow({
 		where: {
 			id: orderId,
@@ -355,15 +377,17 @@ export async function initiateOrderPaymentAction(formData: FormData) {
 			customerName: true,
 			customerEmail: true,
 			total: true,
-			restaurant: { select: { slug: true } },
+			restaurant: { select: { id: true, slug: true } },
 		},
 	});
-	const authorizationUrl = await initiateOrderPayment({
+	const authorizationUrl = await initiateOrderPaymentForRestaurant({
+		restaurantId: order.restaurant.id,
 		orderId: order.id,
 		restaurantSlug: order.restaurant.slug,
 		customerName: order.customerName,
 		customerEmail: order.customerEmail,
 		amountKobo: Math.round(Number(order.total) * 100),
+		preferredGateway,
 	});
 	redirect(authorizationUrl);
 }
@@ -660,7 +684,7 @@ export async function markOrderPaidAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
 	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }
 
 const splitPaymentSchema = z.object({
@@ -680,15 +704,15 @@ export async function recordSplitPaymentAction(formData: FormData) {
 		transferAmount: formData.get("transferAmount"),
 	});
 
-	const pinStr = formData.get("pin")?.toString();
+	const staffIdStr = formData.get("staffId")?.toString();
 
 	let recordedById: string | undefined;
 	let restaurant: { id: string; slug: string };
 
-	if (pinStr) {
+	if (staffIdStr) {
 		const { staff, restaurant: res } = await verifyStaffAction(
 			input.slug,
-			pinStr,
+			staffIdStr,
 		);
 		recordedById = staff.id;
 		restaurant = res;
@@ -769,8 +793,8 @@ export async function recordSplitPaymentAction(formData: FormData) {
 				dineInPaymentRecordedAt: new Date(),
 				events: {
 					create: {
-						staffId: pinStr ? recordedById : undefined,
-						description: pinStr
+						staffId: staffIdStr ? recordedById : undefined,
+						description: staffIdStr
 							? `Recorded split payment of ₦${totalInput.toLocaleString()}`
 							: `Admin recorded split payment of ₦${totalInput.toLocaleString()}`,
 					},
@@ -791,5 +815,5 @@ export async function recordSplitPaymentAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
 	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }

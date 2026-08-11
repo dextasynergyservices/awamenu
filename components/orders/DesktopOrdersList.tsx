@@ -70,6 +70,7 @@ type DesktopOrdersListProps = {
 	currency: string;
 	slug: string;
 	restaurantName: string;
+	whatsappEnabled: boolean;
 };
 
 function getStatusOptions(type: string) {
@@ -225,6 +226,7 @@ export function DesktopOrdersList({
 	currency,
 	slug,
 	restaurantName,
+	whatsappEnabled,
 }: DesktopOrdersListProps) {
 	const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 	const selectedOrder = selectedOrderId
@@ -311,6 +313,7 @@ export function DesktopOrdersList({
 					currency={currency}
 					slug={slug}
 					restaurantName={restaurantName}
+					whatsappEnabled={whatsappEnabled}
 					onClose={() => setSelectedOrderId(null)}
 					onOpenSplitPayment={() => setIsSplitPaymentModalOpen(true)}
 				/>
@@ -335,6 +338,7 @@ function OrderDetailsModal({
 	currency,
 	slug,
 	restaurantName,
+	whatsappEnabled,
 	onClose,
 	onOpenSplitPayment,
 }: {
@@ -342,6 +346,7 @@ function OrderDetailsModal({
 	currency: string;
 	slug: string;
 	restaurantName: string;
+	whatsappEnabled: boolean;
 	onClose: () => void;
 	onOpenSplitPayment: () => void;
 }) {
@@ -352,6 +357,7 @@ function OrderDetailsModal({
 			currency={currency}
 			slug={slug}
 			restaurantName={restaurantName}
+			whatsappEnabled={whatsappEnabled}
 			onClose={onClose}
 			onOpenSplitPayment={onOpenSplitPayment}
 		/>
@@ -363,6 +369,7 @@ function OrderDetailsModalContent({
 	currency,
 	slug,
 	restaurantName,
+	whatsappEnabled,
 	onClose,
 	onOpenSplitPayment,
 }: {
@@ -370,6 +377,7 @@ function OrderDetailsModalContent({
 	currency: string;
 	slug: string;
 	restaurantName: string;
+	whatsappEnabled: boolean;
 	onClose: () => void;
 	onOpenSplitPayment: () => void;
 }) {
@@ -669,61 +677,63 @@ function OrderDetailsModalContent({
 							</OrderActionForm>
 						</div>
 
-						<div className="rounded-2xl border border-slate-100 p-4">
-							<div className="mb-2 flex items-center justify-between gap-3">
-								<div className="flex items-center gap-2 text-sm font-black text-slate-800">
-									<Send className="size-4 text-emerald-600" />
-									WhatsApp Message
+						{whatsappEnabled ? (
+							<div className="rounded-2xl border border-slate-100 p-4">
+								<div className="mb-2 flex items-center justify-between gap-3">
+									<div className="flex items-center gap-2 text-sm font-black text-slate-800">
+										<Send className="size-4 text-emerald-600" />
+										WhatsApp Message
+									</div>
+									<button
+										type="button"
+										onClick={() =>
+											setWhatsappMessage(
+												getDefaultWhatsAppMessage(order, selectedStatus),
+											)
+										}
+										className="text-xs font-black text-blue-600"
+									>
+										Reset to default
+									</button>
 								</div>
-								<button
-									type="button"
-									onClick={() =>
-										setWhatsappMessage(
-											getDefaultWhatsAppMessage(order, selectedStatus),
-										)
-									}
-									className="text-xs font-black text-blue-600"
-								>
-									Reset to default
-								</button>
-							</div>
-							<p className="mb-2 text-xs font-semibold text-slate-500">
-								Edit message to send to customer
-							</p>
-							<textarea
-								value={whatsappMessage}
-								onChange={(event) => setWhatsappMessage(event.target.value)}
-								rows={5}
-								className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-600"
-							/>
-							{previewOpen ? (
-								<div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-5 text-slate-600">
-									{whatsappMessage}
-									<br />
-									<br />
-									{orderLink}
+								<p className="mb-2 text-xs font-semibold text-slate-500">
+									Edit message to send to customer
+								</p>
+								<textarea
+									value={whatsappMessage}
+									onChange={(event) => setWhatsappMessage(event.target.value)}
+									rows={5}
+									className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-600"
+								/>
+								{previewOpen ? (
+									<div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs font-semibold leading-5 text-slate-600">
+										{whatsappMessage}
+										<br />
+										<br />
+										{orderLink}
+									</div>
+								) : null}
+								<div className="mt-3 grid grid-cols-2 gap-3">
+									<button
+										type="button"
+										onClick={() => setPreviewOpen((value) => !value)}
+										className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700"
+									>
+										<Eye className="size-4" />
+										Preview
+									</button>
+									<button
+										type="button"
+										disabled={!normalizedPhone}
+										onClick={openWhatsApp}
+										className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-50"
+									>
+										<Send className="size-4" />
+										Send via WhatsApp
+									</button>
 								</div>
-							) : null}
-							<div className="mt-3 grid grid-cols-2 gap-3">
-								<button
-									type="button"
-									onClick={() => setPreviewOpen((value) => !value)}
-									className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700"
-								>
-									<Eye className="size-4" />
-									Preview
-								</button>
-								<button
-									type="button"
-									disabled={!normalizedPhone}
-									onClick={openWhatsApp}
-									className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white disabled:opacity-50"
-								>
-									<Send className="size-4" />
-									Send via WhatsApp
-								</button>
 							</div>
-						</div>
+						) : null}
 
 						<div className="rounded-2xl border border-slate-100 p-4">
 							<div className="mb-3 flex items-center justify-between gap-2 text-sm font-black text-slate-800">

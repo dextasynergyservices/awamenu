@@ -144,6 +144,45 @@ export async function sendCutOffEmail(input: {
 	});
 }
 
+export async function sendCustomerOtpEmail(input: {
+	to: string;
+	code: string;
+	restaurantName: string;
+}) {
+	await getResendClient().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `${input.code} is your ${input.restaurantName} verification code`,
+		text: `Hello,\n\nYour verification code for ${input.restaurantName} is:\n\n${input.code}\n\nIt expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n\nThank you,\n${input.restaurantName} (via AwaMenu)`,
+	});
+}
+
+export async function sendSuspensionEmail(input: {
+	to: string;
+	restaurantName: string;
+	manageBillingUrl: string;
+}) {
+	await getResendClient().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `${input.restaurantName} has been suspended`,
+		text: `Hello,\n\nThe 3-day grace period for ${input.restaurantName} has now passed without a renewal, so the account has been suspended.\n\nWhat this means:\n  • Your public menu is offline and customers cannot place orders.\n  • You and your staff cannot access the dashboard.\n  • Nothing has been deleted — your menu, orders and settings are all safe.\n\nRenewing restores everything immediately: ${input.manageBillingUrl}\n\nIf you believe this is a mistake, just reply to this email and we'll help.\n\nThank you,\nThe AwaMenu Team`,
+	});
+}
+
+export async function sendReactivationEmail(input: {
+	to: string;
+	restaurantName: string;
+	dashboardUrl: string;
+}) {
+	await getResendClient().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `${input.restaurantName} is back online`,
+		text: `Hello,\n\nThanks for renewing — ${input.restaurantName} has been reactivated.\n\nYour public menu is live again, and you and your staff can access the dashboard as normal.\n\nGo to your dashboard: ${input.dashboardUrl}\n\nThank you,\nThe AwaMenu Team`,
+	});
+}
+
 export async function sendRenewalSuccessEmail(input: {
 	to: string;
 	restaurantName: string;

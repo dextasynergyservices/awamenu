@@ -44,8 +44,38 @@ export default async function CartPage({
 	if (!restaurant) notFound();
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);
 
+	// Only the manual channels are surfaced here — they're the ones the customer
+	// has to act on themselves. Online channels are handled by the gateway
+	// redirect after the order is placed.
+	const enabledMethods = await db.restaurantPaymentMethod.findMany({
+		where: { restaurant: { slug }, isEnabled: true },
+		select: {
+			channel: true,
+			bankName: true,
+			accountNumber: true,
+			accountName: true,
+		},
+	});
+
+	const transfer = enabledMethods.find((m) => m.channel === "BANK_TRANSFER");
+	const manualPayments = {
+		bankTransfer:
+			transfer?.bankName && transfer.accountNumber && transfer.accountName
+				? {
+						bankName: transfer.bankName,
+						accountNumber: transfer.accountNumber,
+						accountName: transfer.accountName,
+					}
+				: null,
+		cashEnabled: enabledMethods.some((m) => m.channel === "CASH"),
+		hasOnlineOption: enabledMethods.some(
+			(m) => m.channel === "AWAMENU_PAY" || m.channel === "OWN_GATEWAY",
+		),
+	};
+
 	return (
 		<CheckoutFlow
+			manualPayments={manualPayments}
 			name={restaurant.name}
 			logoUrl={restaurant.logoUrl}
 			bannerItems={bannerItems}

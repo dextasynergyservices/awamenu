@@ -111,8 +111,20 @@ export default async function PublicMenuPage({
 	// restaurant with multiple visible categories doesn't get the limit
 	// multiplied out across each one.
 	const maxMenuItems = planFeatures.maxMenuItems;
+	const maxCategories = planFeatures.maxCategories;
 	let remainingItemBudget = maxMenuItems;
-	const categories = restaurant.categories
+
+	// The category cap is enforced here too, not just on creation. A restaurant
+	// can end up over its limit without ever creating anything — dropping to a
+	// cheaper plan, or a super-admin lowering a plan's limit — and in those
+	// cases the extra categories are still `isActive`, so without this the
+	// public menu would keep serving more than the plan allows.
+	const visibleCategories =
+		maxCategories < 0
+			? restaurant.categories
+			: restaurant.categories.slice(0, Math.max(0, maxCategories));
+
+	const categories = visibleCategories
 		.map((category) => {
 			const items = category.items.map((item) => ({
 				...item,

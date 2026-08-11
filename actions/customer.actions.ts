@@ -1,7 +1,9 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { sendCustomerOtpEmail } from "@/lib/email";
 
 const identityTypeSchema = z.enum(["phone", "email"]);
 const otpChannelSchema = z.enum(["whatsapp", "sms", "email"]);
@@ -109,13 +111,26 @@ export async function requestCustomerOtpAction(input: unknown) {
 		parsed.identifier,
 	);
 
-	await db.restaurant.findFirstOrThrow({
+	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug: parsed.restaurantSlug, isActive: true },
-		select: { id: true },
+		select: { id: true, name: true },
 	});
+
+	// Only email can actually be delivered today — there's no SMS/WhatsApp
+	// provider wired up. This used to fall through and return `{ok: true}` for
+	// every channel, so a customer picking WhatsApp or SMS was shown the
+	// "enter your code" step for a code that was never sent anywhere.
+	if (parsed.identityType !== "email" || parsed.channel !== "email") {
+		throw new Error(
+			"Verification by WhatsApp or SMS isn't available yet — please use your email address instead.",
+		);
+	}
+
 	await ensureCustomerProfile(parsed.identityType, identifier);
 
-	const code = String(Math.floor(100000 + Math.random() * 900000));
+	// `crypto.randomInt` rather than `Math.random`, which is not a
+	// cryptographically secure source and makes codes predictable.
+	const code = String(randomInt(100000, 1000000));
 	await db.customerOtp.create({
 		data: {
 			identifier,
@@ -125,10 +140,11 @@ export async function requestCustomerOtpAction(input: unknown) {
 		},
 	});
 
-	// Log the code in dev for testing – not exposed to the client
-	if (process.env.NODE_ENV === "development") {
-		console.log(`[OTP] Code for ${identifier}: ${code}`);
-	}
+	await sendCustomerOtpEmail({
+		to: identifier,
+		code,
+		restaurantName: restaurant.name,
+	});
 
 	return { ok: true };
 }

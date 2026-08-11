@@ -19,6 +19,9 @@ type AdminOrderControlsProps = {
 	total: number;
 	currency: string;
 	variant?: "desktop" | "mobile";
+	/** Plan entitlement — the flag existed on every Plan row but was never
+	 * checked anywhere, so "WhatsApp integration" was unenforceable. */
+	whatsappEnabled: boolean;
 };
 
 function getStatusOptions(type: string) {
@@ -95,6 +98,7 @@ function AdminOrderControlsContent({
 	total,
 	currency,
 	variant = "desktop",
+	whatsappEnabled,
 }: AdminOrderControlsProps) {
 	const [cancelOpen, setCancelOpen] = useState(false);
 	const [selectedStatus, setSelectedStatus] = useState(() =>
@@ -231,7 +235,7 @@ function AdminOrderControlsContent({
 				</>
 			) : null}
 
-			{canSendStatusMessage ? (
+			{canSendStatusMessage && whatsappEnabled ? (
 				<div className="grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
 					<label className="grid gap-1 text-xs font-black text-emerald-900">
 						WhatsApp status message

@@ -20,6 +20,18 @@ export const env = createEnv({
 		QSTASH_TOKEN: z.string().min(1).optional(),
 		QSTASH_CURRENT_SIGNING_KEY: z.string().min(1).optional(),
 		QSTASH_NEXT_SIGNING_KEY: z.string().min(1).optional(),
+		// Shared secret for triggering cron routes from any external scheduler
+		// (cron-jobs.org, Vercel Cron, GitHub Actions...). QStash-signed
+		// requests are still accepted; this is the alternative for schedulers
+		// that can't produce a QStash signature.
+		CRON_SECRET: z.string().min(16).optional(),
+		// Monnify. Sandbox and live are separate environments with separate
+		// credentials AND separate base URLs, so the host is configurable rather
+		// than hardcoded — pointing sandbox keys at the live host just 401s.
+		MONNIFY_BASE_URL: z.string().url().optional(),
+		MONNIFY_API_KEY: z.string().min(1).optional(),
+		MONNIFY_SECRET_KEY: z.string().min(1).optional(),
+		MONNIFY_CONTRACT_CODE: z.string().min(1).optional(),
 		UPSTASH_REDIS_REST_URL: z.string().url().optional(),
 		UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
 		VAPID_PRIVATE_KEY: z.string().min(1).optional(),
@@ -66,6 +78,11 @@ export const env = createEnv({
 		QSTASH_TOKEN: process.env.QSTASH_TOKEN,
 		QSTASH_CURRENT_SIGNING_KEY: process.env.QSTASH_CURRENT_SIGNING_KEY,
 		QSTASH_NEXT_SIGNING_KEY: process.env.QSTASH_NEXT_SIGNING_KEY,
+		CRON_SECRET: process.env.CRON_SECRET,
+		MONNIFY_BASE_URL: process.env.MONNIFY_BASE_URL,
+		MONNIFY_API_KEY: process.env.MONNIFY_API_KEY,
+		MONNIFY_SECRET_KEY: process.env.MONNIFY_SECRET_KEY,
+		MONNIFY_CONTRACT_CODE: process.env.MONNIFY_CONTRACT_CODE,
 		UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
 		UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
 		VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,

@@ -20,6 +20,23 @@ export const auth = betterAuth({
 		enabled: true,
 		autoSignIn: true,
 	},
+	session: {
+		// Every authenticated page calls `requireUser()` -> `getSession()`, which
+		// otherwise means a database round-trip per request just to read the
+		// session. The database is in a single region, so that round-trip is the
+		// dominant cost of an authenticated page load (measured ~120ms each, and
+		// sign-in stacks several of them).
+		//
+		// Caching the session in a signed cookie removes that lookup entirely for
+		// the cache window. Account suspension is unaffected: `requireUser()`
+		// does its own live `user.isActive` check on every request, so a
+		// suspended owner is still cut off immediately rather than at cache
+		// expiry.
+		cookieCache: {
+			enabled: true,
+			maxAge: 5 * 60,
+		},
+	},
 	// Default rate limiting is enabled automatically in production, but with
 	// in-memory storage — on Vercel's serverless runtime that counter resets
 	// on effectively every cold start, making it close to a no-op. Backing it

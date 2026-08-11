@@ -2,6 +2,7 @@ import { OrderStatus, PaymentPolicy, PaymentStatus } from "@prisma/client";
 import { Check, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { listPublicCheckoutProviders } from "@/actions/payment-settings.actions";
 import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { DineInPayNowButton } from "@/components/orders/DineInPayNowButton";
 import { OrderCartFinalizer } from "@/components/orders/OrderCartFinalizer";
@@ -242,6 +243,7 @@ export default async function OrderStatusPage({
 		createdAt: true,
 		restaurant: {
 			select: {
+				id: true,
 				name: true,
 				slug: true,
 				currency: true,
@@ -363,6 +365,12 @@ export default async function OrderStatusPage({
 		(order.type === "DINE_IN" ||
 			order.status === OrderStatus.CONFIRMED ||
 			order.status === OrderStatus.PENDING_PAYMENT);
+
+	// A restaurant may have more than one online provider live; when it does the
+	// customer picks. Only fetched when there's actually a payment to make.
+	const onlineProviders = canPayNow
+		? await listPublicCheckoutProviders(order.restaurant.id)
+		: [];
 	const statusNotice = getOrderNotice(
 		order.status,
 		order.type,
@@ -554,6 +562,7 @@ export default async function OrderStatusPage({
 							policy={order.dineInPaymentPolicy}
 							bankAccounts={order.restaurant.bankAccounts}
 							orderType={order.type}
+							onlineProviders={onlineProviders}
 						/>
 					) : null}
 					<div className="mt-6 grid gap-3">

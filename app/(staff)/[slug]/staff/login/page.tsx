@@ -38,7 +38,7 @@ export default function StaffLoginPage({
 			try {
 				await staffLoginAction(fd);
 				// ✅ Redirect to the correct staff dashboard
-				router.push(`/staff/${slug}`);
+				router.push(`/${slug}/staff`);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Invalid password.");
 				setShake(true);
@@ -70,7 +70,7 @@ export default function StaffLoginPage({
 					</div>
 
 					<h1 className="mb-1 text-center text-2xl font-black text-slate-950">
-						Staff Terminal
+						Staff Login
 					</h1>
 					<p className="mb-6 text-center text-sm font-medium text-slate-500">
 						Access the dashboard for{" "}
@@ -133,7 +133,7 @@ export default function StaffLoginPage({
 									Authenticating...
 								</>
 							) : (
-								"Unlock Terminal"
+								"Login"
 							)}
 						</button>
 
