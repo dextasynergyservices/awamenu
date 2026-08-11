@@ -2,7 +2,11 @@
 
 import { useSearchParams } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { sendEmailVerificationAction } from "@/actions/email-verification.actions";
+import {
+	getEmailVerificationStateAction,
+	resumeEmailVerificationAction,
+	sendEmailVerificationAction,
+} from "@/actions/email-verification.actions";
 import { verifyTurnstileAction } from "@/actions/turnstile.actions";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { LoadingButton } from "@/components/ui/action-button";
@@ -60,6 +64,19 @@ export function SignupForm() {
 					});
 
 					if (result.error) {
+						// "An account already exists" is a dead end when the account
+						// is the user's own half-finished one. Send a fresh code and
+						// carry on where they left off.
+						const state = await getEmailVerificationStateAction(email);
+						if (state.exists && !state.verified) {
+							const resume = new FormData();
+							resume.set("email", email);
+							if (selectedPlan) resume.set("plan", selectedPlan);
+							if (selectedBilling) resume.set("billing", selectedBilling);
+							await resumeEmailVerificationAction(resume);
+							window.location.href = `/verify-email/code?email=${encodeURIComponent(email)}${planQuery}&resumed=1`;
+							return;
+						}
 						setError(result.error.message ?? "Unable to create account.");
 						return;
 					}
@@ -68,11 +85,19 @@ export function SignupForm() {
 					verifyFormData.set("email", email);
 					if (selectedPlan) verifyFormData.set("plan", selectedPlan);
 					if (selectedBilling) verifyFormData.set("billing", selectedBilling);
-					// Not awaited — the account already exists either way, and the
-					// code page has its own "Resend" action as a safety net, so
-					// there's no reason to make the user sit through this extra
-					// network round-trip before seeing the next page.
-					sendEmailVerificationAction(verifyFormData).catch(() => {});
+					// Awaited deliberately. Firing this without awaiting and then
+					// navigating on the next line aborted the request: the browser
+					// tears down in-flight fetches on navigation, so the very first
+					// verification email frequently never went out. Worse, the
+					// verification rows could commit before the abort, leaving a
+					// code the user never received AND a 60-second cooldown that
+					// blocked Resend — which is exactly what people hit.
+					const sent = await sendEmailVerificationAction(verifyFormData);
+					if ("error" in sent) {
+						// The account exists, so this is recoverable on the next
+						// screen. Say so rather than blocking here.
+						setError(sent.error);
+					}
 
 					setIsSuccess(true);
 					// A full navigation, not router.push — see VerifyEmailCodeForm

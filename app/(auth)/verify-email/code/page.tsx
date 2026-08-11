@@ -7,9 +7,14 @@ import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 export default async function VerifyEmailCodePage({
 	searchParams,
 }: {
-	searchParams: Promise<{ email?: string; plan?: string; billing?: string }>;
+	searchParams: Promise<{
+		email?: string;
+		plan?: string;
+		billing?: string;
+		resumed?: string;
+	}>;
 }) {
-	const { email, plan, billing } = await searchParams;
+	const { email, plan, billing, resumed } = await searchParams;
 
 	return (
 		<>
@@ -36,6 +41,12 @@ export default async function VerifyEmailCodePage({
 							) : null}
 							. You can also click the link in that email instead.
 						</p>
+						{resumed ? (
+							<p className="mb-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+								Welcome back — your account is waiting on this one step. We have
+								just sent you a fresh code, so ignore any older email.
+							</p>
+						) : null}
 						<VerifyEmailCodeForm
 							initialEmail={email ?? ""}
 							plan={plan}
