@@ -145,7 +145,7 @@ export function OrderActionForm({
 		}
 
 		if (requirePin) {
-			// Show PIN prompt before proceeding
+			// Ask who is performing this action before proceeding
 			setPromptingPin(true);
 			setPendingForm(new FormData(form));
 		} else {
@@ -165,7 +165,7 @@ export function OrderActionForm({
 		}
 	}
 
-	async function handlePinSubmit(pin: string) {
+	async function handlePinSubmit(staffId: string) {
 		if (!pendingForm) return;
 
 		setPending(true);
@@ -173,7 +173,7 @@ export function OrderActionForm({
 		setErrorCopy(null);
 
 		const formData = pendingForm;
-		formData.set("pin", pin);
+		formData.set("staffId", staffId);
 
 		try {
 			await runOrderAction(actionKind, formData);

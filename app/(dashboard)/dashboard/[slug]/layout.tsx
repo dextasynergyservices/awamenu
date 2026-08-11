@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminDashboardShell } from "@/components/admin/admin-dashboard-shell";
 import { SubscriptionExpiredGate } from "@/components/admin/SubscriptionExpiredGate";
+import { SubscriptionExpiryBanner } from "@/components/admin/SubscriptionExpiryBanner";
 import { RestaurantBrandProvider } from "@/components/shared/RestaurantBrandContext";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
@@ -10,6 +11,12 @@ import { LOGO_ICON_URL } from "@/lib/logo";
 import { getRestaurantBrand } from "@/lib/restaurant-brand";
 import { isSubscriptionActive } from "@/lib/subscription";
 import { getThemeStyle } from "@/lib/theme-style";
+
+const DAY_MS = 1000 * 60 * 60 * 24;
+/** Matches the first rung of the cron's email ladder (see api/cron/subscriptions). */
+const EXPIRY_NOTICE_DAYS = 7;
+/** Matches `isSubscriptionActive`'s grace window and the cron's suspension point. */
+const GRACE_DAYS = 3;
 
 export async function generateMetadata({
 	params,
@@ -132,6 +139,24 @@ export default async function DashboardLayout({
 		? Number(subscription.plan.monthlyPrice) > 0
 		: false;
 
+	// Surface the renewal countdown once a paid plan is within a week of
+	// expiring, and keep it up through the grace period. Gated here (server
+	// side) rather than in the banner so the window can't be manipulated from
+	// the client; the banner only owns the ticking clock.
+	const expiryWindow = (() => {
+		if (!isPaid || !subscription) return null;
+		const msLeft = subscription.currentPeriodEnd.getTime() - Date.now();
+		const withinNotice = msLeft <= EXPIRY_NOTICE_DAYS * DAY_MS;
+		const beforeSuspension = msLeft > -GRACE_DAYS * DAY_MS;
+		if (!withinNotice || !beforeSuspension) return null;
+
+		return {
+			planName: subscription.plan.name,
+			currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
+			autoRenew: Boolean(subscription.paystackSubscriptionCode),
+		};
+	})();
+
 	// Get initial unread count for the notification bell
 	const unreadCount = await db.notification.count({
 		where: {
@@ -208,6 +233,15 @@ export default async function DashboardLayout({
 				initialUnreadCount={unreadCount}
 			>
 				<RestaurantBrandProvider brand={brand}>
+					{expiryWindow ? (
+						<SubscriptionExpiryBanner
+							slug={restaurant.slug}
+							planName={expiryWindow.planName}
+							currentPeriodEnd={expiryWindow.currentPeriodEnd}
+							graceDays={GRACE_DAYS}
+							autoRenew={expiryWindow.autoRenew}
+						/>
+					) : null}
 					{children}
 				</RestaurantBrandProvider>
 			</AdminDashboardShell>

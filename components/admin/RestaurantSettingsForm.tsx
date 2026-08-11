@@ -1,8 +1,11 @@
 "use client";
 
-import { Settings } from "lucide-react";
+import { Check, Copy, ExternalLink, Settings } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
 import { updateRestaurantSettingsAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
+import { StaffPasswordReveal } from "@/components/admin/StaffPasswordReveal";
 import { SubmitButton } from "@/components/ui/action-button";
 import { PaymentPolicy } from "@/lib/payment-policy";
 
@@ -11,6 +14,9 @@ type RestaurantSettingsProps = {
 	dineInPaymentPolicy: PaymentPolicy;
 	hasStaffDashboardPassword: boolean;
 	staffDashboardAutoLockHours?: number | null;
+	/** Absolute URL staff open to sign in. Built server-side so it's correct
+	 * during SSR (window.location isn't available then). */
+	staffLoginUrl: string;
 };
 
 export function RestaurantSettingsForm({
@@ -18,7 +24,16 @@ export function RestaurantSettingsForm({
 	dineInPaymentPolicy,
 	hasStaffDashboardPassword,
 	staffDashboardAutoLockHours,
+	staffLoginUrl,
 }: RestaurantSettingsProps) {
+	const [copied, setCopied] = useState(false);
+
+	function handleCopyStaffUrl() {
+		navigator.clipboard.writeText(staffLoginUrl);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	}
+
 	return (
 		<SettingsCard
 			title="Restaurant Settings"
@@ -104,6 +119,57 @@ export function RestaurantSettingsForm({
 						shared staff dashboard on their devices.
 					</p>
 
+					<div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 sm:p-4">
+						<p className="text-xs md:text-[11px] font-bold uppercase tracking-wide text-emerald-800">
+							Staff sign-in link
+						</p>
+						<p className="mt-1 text-xs md:text-[13px] font-medium text-slate-600">
+							Share this link with your staff. They open it on their own device
+							and sign in with the master password below.
+						</p>
+
+						<div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+							<code className="min-w-0 flex-1 truncate rounded-xl border border-emerald-100 bg-white px-3 py-2.5 text-xs md:text-[13px] font-bold text-slate-800">
+								{staffLoginUrl}
+							</code>
+							<div className="flex shrink-0 gap-2">
+								<button
+									type="button"
+									onClick={handleCopyStaffUrl}
+									className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 text-xs font-black text-white transition-colors hover:bg-emerald-800 sm:flex-none"
+								>
+									{copied ? (
+										<>
+											<Check className="size-3.5" aria-hidden="true" />
+											Copied
+										</>
+									) : (
+										<>
+											<Copy className="size-3.5" aria-hidden="true" />
+											Copy
+										</>
+									)}
+								</button>
+								<Link
+									href={`/${slug}/staff`}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-black text-emerald-800 transition-colors hover:bg-emerald-50 sm:flex-none"
+								>
+									<ExternalLink className="size-3.5" aria-hidden="true" />
+									Open
+								</Link>
+							</div>
+						</div>
+
+						{!hasStaffDashboardPassword ? (
+							<p className="mt-2.5 text-xs font-bold text-amber-700">
+								Set a master password below before sharing this link — staff
+								can&apos;t sign in until one exists.
+							</p>
+						) : null}
+					</div>
+
 					<div className="grid gap-4 sm:grid-cols-2">
 						<div>
 							<label
@@ -126,9 +192,14 @@ export function RestaurantSettingsForm({
 							/>
 							<p className="mt-1 text-xs text-slate-400">
 								{hasStaffDashboardPassword
-									? "A password is already set — for security it's never shown again. Enter a new one only if you want to change it."
+									? "Leave blank to keep the current password. Enter a new one only if you want to change it."
 									: "Not set yet — staff can't log in until you set one."}
 							</p>
+
+							<StaffPasswordReveal
+								slug={slug}
+								hasPassword={hasStaffDashboardPassword}
+							/>
 						</div>
 
 						<div>

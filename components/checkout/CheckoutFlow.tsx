@@ -25,6 +25,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { lookupCustomerByPhoneAction } from "@/actions/customer.actions";
 import { createOrderAction } from "@/actions/order.actions";
+import {
+	ManualPaymentOptions,
+	type ManualPaymentOptionsProps,
+} from "@/components/checkout/ManualPaymentOptions";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { SubmitButton } from "@/components/ui/action-button";
@@ -48,6 +52,7 @@ type CheckoutFlowProps = {
 	dineInPaymentPolicy: "PAY_BEFORE_SERVICE" | "PAY_AFTER_SERVICE" | "FLEXIBLE";
 	enabledOrderTypes: Record<CheckoutOrderType, boolean>;
 	existingOrderId?: string;
+	manualPayments: ManualPaymentOptionsProps;
 };
 
 const orderTypes: Array<{
@@ -116,6 +121,7 @@ export function CheckoutFlow({
 	currency,
 	enabledOrderTypes,
 	existingOrderId,
+	manualPayments,
 	dineInPaymentPolicy,
 }: CheckoutFlowProps) {
 	const allItems = useCart((state) => state.items);
@@ -231,9 +237,11 @@ export function CheckoutFlow({
 		orderFor === "SOMEONE_ELSE" && !orderIdToAppend;
 	const isDineInForSomeoneElse =
 		selectedType === "DINE_IN" && isOrderingForSomeoneElse;
-	const contactDetailsRequired =
-		isOrderingForSomeoneElse ||
-		(selectedType !== "DINE_IN" && !orderIdToAppend);
+	// Required for every order type now, dine-in included: staff message
+	// customers on WhatsApp through each stage of an order, so an order without
+	// a number can't be followed up. Appending to an existing order stays exempt
+	// — those details come from the original order.
+	const contactDetailsRequired = !orderIdToAppend;
 	const heroBanner = bannerItems[0];
 	const serializedItems = useMemo(
 		() =>
@@ -799,6 +807,8 @@ export function CheckoutFlow({
 								/>
 							</label>
 						)}
+
+						<ManualPaymentOptions {...manualPayments} />
 
 						<TurnstileWidget
 							className="mt-5 sm:mt-6 flex justify-center"

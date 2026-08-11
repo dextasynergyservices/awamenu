@@ -1,5 +1,4 @@
 import { withSentryConfig } from "@sentry/nextjs";
-import withSerwistInit from "@serwist/next";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -43,13 +42,10 @@ const nextConfig: NextConfig = {
 	},
 };
 
-const withSerwist = withSerwistInit({
-	swSrc: "app/sw.ts",
-	swDest: "public/sw.js",
-	disable: process.env.NODE_ENV === "development",
-});
-
-export default withSentryConfig(withSerwist(nextConfig), {
+// Serwist is no longer wired in here — the plugin form is webpack-only and
+// Next 16 builds with Turbopack, so it never ran. The service worker is now
+// built as a separate step from serwist.config.mjs (see the `build` script).
+export default withSentryConfig(nextConfig, {
 	org: process.env.SENTRY_ORG,
 	project: process.env.SENTRY_PROJECT,
 	authToken: process.env.SENTRY_AUTH_TOKEN,

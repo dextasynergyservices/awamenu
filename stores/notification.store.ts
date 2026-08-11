@@ -39,14 +39,31 @@ export const useNotificationStore = create<NotificationState>((set) => ({
 	notifications: [],
 	unreadCount: 0,
 
+	// Both writers de-duplicate by id. The list is fed from two places — the
+	// server-rendered seed and the poller — and the same notification can
+	// legitimately arrive from both (a poll picks one up, then a refresh
+	// re-seeds the list containing it). Appending blindly produced two entries
+	// with the same id, which React reports as a duplicate-key warning and can
+	// render or drop unpredictably.
 	addNotification: (notification) =>
-		set((state) => ({
-			notifications: [notification, ...state.notifications].slice(0, 100),
-			unreadCount: state.unreadCount + 1,
-		})),
+		set((state) => {
+			if (state.notifications.some((n) => n.id === notification.id)) {
+				return state;
+			}
+			return {
+				notifications: [notification, ...state.notifications].slice(0, 100),
+				unreadCount: state.unreadCount + 1,
+			};
+		}),
 
 	setNotifications: (notifications, unreadCount) =>
-		set({ notifications, unreadCount }),
+		set({
+			notifications: notifications.filter(
+				(n, index, all) =>
+					all.findIndex((other) => other.id === n.id) === index,
+			),
+			unreadCount,
+		}),
 
 	markRead: (notificationId) =>
 		set((state) => {

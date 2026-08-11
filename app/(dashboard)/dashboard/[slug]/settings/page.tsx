@@ -2,6 +2,7 @@ import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminAccountSettings } from "@/components/admin/AdminAccountSettings";
 import { BankAccountsManager } from "@/components/admin/BankAccountsManager";
+import { PaymentIntegrations } from "@/components/admin/PaymentIntegrations";
 import { QRDownload } from "@/components/admin/QRDownload";
 import { RestaurantBrandingForm } from "@/components/admin/RestaurantBrandingForm";
 import { RestaurantInfoForm } from "@/components/admin/RestaurantInfoForm";
@@ -76,7 +77,60 @@ export default async function SettingsPage({
 		redirect(`/dashboard/${restaurant.slug}/settings`);
 	}
 
+	// Secrets are deliberately not selected — only whether one exists — so a
+	// live gateway key never travels to the browser with the page payload.
+	const [methodRows, payoutRows, platformSettings] = await Promise.all([
+		db.restaurantPaymentMethod.findMany({
+			where: { restaurantId: restaurant.id },
+			select: {
+				channel: true,
+				isEnabled: true,
+				gateway: true,
+				bankCode: true,
+				bankName: true,
+				accountNumber: true,
+				accountName: true,
+				subaccountCode: true,
+				secretKeyEncrypted: true,
+			},
+		}),
+		db.restaurantPayoutAccount.findMany({
+			where: { restaurantId: restaurant.id },
+			select: {
+				gateway: true,
+				isEnabled: true,
+				bankName: true,
+				accountNumber: true,
+				accountName: true,
+			},
+			orderBy: { createdAt: "asc" },
+		}),
+		db.platformSetting.findFirst({
+			select: { awamenuPayCommissionPercent: true },
+		}),
+	]);
+
+	const paymentMethods = methodRows.map((row) => ({
+		channel: row.channel,
+		isEnabled: row.isEnabled,
+		gateway: row.gateway,
+		bankCode: row.bankCode,
+		bankName: row.bankName,
+		accountNumber: row.accountNumber,
+		accountName: row.accountName,
+		hasSecretKey: Boolean(row.secretKeyEncrypted),
+		isConnected: Boolean(row.subaccountCode),
+	}));
+
+	const commissionPercent = Number(
+		platformSettings?.awamenuPayCommissionPercent ?? 0,
+	);
+
 	const qrUrl = `${env.NEXT_PUBLIC_APP_URL}/${restaurant.slug}`;
+	// `/staff/{slug}` rather than `/staff/{slug}/login` — it redirects to the
+	// login screen when there's no session, and straight to the order feed when
+	// there is, so a staff device that's already signed in skips the form.
+	const staffLoginUrl = `${env.NEXT_PUBLIC_APP_URL}/${restaurant.slug}/staff`;
 
 	return (
 		<div className="mx-auto w-full max-w-6xl pb-12">
@@ -121,6 +175,13 @@ export default async function SettingsPage({
 						activeTemplate={restaurant.activeTemplate}
 					/>
 
+					<PaymentIntegrations
+						slug={restaurant.slug}
+						methods={paymentMethods}
+						payoutAccounts={payoutRows}
+						commissionPercent={commissionPercent}
+					/>
+
 					<BankAccountsManager
 						slug={restaurant.slug}
 						bankAccounts={restaurant.bankAccounts}
@@ -142,6 +203,7 @@ export default async function SettingsPage({
 						dineInPaymentPolicy={restaurant.dineInPaymentPolicy}
 						hasStaffDashboardPassword={!!restaurant.staffDashboardPassword}
 						staffDashboardAutoLockHours={restaurant.staffDashboardAutoLockHours}
+						staffLoginUrl={staffLoginUrl}
 					/>
 
 					<AdminAccountSettings />

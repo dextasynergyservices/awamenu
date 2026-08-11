@@ -21,6 +21,27 @@ export default async function SuperAdminSettingsPage() {
 				paystackPublicKey={settings?.paystackPublicKey ?? null}
 				hasSecretKey={Boolean(settings?.paystackSecretKey)}
 				maintenanceMode={settings?.maintenanceMode ?? false}
+				awamenuPayCommissionPercent={Number(
+					settings?.awamenuPayCommissionPercent ?? 0,
+				)}
+				enabledPaymentChannels={
+					settings?.enabledPaymentChannels ?? [
+						"AWAMENU_PAY",
+						"OWN_GATEWAY",
+						"BANK_TRANSFER",
+						"CASH",
+					]
+				}
+				awamenuPayProviders={
+					settings?.awamenuPayProviders ?? ["PAYSTACK", "MONNIFY"]
+				}
+				ownGatewayProviders={
+					settings?.ownGatewayProviders ?? [
+						"PAYSTACK",
+						"FLUTTERWAVE",
+						"MONNIFY",
+					]
+				}
 			/>
 		</div>
 	);

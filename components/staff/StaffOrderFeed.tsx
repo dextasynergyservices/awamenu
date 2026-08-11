@@ -691,12 +691,12 @@ function ReservationAction({
 	const [promptingPin, setPromptingPin] = useState(false);
 	const [isPending, startTransition] = useTransition();
 
-	function handleApprove(pin: string) {
+	function handleApprove(staffId: string) {
 		setPromptingPin(false);
 		const fd = new FormData();
 		fd.set("reservationId", res.id);
 		fd.set("slug", slug);
-		fd.set("pin", pin);
+		fd.set("staffId", staffId);
 		startTransition(async () => {
 			try {
 				await staffApproveReservationAction(fd);
@@ -761,14 +761,14 @@ function StaffOrderDetailsModal({
 		setPromptingPin(true);
 	}
 
-	function submitAction(pin: string) {
+	function submitAction(staffId: string) {
 		setPromptingPin(false);
 		setError("");
 		const fd = new FormData();
 		fd.set("orderId", order.id);
 		fd.set("status", nextStatus);
 		fd.set("slug", slug);
-		fd.set("pin", pin);
+		fd.set("staffId", staffId);
 		startTransition(async () => {
 			try {
 				await staffUpdateOrderStatusAction(fd);

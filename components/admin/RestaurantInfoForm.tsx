@@ -42,7 +42,14 @@ export function RestaurantInfoForm({
 		env.NEXT_PUBLIC_APP_URL ?? "https://awamenu.com"
 	).replace(/^https?:\/\//, "");
 
-	const [formValues, setFormValues] = useState<RestaurantInfoFormValues>({
+	// Normalised once and compared against itself below. Previously the
+	// nullable props were normalised on the way *into* `prevProps` but compared
+	// in their raw form, so a null `description`/`phone`/`address` made the
+	// check `null !== ""` — true on every render. That set state during render,
+	// which re-rendered, which compared again... an infinite loop that React
+	// aborts with error #301 ("Too many re-renders"). Every restaurant with an
+	// empty description hit it, so the settings page failed to load at all.
+	const incoming: RestaurantInfoFormValues = {
 		name,
 		slug,
 		description: description ?? "",
@@ -50,45 +57,24 @@ export function RestaurantInfoForm({
 		address: address ?? "",
 		currency,
 		timezone,
-	});
+	};
 
-	const [prevProps, setPrevProps] = useState<RestaurantInfoFormValues>({
-		name,
-		slug,
-		description: description ?? "",
-		phone: phone ?? "",
-		address: address ?? "",
-		currency,
-		timezone,
-	});
+	const [formValues, setFormValues] =
+		useState<RestaurantInfoFormValues>(incoming);
+	const [prevProps, setPrevProps] =
+		useState<RestaurantInfoFormValues>(incoming);
 
 	if (
-		name !== prevProps.name ||
-		slug !== prevProps.slug ||
-		description !== prevProps.description ||
-		phone !== prevProps.phone ||
-		address !== prevProps.address ||
-		currency !== prevProps.currency ||
-		timezone !== prevProps.timezone
+		incoming.name !== prevProps.name ||
+		incoming.slug !== prevProps.slug ||
+		incoming.description !== prevProps.description ||
+		incoming.phone !== prevProps.phone ||
+		incoming.address !== prevProps.address ||
+		incoming.currency !== prevProps.currency ||
+		incoming.timezone !== prevProps.timezone
 	) {
-		setPrevProps({
-			name,
-			slug,
-			description: description ?? "",
-			phone: phone ?? "",
-			address: address ?? "",
-			currency,
-			timezone,
-		});
-		setFormValues({
-			name,
-			slug,
-			description: description ?? "",
-			phone: phone ?? "",
-			address: address ?? "",
-			currency,
-			timezone,
-		});
+		setPrevProps(incoming);
+		setFormValues(incoming);
 	}
 
 	return (

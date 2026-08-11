@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AnalyticsDashboard } from "@/components/admin/AnalyticsDashboard";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -20,18 +21,15 @@ export default async function AnalyticsPage({
 
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug, ownerId: user.id },
-		select: {
-			id: true,
-			currency: true,
-			subscription: {
-				select: { plan: { select: { tier: true, advancedAnalytics: true } } },
-			},
-		},
+		select: { id: true, currency: true },
 	});
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
 
-	const isAdvanced = restaurant.subscription?.plan.advancedAnalytics ?? false;
+	// Resolved through the shared resolver rather than read off the plan row —
+	// a lapsed subscription would otherwise keep advanced analytics.
+	const isAdvanced = (await getRestaurantPlanFeatures(restaurant.id))
+		.advancedAnalytics;
 
 	const [totalOrders, revenueAgg, totalScans, ratingAgg, totalRatings] =
 		await Promise.all([

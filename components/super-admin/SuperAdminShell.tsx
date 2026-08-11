@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	CalendarClock,
 	ClipboardList,
 	CreditCard,
 	Ellipsis,
@@ -30,6 +31,7 @@ const navItems = [
 	{ label: "Overview", href: "", icon: LayoutDashboard },
 	{ label: "Restaurants", href: "/restaurants", icon: Store },
 	{ label: "Plans", href: "/plans", icon: CreditCard },
+	{ label: "Subscriptions", href: "/subscriptions", icon: CalendarClock },
 	{ label: "Users", href: "/users", icon: Users },
 	{ label: "Payments", href: "/payments", icon: Receipt },
 	{ label: "Reviews & Ratings", href: "/reviews", icon: Star },
@@ -46,6 +48,7 @@ const mobileNavItems = [
 ];
 
 const moreNavItems = [
+	{ label: "Subscriptions", href: "/subscriptions", icon: CalendarClock },
 	{ label: "Payments", href: "/payments", icon: Receipt },
 	{ label: "Reviews & Ratings", href: "/reviews", icon: Star },
 	{ label: "Analytics", href: "/analytics", icon: TrendingUp },

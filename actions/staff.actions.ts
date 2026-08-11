@@ -1,6 +1,5 @@
 "use server";
 
-import { createHash } from "node:crypto";
 import {
 	DineInPaymentMethod,
 	NotificationAudience,
@@ -17,13 +16,14 @@ import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import {
+	decryptSecret,
+	isEncryptedSecret,
+	secretsMatch,
+} from "@/lib/secret-box";
 import { createStaffSession, destroyStaffSession } from "@/lib/staff-auth";
 import { generateStaffId } from "@/lib/staff-id";
 import { resolveStaffPermissions } from "@/lib/staff-permissions";
-
-function hashPin(pin: string): string {
-	return createHash("sha256").update(pin).digest("hex");
-}
 
 // ─── Helpers ──────────────────────────────────────────
 
@@ -48,7 +48,17 @@ async function verifyOwnerPassword(userId: string, password: string) {
 	}
 }
 
-export async function verifyStaffAction(slug: string, pin: string) {
+/**
+ * Identifies which staff member is performing an action, so it can be
+ * attributed to them in the order timeline.
+ *
+ * This is attribution, not authentication — access to the staff dashboard is
+ * already granted by the restaurant's shared password. It previously asked for
+ * a separate 4-digit PIN, which read as a second login and confused staff; the
+ * Staff ID is the identifier the system already issues and shows to the owner,
+ * so it's used directly.
+ */
+export async function verifyStaffAction(slug: string, staffId: string) {
 	const restaurant = await db.restaurant.findUnique({
 		where: { slug, isActive: true },
 		select: {
@@ -72,13 +82,15 @@ export async function verifyStaffAction(slug: string, pin: string) {
 	const staff = await db.staffMember.findFirst({
 		where: {
 			restaurantId: restaurant.id,
-			pinHash: hashPin(pin),
+			// Scoped to this restaurant as well as the id, so an id from another
+			// restaurant can never attribute actions here.
+			staffId: staffId.trim().toUpperCase(),
 			isActive: true,
 		},
 	});
 
 	if (!staff) {
-		throw new Error("Invalid Staff PIN.");
+		throw new Error("Invalid Staff ID.");
 	}
 
 	const permissions = resolveStaffPermissions(restaurant, staff);
@@ -104,45 +116,53 @@ export async function createStaffAction(formData: FormData) {
 		select: { id: true, slug: true, _count: { select: { staff: true } } },
 	});
 
-	const staffId = generateStaffId(restaurant.slug, restaurant._count.staff + 1);
-
-	let pin = "";
-	let isUnique = false;
-	while (!isUnique) {
-		pin = Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(
-			"",
-		);
-		const existing = await db.staffMember.findFirst({
-			where: {
-				restaurantId: restaurant.id,
-				pinHash: hashPin(pin),
-				isActive: true,
-			},
-		});
-		if (!existing) isUnique = true;
-	}
+	const staffId = await generateUniqueStaffId();
 
 	await db.staffMember.create({
 		data: {
 			restaurantId: restaurant.id,
 			name: input.name,
 			staffId,
-			pinHash: hashPin(pin),
 		},
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/staff`);
-	return { staffId, pin };
+	return { staffId };
 }
 
-const resetPinSchema = z.object({
+/**
+ * `StaffMember.staffId` is globally unique, so a generated value has to be
+ * checked against every restaurant's, not just this one's. Bounded rather than
+ * looping forever — with a 33-character alphabet over 6 places a collision is
+ * vanishingly unlikely, and failing loudly beats spinning.
+ */
+async function generateUniqueStaffId(): Promise<string> {
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const candidate = generateStaffId();
+		const taken = await db.staffMember.findUnique({
+			where: { staffId: candidate },
+			select: { id: true },
+		});
+		if (!taken) return candidate;
+	}
+	throw new Error("Could not generate a unique Staff ID. Please try again.");
+}
+
+const rotateStaffIdSchema = z.object({
 	slug: z.string().min(1),
 	staffMemberId: z.string().cuid(),
 });
 
-export async function resetPinAction(formData: FormData) {
+/**
+ * Issues a fresh Staff ID for one member — used when an ID has been shared too
+ * widely or a member leaves and their code is still circulating.
+ *
+ * Past orders keep their attribution: the timeline references the immutable
+ * `StaffMember.id`, not this human-facing code.
+ */
+export async function rotateStaffIdAction(formData: FormData) {
 	const user = await requireUser();
-	const input = resetPinSchema.parse({
+	const input = rotateStaffIdSchema.parse({
 		slug: formData.get("slug"),
 		staffMemberId: formData.get("staffMemberId"),
 	});
@@ -152,29 +172,15 @@ export async function resetPinAction(formData: FormData) {
 		select: { id: true, slug: true },
 	});
 
-	let pin = "";
-	let isUnique = false;
-	while (!isUnique) {
-		pin = Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join(
-			"",
-		);
-		const existing = await db.staffMember.findFirst({
-			where: {
-				restaurantId: restaurant.id,
-				pinHash: hashPin(pin),
-				isActive: true,
-			},
-		});
-		if (!existing) isUnique = true;
-	}
+	const staffId = await generateUniqueStaffId();
 
 	await db.staffMember.update({
 		where: { id: input.staffMemberId, restaurantId: restaurant.id },
-		data: { pinHash: hashPin(pin) },
+		data: { staffId },
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/staff`);
-	return { pin };
+	return { staffId };
 }
 
 const deactivateStaffSchema = z.object({
@@ -357,11 +363,20 @@ export async function staffLoginAction(formData: FormData) {
 		throw new Error("Invalid login credentials.");
 	}
 
-	const { verifyPassword } = await import("better-auth/crypto");
-	const valid = await verifyPassword({
-		hash: restaurant.staffDashboardPassword,
-		password: input.password,
-	});
+	// Passwords set from the settings form are encrypted (so the owner can read
+	// them back). Anything stored before that change is a scrypt hash, which
+	// still has to authenticate until the owner saves a new password.
+	const stored = restaurant.staffDashboardPassword;
+	const valid = isEncryptedSecret(stored)
+		? (() => {
+				const plain = decryptSecret(stored);
+				return plain !== null && secretsMatch(plain, input.password);
+			})()
+		: await (await import("better-auth/crypto")).verifyPassword({
+				hash: stored,
+				password: input.password,
+			});
+
 	if (!valid) {
 		throw new Error("Invalid password.");
 	}
@@ -372,19 +387,19 @@ export async function staffLoginAction(formData: FormData) {
 		restaurant.slug,
 		restaurant.staffDashboardAutoLockHours,
 	);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }
 
 export async function staffLogoutAction(slug: string) {
 	await destroyStaffSession();
-	redirect(`/staff/${slug}/login`);
+	redirect(`/${slug}/staff/login`);
 }
 
 // ─── Staff Order Actions ──────────────────────────────
 
 const recordDineInPaymentSchema = z.object({
 	slug: z.string().min(1),
-	pin: z.string().length(4),
+	staffId: z.string().min(4).max(12),
 	orderId: z.string().cuid(),
 	amountPaid: z.number().positive(),
 	paymentMethod: z.nativeEnum(DineInPaymentMethod),
@@ -393,13 +408,25 @@ const recordDineInPaymentSchema = z.object({
 export async function recordDineInPaymentAction(formData: FormData) {
 	const input = recordDineInPaymentSchema.parse({
 		slug: formData.get("slug"),
-		pin: formData.get("pin"),
+		staffId: formData.get("staffId"),
 		orderId: formData.get("orderId"),
 		amountPaid: Number(formData.get("amountPaid")),
 		paymentMethod: formData.get("paymentMethod"),
 	});
 
-	const { staff, restaurant } = await verifyStaffAction(input.slug, input.pin);
+	const { staff, permissions, restaurant } = await verifyStaffAction(
+		input.slug,
+		input.staffId,
+	);
+
+	// Hiding the button in the UI isn't enforcement — this is a server action,
+	// so it's reachable directly. Without this check a staff member whose
+	// "Record Cash Payments" permission is off could still record one.
+	if (!permissions.cashPayment) {
+		throw new Error(
+			"You do not have permission to record payments for this restaurant.",
+		);
+	}
 
 	const order = await db.order.findFirstOrThrow({
 		where: {
@@ -449,12 +476,12 @@ export async function recordDineInPaymentAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
 	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }
 
 const staffUpdateOrderStatusSchema = z.object({
 	slug: z.string().min(1),
-	pin: z.string().length(4),
+	staffId: z.string().min(4).max(12),
 	orderId: z.string().cuid(),
 	status: z.nativeEnum(OrderStatus),
 });
@@ -462,14 +489,14 @@ const staffUpdateOrderStatusSchema = z.object({
 export async function staffUpdateOrderStatusAction(formData: FormData) {
 	const input = staffUpdateOrderStatusSchema.parse({
 		slug: formData.get("slug"),
-		pin: formData.get("pin"),
+		staffId: formData.get("staffId"),
 		orderId: formData.get("orderId"),
 		status: formData.get("status"),
 	});
 
 	const { staff, permissions, restaurant } = await verifyStaffAction(
 		input.slug,
-		input.pin,
+		input.staffId,
 	);
 
 	// Cannot cancel or complete via this action
@@ -564,25 +591,25 @@ export async function staffUpdateOrderStatusAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
 	revalidatePath(`/${restaurant.slug}/order/${input.orderId}`);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }
 
 const staffApproveReservationSchema = z.object({
 	slug: z.string().min(1),
-	pin: z.string().length(4),
+	staffId: z.string().min(4).max(12),
 	reservationId: z.string().cuid(),
 });
 
 export async function staffApproveReservationAction(formData: FormData) {
 	const input = staffApproveReservationSchema.parse({
 		slug: formData.get("slug"),
-		pin: formData.get("pin"),
+		staffId: formData.get("staffId"),
 		reservationId: formData.get("reservationId"),
 	});
 
 	const { staff, permissions, restaurant } = await verifyStaffAction(
 		input.slug,
-		input.pin,
+		input.staffId,
 	);
 
 	if (!permissions.approveReservations) {
@@ -621,5 +648,5 @@ export async function staffApproveReservationAction(formData: FormData) {
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
-	revalidatePath(`/staff/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/staff`);
 }

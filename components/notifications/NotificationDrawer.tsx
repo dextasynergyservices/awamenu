@@ -183,7 +183,7 @@ export function NotificationDrawer({
 										) {
 											const query =
 												selectedNotification.actionUrl.split("?")[1];
-											router.push(`/staff/${slug}?${query || ""}`);
+											router.push(`/${slug}/staff?${query || ""}`);
 										} else if (selectedNotification.actionUrl) {
 											router.push(selectedNotification.actionUrl);
 										}

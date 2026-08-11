@@ -76,7 +76,6 @@ export function StaffManager({
 }: StaffManagerProps) {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [createdStaffId, setCreatedStaffId] = useState<string | null>(null);
-	const [createdPin, setCreatedPin] = useState<string | null>(null);
 	const [resetPinStaff, setResetPinStaff] = useState<StaffItem | null>(null);
 	const [globalOpen, setGlobalOpen] = useState(false);
 	const [permModalStaff, setPermModalStaff] = useState<StaffItem | null>(null);
@@ -320,10 +319,8 @@ export function StaffManager({
 				<CreateStaffModal
 					slug={slug}
 					createdStaffId={createdStaffId}
-					createdPin={createdPin}
-					onCreated={(id, pin) => {
+					onCreated={(id) => {
 						setCreatedStaffId(id);
-						setCreatedPin(pin);
 					}}
 					onClose={() => setCreateOpen(false)}
 				/>
@@ -609,7 +606,7 @@ function MobileStaffCard({
 						className="flex items-center gap-3 px-4 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-100"
 					>
 						<RefreshCw className="size-4" />
-						Reset PIN
+						New Staff ID
 					</button>
 					{staff.isActive ? (
 						<button
@@ -678,14 +675,12 @@ function PermBadge({
 function CreateStaffModal({
 	slug,
 	createdStaffId,
-	createdPin,
 	onCreated,
 	onClose,
 }: {
 	slug: string;
 	createdStaffId: string | null;
-	createdPin: string | null;
-	onCreated: (id: string, pin: string) => void;
+	onCreated: (id: string) => void;
 	onClose: () => void;
 }) {
 	const router = useRouter();
@@ -705,7 +700,7 @@ function CreateStaffModal({
 		startTransition(async () => {
 			try {
 				const result = await createStaffAction(fd);
-				onCreated(result.staffId, result.pin);
+				onCreated(result.staffId);
 				setName("");
 				router.refresh();
 			} catch (err) {
@@ -743,11 +738,16 @@ function CreateStaffModal({
 				{createdStaffId ? (
 					<div className="mt-5">
 						<p className="text-sm font-medium text-slate-600">
-							Share this Staff ID with your team member. They will use it to log
-							in at{" "}
-							<code className="rounded bg-slate-100 px-1 font-mono text-xs">
-								/staff/{slug}/login
-							</code>
+							Give this Staff ID to{" "}
+							<span className="font-black text-slate-900">
+								{name || "them"}
+							</span>
+							. They enter it when taking or updating an order, so their work is
+							recorded against their name.
+						</p>
+						<p className="mt-2 text-sm font-medium text-slate-600">
+							They sign in to the staff dashboard with the restaurant&apos;s
+							shared staff password — not this ID.
 						</p>
 						<div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
 							<code className="flex-1 text-lg font-black text-emerald-800">
@@ -768,15 +768,6 @@ function CreateStaffModal({
 									</>
 								)}
 							</button>
-						</div>
-
-						<p className="mt-4 text-sm font-medium text-slate-600">
-							Their 4-digit PIN for attributing actions is:
-						</p>
-						<div className="mt-2 flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-							<code className="flex-1 text-2xl tracking-widest font-black text-blue-800">
-								{createdPin}
-							</code>
 						</div>
 
 						<button
@@ -824,9 +815,9 @@ function CreateStaffModal({
 	);
 }
 
-// ─── Reset PIN Modal ──────────────────────────────────
+// ─── Rotate Staff ID Modal ────────────────────────────
 
-import { resetPinAction } from "@/actions/staff.actions";
+import { rotateStaffIdAction } from "@/actions/staff.actions";
 
 function ResetPinModal({
 	slug,
@@ -839,7 +830,8 @@ function ResetPinModal({
 }) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
-	const [newPin, setNewPin] = useState<string | null>(null);
+	const [newStaffId, setNewStaffId] = useState<string | null>(null);
+	const [copied, setCopied] = useState(false);
 
 	function handleReset() {
 		const fd = new FormData();
@@ -848,8 +840,8 @@ function ResetPinModal({
 
 		startTransition(async () => {
 			try {
-				const result = await resetPinAction(fd);
-				setNewPin(result.pin);
+				const result = await rotateStaffIdAction(fd);
+				setNewStaffId(result.staffId);
 				router.refresh();
 			} catch (err) {
 				console.error(err);
@@ -862,7 +854,7 @@ function ResetPinModal({
 			<div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
 				<div className="flex items-center justify-between">
 					<h3 className="text-xl font-black text-slate-950">
-						{newPin ? "PIN Reset Successful" : "Reset Staff PIN"}
+						{newStaffId ? "New Staff ID issued" : "Issue a new Staff ID"}
 					</h3>
 					<button
 						type="button"
@@ -873,15 +865,34 @@ function ResetPinModal({
 					</button>
 				</div>
 
-				{newPin ? (
+				{newStaffId ? (
 					<div className="mt-5">
 						<p className="text-sm font-medium text-slate-600">
-							The new 4-digit PIN for {staff.name} is:
+							{staff.name}&apos;s new Staff ID is:
 						</p>
-						<div className="mt-4 flex items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 p-4">
-							<code className="text-3xl tracking-widest font-black text-blue-800">
-								{newPin}
+						<div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+							<code className="flex-1 text-2xl font-black tracking-widest text-emerald-800">
+								{newStaffId}
 							</code>
+							<button
+								type="button"
+								onClick={() => {
+									navigator.clipboard.writeText(newStaffId);
+									setCopied(true);
+									setTimeout(() => setCopied(false), 2000);
+								}}
+								className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white"
+							>
+								{copied ? (
+									<>
+										<Check className="size-3.5" /> Copied
+									</>
+								) : (
+									<>
+										<ClipboardCopy className="size-3.5" /> Copy
+									</>
+								)}
+							</button>
 						</div>
 						<button
 							type="button"
@@ -893,9 +904,10 @@ function ResetPinModal({
 					</div>
 				) : (
 					<div className="mt-5">
-						<p className="text-sm font-medium text-slate-600 mb-5">
-							Are you sure you want to generate a new PIN for {staff.name}? The
-							old PIN will immediately stop working.
+						<p className="mb-5 text-sm font-medium text-slate-600">
+							Issue a new Staff ID for {staff.name}? Their old ID stops working
+							immediately, so give them the new one. Orders they&apos;ve already
+							handled stay credited to them.
 						</p>
 						<button
 							type="button"
@@ -903,7 +915,7 @@ function ResetPinModal({
 							disabled={isPending}
 							className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-emerald-700 text-sm font-black text-white disabled:opacity-50"
 						>
-							{isPending ? "Generating new PIN…" : "Yes, generate new PIN"}
+							{isPending ? "Issuing new ID…" : "Yes, issue a new Staff ID"}
 						</button>
 					</div>
 				)}
@@ -1403,7 +1415,7 @@ function DesktopStaffCard({
 						type="button"
 						onClick={onResetPin}
 						className="grid size-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 sm:size-9 sm:rounded-xl"
-						title="Reset Staff PIN"
+						title="Issue a new Staff ID"
 					>
 						<RefreshCw className="size-3.5 sm:size-4" />
 					</button>
