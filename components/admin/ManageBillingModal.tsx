@@ -116,7 +116,8 @@ export function ManageBillingModal({
 		setIsCancelling(true);
 		setErrorMsg(null);
 		try {
-			await initiateAddCardAction(slug);
+			const result = await initiateAddCardAction(slug);
+			if ("error" in result) throw new Error(result.error);
 		} catch {
 			setErrorMsg("Failed to initiate add card flow.");
 			setIsCancelling(false);

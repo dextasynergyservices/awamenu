@@ -32,6 +32,7 @@ import {
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { env } from "@/env";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 import type { BannerItem } from "@/lib/banners";
@@ -366,7 +367,7 @@ export function CheckoutFlow({
 				{/* Main Grid */}
 				<div className="mt-4 sm:mt-5 grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_26rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
 					{/* Checkout Form */}
-					<form
+					<ActionForm
 						action={createOrderAction}
 						className="rounded-2xl sm:rounded-[1.4rem] md:rounded-[1.75rem] border border-slate-200 bg-white p-4 sm:p-5 md:p-7 shadow-[0_20px_60px_rgba(15,23,42,0.06)]"
 					>
@@ -829,7 +830,7 @@ export function CheckoutFlow({
 							<Lock className="size-3.5 sm:size-4" aria-hidden="true" />
 							Your information is secure and encrypted
 						</p>
-					</form>
+					</ActionForm>
 
 					{/* Cart Aside */}
 					<aside className="rounded-2xl sm:rounded-[1.4rem] md:rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:sticky lg:top-6 lg:self-start">

@@ -699,7 +699,8 @@ function ReservationAction({
 		fd.set("staffId", staffId);
 		startTransition(async () => {
 			try {
-				await staffApproveReservationAction(fd);
+				const result = await staffApproveReservationAction(fd);
+				if ("error" in result) throw new Error(result.error);
 				router.refresh();
 			} catch (err) {
 				alert(
@@ -771,7 +772,8 @@ function StaffOrderDetailsModal({
 		fd.set("staffId", staffId);
 		startTransition(async () => {
 			try {
-				await staffUpdateOrderStatusAction(fd);
+				const result = await staffUpdateOrderStatusAction(fd);
+				if ("error" in result) throw new Error(result.error);
 				router.refresh();
 				onClose();
 			} catch (err) {

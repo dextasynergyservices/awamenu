@@ -25,6 +25,7 @@ import { TableCreateModal } from "@/components/admin/TableCreateModal";
 import { TableEditModal } from "@/components/admin/TableEditModal";
 import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
@@ -989,7 +990,7 @@ function SettingsPanel({
 				<Settings className="size-5" aria-hidden="true" />
 				Reservation Settings
 			</summary>
-			<form
+			<ActionForm
 				action={upsertReservationSettingAction}
 				className="mt-3 grid gap-4 rounded-3xl border border-slate-100 bg-white p-4 shadow-2xl md:absolute md:right-0 md:z-40 md:w-[min(62rem,calc(100vw-22rem))] md:p-5"
 			>
@@ -1138,7 +1139,7 @@ function SettingsPanel({
 				<SubmitButton className="min-h-11 w-fit rounded-xl bg-emerald-700 px-5 text-sm font-black text-white">
 					Save settings
 				</SubmitButton>
-			</form>
+			</ActionForm>
 		</details>
 	);
 }

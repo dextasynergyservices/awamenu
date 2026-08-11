@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { completeSetupAction } from "@/actions/onboarding.actions";
 import { RestaurantNameSlugFields } from "@/components/onboarding/RestaurantNameSlugFields";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { requireUser } from "@/lib/auth-guards";
 import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
@@ -72,7 +73,7 @@ export default async function SetupPage({
 				<h1 className="mt-2 text-2xl font-semibold text-zinc-950">
 					Create your restaurant
 				</h1>
-				<form action={completeSetupAction} className="mt-6 grid gap-4">
+				<ActionForm action={completeSetupAction} className="mt-6 grid gap-4">
 					{planId ? <input type="hidden" name="planId" value={planId} /> : null}
 					<input type="hidden" name="billingInterval" value={billingInterval} />
 					<RestaurantNameSlugFields />
@@ -104,7 +105,7 @@ export default async function SetupPage({
 					>
 						Complete Setup
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</section>
 		</main>
 	);

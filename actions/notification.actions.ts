@@ -2,6 +2,7 @@
 
 import { NotificationAudience } from "@prisma/client";
 import { z } from "zod";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { db } from "@/lib/db";
 import { requireNotificationAccess } from "@/lib/notification-auth";
 
@@ -123,36 +124,38 @@ const markReadSchema = z.object({
 export async function markNotificationReadAction(
 	input: z.infer<typeof markReadSchema>,
 ) {
-	const raw = markReadSchema.parse(input);
-	// The notification's own restaurant is the authorisation subject — the
-	// caller only supplies a notification id here.
-	const notification = await db.notification.findUnique({
-		where: { id: raw.notificationId },
-		select: { restaurantId: true },
-	});
-	if (!notification) throw new Error("Notification not found.");
+	return actionResult(async () => {
+		const raw = markReadSchema.parse(input);
+		// The notification's own restaurant is the authorisation subject — the
+		// caller only supplies a notification id here.
+		const notification = await db.notification.findUnique({
+			where: { id: raw.notificationId },
+			select: { restaurantId: true },
+		});
+		if (!notification) throw new ActionError("Notification not found.");
 
-	const auth = await requireNotificationAccess({
-		restaurantId: notification.restaurantId,
-		recipientType: raw.recipientType,
-		recipientId: raw.recipientId,
-	});
-	const parsed = { ...raw, recipientId: auth.recipientId };
+		const auth = await requireNotificationAccess({
+			restaurantId: notification.restaurantId,
+			recipientType: raw.recipientType,
+			recipientId: raw.recipientId,
+		});
+		const parsed = { ...raw, recipientId: auth.recipientId };
 
-	await db.notificationRead.upsert({
-		where: {
-			notificationId_recipientType_recipientId: {
+		await db.notificationRead.upsert({
+			where: {
+				notificationId_recipientType_recipientId: {
+					notificationId: parsed.notificationId,
+					recipientType: parsed.recipientType,
+					recipientId: parsed.recipientId,
+				},
+			},
+			create: {
 				notificationId: parsed.notificationId,
 				recipientType: parsed.recipientType,
 				recipientId: parsed.recipientId,
 			},
-		},
-		create: {
-			notificationId: parsed.notificationId,
-			recipientType: parsed.recipientType,
-			recipientId: parsed.recipientId,
-		},
-		update: {},
+			update: {},
+		});
 	});
 }
 

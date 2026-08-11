@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { env } from "@/env";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import {
 	getPlanIntervalPrice,
@@ -127,84 +128,89 @@ export async function removeCardAction() {
 }
 
 export async function changePlanAction(formData: FormData) {
-	try {
-		const user = await requireUser();
-		const planId = formData.get("planId") as string;
-		const slug = formData.get("slug") as string;
-		const billingInterval = parseBillingInterval(
-			formData.get("billingInterval"),
-		);
-
-		if (!planId || !slug) {
-			throw new Error("Missing required fields");
-		}
-
-		const newPlan = await db.plan.findUniqueOrThrow({ where: { id: planId } });
-
-		const subscription = await db.subscription.findFirst({
-			where: { userId: user.id },
-			orderBy: { createdAt: "desc" },
-			include: { plan: true },
-		});
-
-		if (subscription) {
-			const originalPlanId = subscription.originalPlanId || subscription.planId;
-			const originalPlan = await db.plan.findUniqueOrThrow({
-				where: { id: originalPlanId },
-			});
-			const currentBillingInterval = parseBillingInterval(
-				subscription.billingInterval,
+	return actionResult(async () => {
+		try {
+			const user = await requireUser();
+			const planId = formData.get("planId") as string;
+			const slug = formData.get("slug") as string;
+			const billingInterval = parseBillingInterval(
+				formData.get("billingInterval"),
 			);
-			const newPrice = getPlanIntervalPrice(newPlan, billingInterval);
-			const originalPrice = getPlanIntervalPrice(
-				originalPlan,
-				currentBillingInterval,
-			);
-			const samePlanAndInterval =
-				subscription.planId === newPlan.id &&
-				currentBillingInterval === billingInterval;
 
-			// If the new plan price is less than or equal to the original paid plan, it's a downgrade (or restoring paid plan)
-			if (!samePlanAndInterval && newPrice <= originalPrice) {
-				await db.subscription.update({
-					where: { id: subscription.id },
-					data: { planId: newPlan.id, billingInterval },
-				});
-
-				if (
-					subscription.paystackSubscriptionCode &&
-					getPlanPaystackCode(newPlan, billingInterval)
-				) {
-					// Fire and forget updating the subscription plan on Paystack
-					// Usually we need an email token, but often POST /subscription/:code works, or we just rely on DB sync
-					// Since we don't strictly require Paystack sync for downgraded amounts immediately, we skip for safety.
-				}
-
-				redirect(`/dashboard/${slug}/settings`);
+			if (!planId || !slug) {
+				throw new ActionError("Missing required fields");
 			}
-		}
 
-		// True upgrade: charge them
-		const url = await initiateSubscriptionPayment({
-			userId: user.id,
-			planId: planId,
-			billingInterval,
-			customerEmail: user.email,
-			restaurantId: subscription?.restaurantId ?? undefined,
-			// planId included so the settings page knows which plan to verify
-			// against on return — its own subscription record still shows the
-			// *old* plan at that point, since nothing has been confirmed yet.
-			callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings?planId=${planId}&billing=${billingInterval}`,
-		});
+			const newPlan = await db.plan.findUniqueOrThrow({
+				where: { id: planId },
+			});
 
-		redirect(url);
-	} catch (error) {
-		if (error instanceof Error && error.message === "NEXT_REDIRECT") {
-			throw error;
+			const subscription = await db.subscription.findFirst({
+				where: { userId: user.id },
+				orderBy: { createdAt: "desc" },
+				include: { plan: true },
+			});
+
+			if (subscription) {
+				const originalPlanId =
+					subscription.originalPlanId || subscription.planId;
+				const originalPlan = await db.plan.findUniqueOrThrow({
+					where: { id: originalPlanId },
+				});
+				const currentBillingInterval = parseBillingInterval(
+					subscription.billingInterval,
+				);
+				const newPrice = getPlanIntervalPrice(newPlan, billingInterval);
+				const originalPrice = getPlanIntervalPrice(
+					originalPlan,
+					currentBillingInterval,
+				);
+				const samePlanAndInterval =
+					subscription.planId === newPlan.id &&
+					currentBillingInterval === billingInterval;
+
+				// If the new plan price is less than or equal to the original paid plan, it's a downgrade (or restoring paid plan)
+				if (!samePlanAndInterval && newPrice <= originalPrice) {
+					await db.subscription.update({
+						where: { id: subscription.id },
+						data: { planId: newPlan.id, billingInterval },
+					});
+
+					if (
+						subscription.paystackSubscriptionCode &&
+						getPlanPaystackCode(newPlan, billingInterval)
+					) {
+						// Fire and forget updating the subscription plan on Paystack
+						// Usually we need an email token, but often POST /subscription/:code works, or we just rely on DB sync
+						// Since we don't strictly require Paystack sync for downgraded amounts immediately, we skip for safety.
+					}
+
+					redirect(`/dashboard/${slug}/settings`);
+				}
+			}
+
+			// True upgrade: charge them
+			const url = await initiateSubscriptionPayment({
+				userId: user.id,
+				planId: planId,
+				billingInterval,
+				customerEmail: user.email,
+				restaurantId: subscription?.restaurantId ?? undefined,
+				// planId included so the settings page knows which plan to verify
+				// against on return — its own subscription record still shows the
+				// *old* plan at that point, since nothing has been confirmed yet.
+				callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings?planId=${planId}&billing=${billingInterval}`,
+			});
+
+			redirect(url);
+		} catch (error) {
+			if (error instanceof Error && error.message === "NEXT_REDIRECT") {
+				throw error;
+			}
+			console.error("Change plan error:", error);
+			throw new ActionError("An unexpected error occurred.");
 		}
-		console.error("Change plan error:", error);
-		throw new Error("An unexpected error occurred.");
-	}
+	});
 }
 
 export async function getCustomerCardsAction() {
@@ -239,19 +245,23 @@ export async function getCustomerCardsAction() {
 }
 
 export async function initiateAddCardAction(slug: string) {
-	try {
-		const user = await requireUser();
-		const url = await initiateCardAddPayment({
-			userId: user.id,
-			customerEmail: user.email,
-			callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings`,
-		});
-		redirect(url);
-	} catch (error) {
-		if (error instanceof Error && error.message === "NEXT_REDIRECT")
-			throw error;
-		throw new Error("An unexpected error occurred while adding a card.");
-	}
+	return actionResult(async () => {
+		try {
+			const user = await requireUser();
+			const url = await initiateCardAddPayment({
+				userId: user.id,
+				customerEmail: user.email,
+				callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/${slug}/settings`,
+			});
+			redirect(url);
+		} catch (error) {
+			if (error instanceof Error && error.message === "NEXT_REDIRECT")
+				throw error;
+			throw new ActionError(
+				"An unexpected error occurred while adding a card.",
+			);
+		}
+	});
 }
 
 export async function turnOnAutoRenewAction(authorizationCode?: string) {

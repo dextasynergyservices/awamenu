@@ -1,10 +1,8 @@
 import { NotificationAudience, NotificationType } from "@prisma/client";
-import * as Sentry from "@sentry/nextjs";
-import { env } from "@/env";
 import { captureServerEvent } from "@/lib/analytics";
 import { db } from "@/lib/db";
-import { sendOrderConfirmationEmail } from "@/lib/email";
 import { dispatchNotification } from "@/lib/notifications";
+import { notifyOrderPlaced } from "@/lib/order-emails";
 
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
@@ -17,54 +15,29 @@ function formatMoney(value: number, currency: string) {
 export async function notifyNewOrder(orderId: string) {
 	const order = await db.order.findUniqueOrThrow({
 		where: { id: orderId },
+		// Only what the in-app notification and the analytics event need — the
+		// customer/admin emails moved to `notifyOrderPlaced`, which loads its
+		// own data. Leaving the old select in place meant fetching items, the
+		// owner's email and six fulfilment columns on every single order for
+		// nothing.
 		select: {
 			id: true,
-			customerName: true,
 			customerPhone: true,
-			customerEmail: true,
 			type: true,
-			tableNumber: true,
-			tableLabel: true,
-			deliveryAddress: true,
-			dineInPaymentMethod: true,
-			dineInServiceMode: true,
-			waiterName: true,
 			total: true,
 			restaurant: {
-				select: {
-					id: true,
-					name: true,
-					slug: true,
-					currency: true,
-					owner: { select: { email: true } },
-				},
-			},
-			items: {
-				select: {
-					name: true,
-					qty: true,
-					unitPrice: true,
-				},
+				select: { id: true, slug: true, currency: true },
 			},
 		},
 	});
-	const orderUrl = `${env.NEXT_PUBLIC_APP_URL}/${order.restaurant.slug}/order/${order.id}`;
 	const total = Number(order.total);
 
-	if (order.customerEmail) {
-		try {
-			await sendOrderConfirmationEmail({
-				to: order.customerEmail,
-				restaurantName: order.restaurant.name,
-				restaurantReplyToEmail: order.restaurant.owner.email,
-				orderId: order.id,
-				orderUrl,
-				total: formatMoney(total, order.restaurant.currency),
-			});
-		} catch (error) {
-			Sentry.captureException(error);
-		}
-	}
+	// The customer is deliberately NOT emailed here. This fires the instant an
+	// order is created, before the restaurant has seen it — telling someone
+	// "order confirmed" and then declining them is worse than saying nothing.
+	// Their confirmation goes out from `notifyOrderConfirmed` on acceptance.
+	// The restaurant, on the other hand, needs to know right now.
+	await notifyOrderPlaced(order.id);
 
 	await dispatchNotification({
 		restaurantId: order.restaurant.id,

@@ -4,6 +4,7 @@ import { Star } from "lucide-react";
 import { useState } from "react";
 import { submitRatingAction } from "@/actions/rating.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { RATING_METRIC_LABELS, type RatingMetric } from "@/lib/rating-metrics";
 
 type RatingFormProps = {
@@ -85,7 +86,7 @@ export function RatingForm({
 	);
 
 	return (
-		<form action={submitRatingAction} className="grid gap-6">
+		<ActionForm action={submitRatingAction} className="grid gap-6">
 			<input type="hidden" name="orderId" value={orderId} />
 			<input type="hidden" name="slug" value={slug} />
 			{customerName ? (
@@ -154,6 +155,6 @@ export function RatingForm({
 			>
 				Submit Rating
 			</SubmitButton>
-		</form>
+		</ActionForm>
 	);
 }

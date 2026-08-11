@@ -12,9 +12,12 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
+import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
+import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import {
 	decryptSecret,
@@ -35,7 +38,9 @@ async function verifyOwnerPassword(userId: string, password: string) {
 	});
 
 	if (!account?.password) {
-		throw new Error("Password confirmation is unavailable for this account.");
+		throw new ActionError(
+			"Password confirmation is unavailable for this account.",
+		);
 	}
 
 	const valid = await verifyPassword({
@@ -44,7 +49,7 @@ async function verifyOwnerPassword(userId: string, password: string) {
 	});
 
 	if (!valid) {
-		throw new Error("Invalid password.");
+		throw new ActionError("Invalid password.");
 	}
 }
 
@@ -57,6 +62,14 @@ async function verifyOwnerPassword(userId: string, password: string) {
  * a separate 4-digit PIN, which read as a second login and confused staff; the
  * Staff ID is the identifier the system already issues and shows to the owner,
  * so it's used directly.
+ */
+/**
+ * Resolves a staff member and their effective permissions.
+ *
+ * Deliberately throws `ActionError` rather than returning one: this is a
+ * helper, not an entry point. Every caller runs inside `actionResult`, which
+ * turns "Invalid Staff ID." into a message the staff member actually sees —
+ * a thrown message would reach production as an opaque digest instead.
  */
 export async function verifyStaffAction(slug: string, staffId: string) {
 	const restaurant = await db.restaurant.findUnique({
@@ -73,7 +86,7 @@ export async function verifyStaffAction(slug: string, staffId: string) {
 	});
 
 	if (!restaurant) {
-		throw new Error("Restaurant not found.");
+		throw new ActionError("Restaurant not found.");
 	}
 
 	const clientIp = await getClientIp();
@@ -90,7 +103,7 @@ export async function verifyStaffAction(slug: string, staffId: string) {
 	});
 
 	if (!staff) {
-		throw new Error("Invalid Staff ID.");
+		throw new ActionError("Invalid Staff ID.");
 	}
 
 	const permissions = resolveStaffPermissions(restaurant, staff);
@@ -145,7 +158,9 @@ async function generateUniqueStaffId(): Promise<string> {
 		});
 		if (!taken) return candidate;
 	}
-	throw new Error("Could not generate a unique Staff ID. Please try again.");
+	throw new ActionError(
+		"Could not generate a unique Staff ID. Please try again.",
+	);
 }
 
 const rotateStaffIdSchema = z.object({
@@ -336,58 +351,60 @@ const staffLoginSchema = z.object({
 });
 
 export async function staffLoginAction(formData: FormData) {
-	const input = staffLoginSchema.parse({
-		slug: formData.get("slug"),
-		password: formData.get("password"),
+	return actionResult(async () => {
+		const input = staffLoginSchema.parse({
+			slug: formData.get("slug"),
+			password: formData.get("password"),
+		});
+
+		const restaurant = await db.restaurant.findFirst({
+			where: { slug: input.slug, isActive: true },
+			select: {
+				id: true,
+				slug: true,
+				staffDashboardPassword: true,
+				staffDashboardAutoLockHours: true,
+			},
+		});
+
+		// Keyed on the restaurant, not the client IP alone — a shared staff
+		// password is guessable in relatively few attempts, so this needs to
+		// cap attempts per-restaurant regardless of how many IPs an attacker
+		// spreads guesses across (staff devices on the same network would
+		// otherwise all share one IP-only bucket anyway).
+		const clientIp = await getClientIp();
+		await enforceRateLimit("staffLogin", `${clientIp}:${input.slug}`);
+
+		if (!restaurant?.staffDashboardPassword) {
+			throw new ActionError("Invalid login credentials.");
+		}
+
+		// Passwords set from the settings form are encrypted (so the owner can read
+		// them back). Anything stored before that change is a scrypt hash, which
+		// still has to authenticate until the owner saves a new password.
+		const stored = restaurant.staffDashboardPassword;
+		const valid = isEncryptedSecret(stored)
+			? (() => {
+					const plain = decryptSecret(stored);
+					return plain !== null && secretsMatch(plain, input.password);
+				})()
+			: await (await import("better-auth/crypto")).verifyPassword({
+					hash: stored,
+					password: input.password,
+				});
+
+		if (!valid) {
+			throw new ActionError("Invalid password.");
+		}
+
+		await createStaffSession(
+			"shared",
+			restaurant.id,
+			restaurant.slug,
+			restaurant.staffDashboardAutoLockHours,
+		);
+		revalidatePath(`/${restaurant.slug}/staff`);
 	});
-
-	const restaurant = await db.restaurant.findFirst({
-		where: { slug: input.slug, isActive: true },
-		select: {
-			id: true,
-			slug: true,
-			staffDashboardPassword: true,
-			staffDashboardAutoLockHours: true,
-		},
-	});
-
-	// Keyed on the restaurant, not the client IP alone — a shared staff
-	// password is guessable in relatively few attempts, so this needs to
-	// cap attempts per-restaurant regardless of how many IPs an attacker
-	// spreads guesses across (staff devices on the same network would
-	// otherwise all share one IP-only bucket anyway).
-	const clientIp = await getClientIp();
-	await enforceRateLimit("staffLogin", `${clientIp}:${input.slug}`);
-
-	if (!restaurant?.staffDashboardPassword) {
-		throw new Error("Invalid login credentials.");
-	}
-
-	// Passwords set from the settings form are encrypted (so the owner can read
-	// them back). Anything stored before that change is a scrypt hash, which
-	// still has to authenticate until the owner saves a new password.
-	const stored = restaurant.staffDashboardPassword;
-	const valid = isEncryptedSecret(stored)
-		? (() => {
-				const plain = decryptSecret(stored);
-				return plain !== null && secretsMatch(plain, input.password);
-			})()
-		: await (await import("better-auth/crypto")).verifyPassword({
-				hash: stored,
-				password: input.password,
-			});
-
-	if (!valid) {
-		throw new Error("Invalid password.");
-	}
-
-	await createStaffSession(
-		"shared",
-		restaurant.id,
-		restaurant.slug,
-		restaurant.staffDashboardAutoLockHours,
-	);
-	revalidatePath(`/${restaurant.slug}/staff`);
 }
 
 export async function staffLogoutAction(slug: string) {
@@ -406,77 +423,87 @@ const recordDineInPaymentSchema = z.object({
 });
 
 export async function recordDineInPaymentAction(formData: FormData) {
-	const input = recordDineInPaymentSchema.parse({
-		slug: formData.get("slug"),
-		staffId: formData.get("staffId"),
-		orderId: formData.get("orderId"),
-		amountPaid: Number(formData.get("amountPaid")),
-		paymentMethod: formData.get("paymentMethod"),
-	});
+	return actionResult(async () => {
+		const input = recordDineInPaymentSchema.parse({
+			slug: formData.get("slug"),
+			staffId: formData.get("staffId"),
+			orderId: formData.get("orderId"),
+			amountPaid: Number(formData.get("amountPaid")),
+			paymentMethod: formData.get("paymentMethod"),
+		});
 
-	const { staff, permissions, restaurant } = await verifyStaffAction(
-		input.slug,
-		input.staffId,
-	);
-
-	// Hiding the button in the UI isn't enforcement — this is a server action,
-	// so it's reachable directly. Without this check a staff member whose
-	// "Record Cash Payments" permission is off could still record one.
-	if (!permissions.cashPayment) {
-		throw new Error(
-			"You do not have permission to record payments for this restaurant.",
+		const { staff, permissions, restaurant } = await verifyStaffAction(
+			input.slug,
+			input.staffId,
 		);
-	}
 
-	const order = await db.order.findFirstOrThrow({
-		where: {
-			id: input.orderId,
-			restaurantId: restaurant.id,
-			type: OrderType.DINE_IN,
-			paymentStatus: PaymentStatus.PENDING,
-		},
-		select: {
-			id: true,
-			total: true,
-			status: true,
-			restaurant: { select: { slug: true } },
-		},
-	});
+		// Hiding the button in the UI isn't enforcement — this is a server action,
+		// so it's reachable directly. Without this check a staff member whose
+		// "Record Cash Payments" permission is off could still record one.
+		if (!permissions.cashPayment) {
+			throw new ActionError(
+				"You do not have permission to record payments for this restaurant.",
+			);
+		}
 
-	await db.order.update({
-		where: { id: order.id },
-		data: {
-			attendingStaffId: staff.id,
-			dineInAmountPaid: input.amountPaid,
-			dineInPaidMethod: input.paymentMethod,
-			dineInPaymentRecordedAt: new Date(),
-			paymentStatus: PaymentStatus.PAID,
-			status:
-				order.status === OrderStatus.PENDING_PAYMENT
-					? OrderStatus.CONFIRMED
-					: order.status,
-			events: {
-				create: {
-					staffId: staff.id,
-					description: `Recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}`,
+		const order = await db.order.findFirstOrThrow({
+			where: {
+				id: input.orderId,
+				restaurantId: restaurant.id,
+				type: OrderType.DINE_IN,
+				paymentStatus: PaymentStatus.PENDING,
+			},
+			select: {
+				id: true,
+				total: true,
+				status: true,
+				restaurant: { select: { slug: true } },
+			},
+		});
+
+		await db.order.update({
+			where: { id: order.id },
+			data: {
+				attendingStaffId: staff.id,
+				dineInAmountPaid: input.amountPaid,
+				dineInPaidMethod: input.paymentMethod,
+				dineInPaymentRecordedAt: new Date(),
+				paymentStatus: PaymentStatus.PAID,
+				status:
+					order.status === OrderStatus.PENDING_PAYMENT
+						? OrderStatus.CONFIRMED
+						: order.status,
+				events: {
+					create: {
+						staffId: staff.id,
+						description: `Recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}`,
+					},
 				},
 			},
-		},
-	});
+		});
 
-	await dispatchNotification({
-		restaurantId: restaurant.id,
-		type: NotificationType.PAYMENT_RECEIVED,
-		audience: NotificationAudience.ADMIN,
-		title: `Payment recorded — #${order.id.slice(-6).toUpperCase()}`,
-		body: `${staff.name} recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}`,
-		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
-		metadata: { orderId: order.id, staffId: staff.id },
-	});
+		await notifyOrderPaid(input.orderId, {
+			method: input.paymentMethod === "CASH" ? "Cash" : "POS or transfer",
+		});
+		if (order.status === OrderStatus.PENDING_PAYMENT) {
+			await notifyOrderConfirmed(input.orderId);
+			await notifyCustomerOrderStatus(input.orderId, OrderStatus.CONFIRMED);
+		}
 
-	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
-	revalidatePath(`/${restaurant.slug}/order/${order.id}`);
-	revalidatePath(`/${restaurant.slug}/staff`);
+		await dispatchNotification({
+			restaurantId: restaurant.id,
+			type: NotificationType.PAYMENT_RECEIVED,
+			audience: NotificationAudience.ADMIN,
+			title: `Payment recorded — #${order.id.slice(-6).toUpperCase()}`,
+			body: `${staff.name} recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}`,
+			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
+			metadata: { orderId: order.id, staffId: staff.id },
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/orders`);
+		revalidatePath(`/${restaurant.slug}/order/${order.id}`);
+		revalidatePath(`/${restaurant.slug}/staff`);
+	});
 }
 
 const staffUpdateOrderStatusSchema = z.object({
@@ -487,111 +514,115 @@ const staffUpdateOrderStatusSchema = z.object({
 });
 
 export async function staffUpdateOrderStatusAction(formData: FormData) {
-	const input = staffUpdateOrderStatusSchema.parse({
-		slug: formData.get("slug"),
-		staffId: formData.get("staffId"),
-		orderId: formData.get("orderId"),
-		status: formData.get("status"),
-	});
+	return actionResult(async () => {
+		const input = staffUpdateOrderStatusSchema.parse({
+			slug: formData.get("slug"),
+			staffId: formData.get("staffId"),
+			orderId: formData.get("orderId"),
+			status: formData.get("status"),
+		});
 
-	const { staff, permissions, restaurant } = await verifyStaffAction(
-		input.slug,
-		input.staffId,
-	);
-
-	// Cannot cancel or complete via this action
-	if (
-		input.status === OrderStatus.CANCELLED ||
-		input.status === OrderStatus.COMPLETED
-	) {
-		throw new Error("Staff cannot cancel or directly complete orders.");
-	}
-
-	const order = await db.order.findFirstOrThrow({
-		where: { id: input.orderId, restaurantId: restaurant.id },
-		select: {
-			id: true,
-			status: true,
-			type: true,
-			paymentStatus: true,
-			dineInPaymentPolicy: true,
-			dineInPaymentMethod: true,
-		},
-	});
-
-	if (order.status === OrderStatus.CANCELLED) {
-		throw new Error("Cancelled orders cannot be updated.");
-	}
-
-	// Check type-based permission
-	const typePermission: Record<OrderType, boolean> = {
-		[OrderType.DINE_IN]: permissions.dineIn,
-		[OrderType.PICKUP]: permissions.pickup,
-		[OrderType.DELIVERY]: permissions.delivery,
-		[OrderType.TABLE_RESERVATION]: permissions.dineIn,
-	};
-
-	if (!typePermission[order.type]) {
-		throw new Error("You do not have permission to manage this type of order.");
-	}
-
-	// Check payment before preparing (non pay-after-service)
-	const paymentRequiredBeforePreparation =
-		order.type !== OrderType.DINE_IN ||
-		(Boolean(order.dineInPaymentMethod) &&
-			order.dineInPaymentPolicy !== PaymentPolicy.FLEXIBLE) ||
-		order.dineInPaymentPolicy === PaymentPolicy.PAY_BEFORE_SERVICE;
-	if (
-		paymentRequiredBeforePreparation &&
-		order.paymentStatus !== PaymentStatus.PAID &&
-		input.status !== OrderStatus.CONFIRMED
-	) {
-		throw new Error(
-			"Customer payment is required before preparing this order.",
+		const { staff, permissions, restaurant } = await verifyStaffAction(
+			input.slug,
+			input.staffId,
 		);
-	}
 
-	// Block completion if unpaid
-	if (
-		input.status === OrderStatus.DELIVERED &&
-		order.paymentStatus !== PaymentStatus.PAID
-	) {
-		throw new Error(
-			"Order cannot be marked as complete until payment is received.",
-		);
-	}
+		// Cannot cancel or complete via this action
+		if (
+			input.status === OrderStatus.CANCELLED ||
+			input.status === OrderStatus.COMPLETED
+		) {
+			throw new ActionError("Staff cannot cancel or directly complete orders.");
+		}
 
-	await db.order.update({
-		where: { id: input.orderId },
-		data: {
-			status: input.status,
-			attendingStaffId: staff.id,
-			events: {
-				create: {
-					staffId: staff.id,
-					description: `Status changed to ${input.status.replace(/_/g, " ")}`,
+		const order = await db.order.findFirstOrThrow({
+			where: { id: input.orderId, restaurantId: restaurant.id },
+			select: {
+				id: true,
+				status: true,
+				type: true,
+				paymentStatus: true,
+				dineInPaymentPolicy: true,
+				dineInPaymentMethod: true,
+			},
+		});
+
+		if (order.status === OrderStatus.CANCELLED) {
+			throw new ActionError("Cancelled orders cannot be updated.");
+		}
+
+		// Check type-based permission
+		const typePermission: Record<OrderType, boolean> = {
+			[OrderType.DINE_IN]: permissions.dineIn,
+			[OrderType.PICKUP]: permissions.pickup,
+			[OrderType.DELIVERY]: permissions.delivery,
+			[OrderType.TABLE_RESERVATION]: permissions.dineIn,
+		};
+
+		if (!typePermission[order.type]) {
+			throw new ActionError(
+				"You do not have permission to manage this type of order.",
+			);
+		}
+
+		// Check payment before preparing (non pay-after-service)
+		const paymentRequiredBeforePreparation =
+			order.type !== OrderType.DINE_IN ||
+			(Boolean(order.dineInPaymentMethod) &&
+				order.dineInPaymentPolicy !== PaymentPolicy.FLEXIBLE) ||
+			order.dineInPaymentPolicy === PaymentPolicy.PAY_BEFORE_SERVICE;
+		if (
+			paymentRequiredBeforePreparation &&
+			order.paymentStatus !== PaymentStatus.PAID &&
+			input.status !== OrderStatus.CONFIRMED
+		) {
+			throw new ActionError(
+				"Customer payment is required before preparing this order.",
+			);
+		}
+
+		// Block completion if unpaid
+		if (
+			input.status === OrderStatus.DELIVERED &&
+			order.paymentStatus !== PaymentStatus.PAID
+		) {
+			throw new ActionError(
+				"Order cannot be marked as complete until payment is received.",
+			);
+		}
+
+		await db.order.update({
+			where: { id: input.orderId },
+			data: {
+				status: input.status,
+				attendingStaffId: staff.id,
+				events: {
+					create: {
+						staffId: staff.id,
+						description: `Status changed to ${input.status.replace(/_/g, " ")}`,
+					},
 				},
 			},
-		},
-	});
+		});
 
-	await dispatchNotification({
-		restaurantId: restaurant.id,
-		type: NotificationType.ORDER_STATUS_CHANGED,
-		audience: NotificationAudience.BOTH,
-		title: "Order status updated",
-		body: `${staff.name} updated order #${input.orderId.slice(-6).toUpperCase()} to ${input.status.replace(/_/g, " ")}`,
-		actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${input.orderId}`,
-		metadata: {
-			orderId: input.orderId,
-			status: input.status,
-			staffId: staff.id,
-		},
-	});
+		await dispatchNotification({
+			restaurantId: restaurant.id,
+			type: NotificationType.ORDER_STATUS_CHANGED,
+			audience: NotificationAudience.BOTH,
+			title: "Order status updated",
+			body: `${staff.name} updated order #${input.orderId.slice(-6).toUpperCase()} to ${input.status.replace(/_/g, " ")}`,
+			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${input.orderId}`,
+			metadata: {
+				orderId: input.orderId,
+				status: input.status,
+				staffId: staff.id,
+			},
+		});
 
-	revalidatePath(`/dashboard/${restaurant.slug}/orders`);
-	revalidatePath(`/${restaurant.slug}/order/${input.orderId}`);
-	revalidatePath(`/${restaurant.slug}/staff`);
+		revalidatePath(`/dashboard/${restaurant.slug}/orders`);
+		revalidatePath(`/${restaurant.slug}/order/${input.orderId}`);
+		revalidatePath(`/${restaurant.slug}/staff`);
+	});
 }
 
 const staffApproveReservationSchema = z.object({
@@ -601,52 +632,56 @@ const staffApproveReservationSchema = z.object({
 });
 
 export async function staffApproveReservationAction(formData: FormData) {
-	const input = staffApproveReservationSchema.parse({
-		slug: formData.get("slug"),
-		staffId: formData.get("staffId"),
-		reservationId: formData.get("reservationId"),
-	});
+	return actionResult(async () => {
+		const input = staffApproveReservationSchema.parse({
+			slug: formData.get("slug"),
+			staffId: formData.get("staffId"),
+			reservationId: formData.get("reservationId"),
+		});
 
-	const { staff, permissions, restaurant } = await verifyStaffAction(
-		input.slug,
-		input.staffId,
-	);
+		const { staff, permissions, restaurant } = await verifyStaffAction(
+			input.slug,
+			input.staffId,
+		);
 
-	if (!permissions.approveReservations) {
-		throw new Error("You do not have permission to approve reservations.");
-	}
+		if (!permissions.approveReservations) {
+			throw new ActionError(
+				"You do not have permission to approve reservations.",
+			);
+		}
 
-	const reservation = await db.reservation.findFirstOrThrow({
-		where: {
-			id: input.reservationId,
+		const reservation = await db.reservation.findFirstOrThrow({
+			where: {
+				id: input.reservationId,
+				restaurantId: restaurant.id,
+				status: "PENDING_APPROVAL",
+			},
+			select: {
+				id: true,
+				customerName: true,
+				table: { select: { label: true } },
+			},
+		});
+
+		await db.reservation.update({
+			where: { id: reservation.id },
+			data: {
+				status: "APPROVED",
+				approvedAt: new Date(),
+			},
+		});
+
+		await dispatchNotification({
 			restaurantId: restaurant.id,
-			status: "PENDING_APPROVAL",
-		},
-		select: {
-			id: true,
-			customerName: true,
-			table: { select: { label: true } },
-		},
-	});
+			type: NotificationType.NEW_RESERVATION,
+			audience: NotificationAudience.ADMIN,
+			title: `Reservation approved — ${reservation.table.label}`,
+			body: `${staff.name} approved ${reservation.customerName}'s reservation`,
+			actionUrl: `/dashboard/${restaurant.slug}/reservations`,
+			metadata: { reservationId: reservation.id, staffId: staff.id },
+		});
 
-	await db.reservation.update({
-		where: { id: reservation.id },
-		data: {
-			status: "APPROVED",
-			approvedAt: new Date(),
-		},
+		revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
+		revalidatePath(`/${restaurant.slug}/staff`);
 	});
-
-	await dispatchNotification({
-		restaurantId: restaurant.id,
-		type: NotificationType.NEW_RESERVATION,
-		audience: NotificationAudience.ADMIN,
-		title: `Reservation approved — ${reservation.table.label}`,
-		body: `${staff.name} approved ${reservation.customerName}'s reservation`,
-		actionUrl: `/dashboard/${restaurant.slug}/reservations`,
-		metadata: { reservationId: reservation.id, staffId: staff.id },
-	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
-	revalidatePath(`/${restaurant.slug}/staff`);
 }

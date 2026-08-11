@@ -4,6 +4,7 @@ import { PaymentPolicy } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
@@ -11,6 +12,7 @@ import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 
 const updateSettingsSchema = z.object({
+	customerUpdateChannel: z.enum(["WHATSAPP", "SMS", "NONE"]),
 	slug: z.string().min(1),
 	dineInPaymentPolicy: z.nativeEnum(PaymentPolicy),
 	staffDashboardPassword: z.string().min(4).optional(),
@@ -51,6 +53,7 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 		dineInPaymentPolicy: formData.get("dineInPaymentPolicy"),
 		staffDashboardPassword: formData.get("staffDashboardPassword") || undefined,
 		staffDashboardAutoLockHours: formData.get("staffDashboardAutoLockHours"),
+		customerUpdateChannel: formData.get("customerUpdateChannel") ?? "WHATSAPP",
 	});
 
 	const restaurant = await db.restaurant.findFirstOrThrow({
@@ -71,6 +74,7 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 		where: { id: restaurant.id },
 		data: {
 			dineInPaymentPolicy: input.dineInPaymentPolicy,
+			customerUpdateChannel: input.customerUpdateChannel,
 			...(encryptedStaffPassword !== undefined && {
 				staffDashboardPassword: encryptedStaffPassword,
 			}),
@@ -85,54 +89,56 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 }
 
 export async function updateRestaurantInfoAction(formData: FormData) {
-	const user = await requireUser();
-	const input = updateInfoSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		name: formData.get("name"),
-		description: formData.get("description") || undefined,
-		phone: formData.get("phone") || undefined,
-		address: formData.get("address") || undefined,
-		currency: formData.get("currency") || "NGN",
-		timezone: formData.get("timezone") || "Africa/Lagos",
-	});
-
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { id: input.restaurantId, ownerId: user.id },
-		select: { id: true, slug: true },
-	});
-
-	if (input.slug !== restaurant.slug) {
-		const slugTaken = await db.restaurant.findUnique({
-			where: { slug: input.slug },
-			select: { id: true },
+	return actionResult(async () => {
+		const user = await requireUser();
+		const input = updateInfoSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			name: formData.get("name"),
+			description: formData.get("description") || undefined,
+			phone: formData.get("phone") || undefined,
+			address: formData.get("address") || undefined,
+			currency: formData.get("currency") || "NGN",
+			timezone: formData.get("timezone") || "Africa/Lagos",
 		});
-		if (slugTaken) {
-			throw new Error("That web address is already taken.");
+
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { id: input.restaurantId, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+
+		if (input.slug !== restaurant.slug) {
+			const slugTaken = await db.restaurant.findUnique({
+				where: { slug: input.slug },
+				select: { id: true },
+			});
+			if (slugTaken) {
+				throw new ActionError("That web address is already taken.");
+			}
 		}
-	}
 
-	await db.restaurant.update({
-		where: { id: restaurant.id },
-		data: {
-			slug: input.slug,
-			name: input.name,
-			description: input.description,
-			phone: input.phone,
-			address: input.address,
-			currency: input.currency,
-			timezone: input.timezone,
-		},
+		await db.restaurant.update({
+			where: { id: restaurant.id },
+			data: {
+				slug: input.slug,
+				name: input.name,
+				description: input.description,
+				phone: input.phone,
+				address: input.address,
+				currency: input.currency,
+				timezone: input.timezone,
+			},
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePath(`/${restaurant.slug}`);
+
+		if (input.slug !== restaurant.slug) {
+			// The dashboard URL itself is slug-based — without this, the page the
+			// admin is looking at would now point at a slug that no longer exists.
+			redirect(`/dashboard/${input.slug}/settings`);
+		}
 	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
-
-	if (input.slug !== restaurant.slug) {
-		// The dashboard URL itself is slug-based — without this, the page the
-		// admin is looking at would now point at a slug that no longer exists.
-		redirect(`/dashboard/${input.slug}/settings`);
-	}
 }
 
 export async function updateRestaurantBrandingAction(formData: FormData) {

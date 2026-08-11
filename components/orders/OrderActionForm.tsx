@@ -97,28 +97,28 @@ function getErrorCopy(error: unknown): ErrorCopy {
 	};
 }
 
+/**
+ * Runs the action and re-throws any *returned* error as a real Error.
+ *
+ * The order actions return `{ error }` for rules a person is meant to read,
+ * because a thrown message is replaced by an opaque digest in production.
+ * Converting it back to a throw here keeps the two call sites below — and
+ * `getErrorCopy`'s matching — working on the genuine message.
+ */
 async function runOrderAction(actionKind: OrderActionKind, formData: FormData) {
-	if (actionKind === "acceptOrder") {
-		await acceptOrderAction(formData);
-		return;
-	}
+	const result = await (actionKind === "acceptOrder"
+		? acceptOrderAction(formData)
+		: actionKind === "updateStatus"
+			? updateOrderStatusAction(formData)
+			: actionKind === "markPaid"
+				? markOrderPaidAction(formData)
+				: actionKind === "recordSplitPayment"
+					? recordSplitPaymentAction(formData)
+					: cancelOrderAction(formData));
 
-	if (actionKind === "updateStatus") {
-		await updateOrderStatusAction(formData);
-		return;
+	if (result && typeof result === "object" && "error" in result) {
+		throw new Error(result.error);
 	}
-
-	if (actionKind === "markPaid") {
-		await markOrderPaidAction(formData);
-		return;
-	}
-
-	if (actionKind === "recordSplitPayment") {
-		await recordSplitPaymentAction(formData);
-		return;
-	}
-
-	await cancelOrderAction(formData);
 }
 
 export function OrderActionForm({
