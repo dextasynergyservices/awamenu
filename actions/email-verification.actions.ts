@@ -55,11 +55,22 @@ async function issueAndSendVerification(
 	if (plan) verifyUrl.searchParams.set("plan", plan);
 	if (billing) verifyUrl.searchParams.set("billing", billing);
 
-	await sendVerificationEmail({
-		to: email,
-		verifyUrl: verifyUrl.toString(),
-		code,
-	});
+	try {
+		await sendVerificationEmail({
+			to: email,
+			verifyUrl: verifyUrl.toString(),
+			code,
+		});
+	} catch (error) {
+		// The rows are written first so the code is live the instant the email
+		// lands. If the send fails they must not survive: they leave a code
+		// nobody received and — worse — start the resend cooldown, locking the
+		// user out of the one button that could fix it.
+		await db.verification.deleteMany({
+			where: { identifier: { in: [tokenIdentifier, otpIdentifier] } },
+		});
+		throw error;
+	}
 }
 
 const sendVerificationSchema = z.object({
@@ -73,16 +84,64 @@ const sendVerificationSchema = z.object({
  * A no-op for accounts that are already verified.
  */
 export async function sendEmailVerificationAction(formData: FormData) {
-	const input = sendVerificationSchema.parse({
-		email: formData.get("email"),
-		plan: formData.get("plan") || undefined,
-		billing: formData.get("billing") || undefined,
+	return actionResult(async () => {
+		const input = sendVerificationSchema.parse({
+			email: formData.get("email"),
+			plan: formData.get("plan") || undefined,
+			billing: formData.get("billing") || undefined,
+		});
+
+		const user = await db.user.findUnique({ where: { email: input.email } });
+		if (!user || user.emailVerified) return;
+
+		try {
+			await issueAndSendVerification(input.email, input.plan, input.billing);
+		} catch {
+			throw new ActionError(
+				"We couldn't send your verification email. Use Resend on the next screen.",
+			);
+		}
+	});
+}
+
+/**
+ * Whether an email belongs to an account that exists but hasn't verified.
+ *
+ * Lets sign-in and sign-up route someone back into verification rather than
+ * failing at them — "user already exists" is a dead end for a person who
+ * simply closed the tab before entering their code.
+ */
+export async function getEmailVerificationStateAction(email: string) {
+	const parsed = z.string().email().safeParse(email);
+	if (!parsed.success) return { exists: false, verified: false };
+
+	const user = await db.user.findUnique({
+		where: { email: parsed.data },
+		select: { emailVerified: true },
 	});
 
-	const user = await db.user.findUnique({ where: { email: input.email } });
-	if (!user || user.emailVerified) return;
+	return { exists: Boolean(user), verified: Boolean(user?.emailVerified) };
+}
 
-	await issueAndSendVerification(input.email, input.plan, input.billing);
+/**
+ * Issues a fresh code for someone returning to an unverified account.
+ *
+ * Bypasses the resend cooldown on purpose: this fires once when they arrive
+ * back at the screen, not from a button they can hammer.
+ */
+export async function resumeEmailVerificationAction(formData: FormData) {
+	return actionResult(async () => {
+		const input = sendVerificationSchema.parse({
+			email: formData.get("email"),
+			plan: formData.get("plan") || undefined,
+			billing: formData.get("billing") || undefined,
+		});
+
+		const user = await db.user.findUnique({ where: { email: input.email } });
+		if (!user || user.emailVerified) return;
+
+		await issueAndSendVerification(input.email, input.plan, input.billing);
+	});
 }
 
 /**

@@ -2,6 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import {
+	getEmailVerificationStateAction,
+	resumeEmailVerificationAction,
+} from "@/actions/email-verification.actions";
 import { LoadingButton } from "@/components/ui/action-button";
 import { authClient } from "@/lib/auth-client";
 
@@ -46,6 +50,18 @@ export function LoginForm() {
 					});
 
 					if (result.error) {
+						// Someone who closed the tab mid-signup has a real account
+						// with a real password — the only thing missing is the code.
+						// Dropping them back into verification is the difference
+						// between finishing signup and giving up.
+						const state = await getEmailVerificationStateAction(email);
+						if (state.exists && !state.verified) {
+							const resume = new FormData();
+							resume.set("email", email);
+							await resumeEmailVerificationAction(resume);
+							window.location.href = `/verify-email/code?email=${encodeURIComponent(email)}&resumed=1`;
+							return;
+						}
 						setError(result.error.message ?? "Unable to sign in.");
 						return;
 					}
