@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { PaymentGateway } from "@prisma/client";
 import {
 	OnboardingStatus,
 	OrderStatus,
@@ -86,6 +87,61 @@ type PaystackVerifyResponse = {
 		};
 	};
 };
+
+/**
+ * Starts an order payment through whichever channel the restaurant configured.
+ *
+ * Falls back to the platform Paystack account when no channel is set up, so
+ * restaurants that predate the payments feature keep working unchanged.
+ */
+export async function initiateOrderPaymentForRestaurant(params: {
+	restaurantId: string;
+	orderId: string;
+	restaurantSlug: string;
+	customerName: string;
+	customerEmail?: string | null;
+	amountKobo: number;
+	/** What the customer picked when the restaurant offers more than one. */
+	preferredGateway?: PaymentGateway | null;
+}) {
+	const { resolveCheckoutGateway } = await import(
+		"@/actions/payment-settings.actions"
+	);
+	const routed = await resolveCheckoutGateway(
+		params.restaurantId,
+		params.amountKobo,
+		params.preferredGateway,
+	);
+
+	if (!routed) {
+		return initiateOrderPayment(params);
+	}
+
+	const { getGatewayAdapter } = await import("@/lib/payment-gateways");
+	const result = await getGatewayAdapter(routed.gateway).initializeCharge(
+		routed.credentials,
+		{
+			amountKobo: params.amountKobo,
+			email: params.customerEmail || `${params.orderId}@orders.awamenu.com`,
+			callbackUrl: `${env.NEXT_PUBLIC_APP_URL}/${params.restaurantSlug}/order/${params.orderId}/paystack-return`,
+			metadata: {
+				type: "ORDER",
+				orderId: params.orderId,
+				customerName: params.customerName,
+			},
+			subaccountCode: routed.subaccountCode,
+			// Verified against the live Paystack API: `bearer: "subaccount"` is
+			// rejected with "Invalid split transaction values" at every
+			// percentage_charge, so the platform account is billed by Paystack and
+			// recovers the fee through `transaction_charge` below. Changing this
+			// back will break every AwaMenu Pay checkout.
+			feeBearer: "platform",
+			platformChargeKobo: routed.platformChargeKobo,
+		},
+	);
+
+	return result.authorizationUrl;
+}
 
 export async function initiateOrderPayment(params: PaystackOrderParams) {
 	const paystackSecretKey = requireEnv("PAYSTACK_SECRET_KEY");
@@ -401,8 +457,24 @@ export async function verifySubscriptionPaymentReference(
 				paystackCustomerCode: payload.data.customer?.customer_code,
 				paystackSubscriptionCode: payload.data.subscription?.subscription_code,
 				originalPlanId: params.planId,
+				// New period, so the previous period's notice ladder no longer
+				// applies — otherwise the next expiry would send no warnings.
+				lastExpiryNoticeStage: null,
 			},
 		});
+
+		// Undo an automatic non-payment suspension now that they've paid.
+		// Gated on the notice stage so this can only reverse *our* suspension:
+		// a restaurant a super-admin deliberately suspended stays suspended.
+		if (
+			existingSubscription.lastExpiryNoticeStage === "SUSPENDED" &&
+			existingSubscription.restaurantId
+		) {
+			await db.restaurant.update({
+				where: { id: existingSubscription.restaurantId },
+				data: { isActive: true },
+			});
+		}
 	} else {
 		await db.subscription.create({
 			data: {

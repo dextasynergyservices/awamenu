@@ -217,6 +217,9 @@ export async function POST(request: Request) {
 						status: SubscriptionStatus.ACTIVE,
 						currentPeriodStart: now,
 						currentPeriodEnd: periodEnd,
+						// Fresh period — reset the expiry notice ladder so the next
+						// cycle's warnings are sent again.
+						lastExpiryNoticeStage: null,
 					},
 				});
 
@@ -228,6 +231,16 @@ export async function POST(request: Request) {
 						},
 						data: { isActive: true, hiddenByDowngrade: false },
 					});
+
+					// Lift an automatic non-payment suspension. Scoped to our own
+					// suspension marker so a super-admin's manual suspension isn't
+					// silently reversed by a renewal charge.
+					if (sub.lastExpiryNoticeStage === "SUSPENDED") {
+						await db.restaurant.update({
+							where: { id: sub.restaurantId },
+							data: { isActive: true },
+						});
+					}
 				}
 
 				if (sub.restaurant) {

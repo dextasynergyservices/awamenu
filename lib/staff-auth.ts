@@ -104,7 +104,7 @@ export async function requireStaffSession(
 ): Promise<StaffSessionPayload> {
 	const session = await getStaffSession();
 	if (!session || session.slug !== slug) {
-		redirect(`/staff/${slug}/login`);
+		redirect(`/${slug}/staff/login`);
 	}
 	return session;
 }

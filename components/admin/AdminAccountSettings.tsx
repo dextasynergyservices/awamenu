@@ -1,7 +1,7 @@
 "use client";
 
 import { Lock } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { updateAdminPasswordAction } from "@/actions/auth.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { LoadingButton } from "@/components/ui/action-button";
@@ -10,6 +10,16 @@ export function AdminAccountSettings() {
 	const [error, setError] = useState<string | null>(null);
 	const [isSuccess, setIsSuccess] = useState(false);
 	const [isPending, startTransition] = useTransition();
+
+	// The button is disabled while `isSuccess` is true. Without this it only
+	// cleared on the *next* submit — which the user couldn't reach, because the
+	// button was still disabled. Clearing it on a timer returns the form to a
+	// usable state.
+	useEffect(() => {
+		if (!isSuccess) return;
+		const timeout = window.setTimeout(() => setIsSuccess(false), 2000);
+		return () => window.clearTimeout(timeout);
+	}, [isSuccess]);
 
 	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();

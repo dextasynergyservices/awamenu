@@ -383,6 +383,16 @@ const platformSettingsSchema = z.object({
 	paystackPublicKey: optionalString(200),
 	paystackSecretKey: optionalString(200),
 	maintenanceMode: z.boolean(),
+	// Capped at 100 so a typo can't produce a split that leaves the restaurant
+	// with nothing.
+	awamenuPayCommissionPercent: z.coerce.number().min(0).max(100),
+	// Unchecked boxes send nothing, so an empty array is a legitimate "offer
+	// none of these" rather than a malformed submission.
+	enabledPaymentChannels: z.array(
+		z.enum(["AWAMENU_PAY", "OWN_GATEWAY", "BANK_TRANSFER", "CASH"]),
+	),
+	awamenuPayProviders: z.array(z.enum(["PAYSTACK", "MONNIFY"])),
+	ownGatewayProviders: z.array(z.enum(["PAYSTACK", "FLUTTERWAVE", "MONNIFY"])),
 });
 
 export async function updatePlatformSettingsAction(formData: FormData) {
@@ -393,6 +403,11 @@ export async function updatePlatformSettingsAction(formData: FormData) {
 		paystackPublicKey: formData.get("paystackPublicKey"),
 		paystackSecretKey: formData.get("paystackSecretKey"),
 		maintenanceMode: formData.get("maintenanceMode") === "on",
+		awamenuPayCommissionPercent:
+			formData.get("awamenuPayCommissionPercent") ?? 0,
+		enabledPaymentChannels: formData.getAll("enabledPaymentChannels"),
+		awamenuPayProviders: formData.getAll("awamenuPayProviders"),
+		ownGatewayProviders: formData.getAll("ownGatewayProviders"),
 	});
 
 	const existing = await db.platformSetting.findFirst({ select: { id: true } });
@@ -402,6 +417,10 @@ export async function updatePlatformSettingsAction(formData: FormData) {
 		logoUrl: input.logoUrl ?? null,
 		paystackPublicKey: input.paystackPublicKey ?? null,
 		maintenanceMode: input.maintenanceMode,
+		awamenuPayCommissionPercent: input.awamenuPayCommissionPercent,
+		enabledPaymentChannels: input.enabledPaymentChannels,
+		awamenuPayProviders: input.awamenuPayProviders,
+		ownGatewayProviders: input.ownGatewayProviders,
 	};
 
 	if (existing) {

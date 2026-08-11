@@ -233,7 +233,6 @@ model StaffMember {
 
   name     String
   staffId  String  @unique
-  pinHash  String? // Optional — staff login is ID-only
   isActive Boolean @default(true)
 
   // Per-staff permission overrides (null = inherit restaurant default)
@@ -315,6 +314,13 @@ model Subscription {
   paystackCustomerCode     String?
   paymentRef               String?
 
+  // Furthest expiry notice already sent for the *current* period ("T7", "T3",
+  // "T0", "SUSPENDED"). Makes the reminder cron idempotent: without it, every
+  // run inside the same day would re-send, and a schedule that fires more than
+  // once a day would spam owners. Cleared whenever a payment starts a new
+  // period.
+  lastExpiryNoticeStage String?
+
   restaurantId String?     @unique
   restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
 
@@ -381,12 +387,106 @@ model Restaurant {
   ratings            Rating[]
   notifications      Notification[] // All notifications for this restaurant
   bankAccounts       RestaurantBankAccount[]
+  paymentMethods     RestaurantPaymentMethod[]
+  payoutAccounts     RestaurantPayoutAccount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([ownerId])
+}
+
+// ─── Payments ─────────────────────────────────────────
+
+enum PaymentChannel {
+  AWAMENU_PAY // Online payment routed through AwaMenu's provider, settled
+  //             direct to the restaurant via a provider subaccount.
+  OWN_GATEWAY // Restaurant's own provider account and API keys.
+  BANK_TRANSFER // Manual — account details shown to the customer.
+  CASH // Manual — paid in person.
+}
+
+enum PaymentGateway {
+  PAYSTACK
+  FLUTTERWAVE
+  MONNIFY
+}
+
+/// One row per (restaurant, channel). Channels are toggled independently, so a
+/// restaurant can run AwaMenu Pay and cash together. Modelled as rows rather
+/// than columns on Restaurant so adding a channel or provider later needs no
+/// migration.
+model RestaurantPaymentMethod {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  channel   PaymentChannel
+  isEnabled Boolean        @default(false)
+  sortOrder Int            @default(0)
+
+  /// For AWAMENU_PAY: which platform provider created the subaccount.
+  /// For OWN_GATEWAY: which provider the restaurant connected.
+  gateway PaymentGateway?
+
+  // ─── OWN_GATEWAY credentials ───
+  publicKey          String?
+  /// Encrypted at rest (see lib/secret-box.ts) — a live secret key is the most
+  /// sensitive value this app stores, and it must never reach the browser.
+  secretKeyEncrypted String?
+  /// Monnify additionally requires a contract code alongside the key pair.
+  contractCode       String?
+  lastVerifiedAt     DateTime?
+
+  // ─── Bank details ───
+  // Used by AWAMENU_PAY (to create the provider subaccount) and by
+  // BANK_TRANSFER (shown to the customer). Always resolved through the
+  // provider's account-lookup API rather than typed, so the name is verified.
+  bankCode      String?
+  bankName      String?
+  accountNumber String?
+  accountName   String?
+
+  /// Provider-side subaccount identifier for AWAMENU_PAY.
+  subaccountCode String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([restaurantId, channel])
+  @@index([restaurantId])
+}
+
+/// A restaurant's settlement account at one AwaMenu Pay provider.
+///
+/// Separate from RestaurantPaymentMethod because AwaMenu Pay is not one
+/// connection: a restaurant may run Paystack, Monnify, or both at once, and a
+/// subaccount only exists at the provider that created it. Bank codes are
+/// provider-specific too, so each row stores the code as that provider issued
+/// it — a Paystack code is not valid at Monnify.
+model RestaurantPayoutAccount {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  gateway   PaymentGateway
+  /// Lets an owner keep a connected provider but stop offering it at checkout,
+  /// without destroying the subaccount (Paystack has no delete endpoint).
+  isEnabled Boolean        @default(true)
+
+  bankCode       String
+  bankName       String
+  accountNumber  String
+  accountName    String
+  /// Provider-side subaccount that receives the settlement.
+  subaccountCode String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([restaurantId, gateway])
+  @@index([restaurantId])
 }
 
 model RestaurantBankAccount {
@@ -853,6 +953,28 @@ model PlatformSetting {
   paystackPublicKey String?
   paystackSecretKey String?
   maintenanceMode   Boolean @default(false)
+
+  // Percentage AwaMenu takes from each AwaMenu Pay order, on top of the
+  // provider's own fee. Defaults to 0 — restaurants keep everything except the
+  // gateway fee — but is adjustable here without a deploy.
+  awamenuPayCommissionPercent Decimal @default(0) @db.Decimal(5, 2)
+
+  // ─── What restaurants are allowed to offer ───
+  // These are the platform's shop window. A channel or provider left out here
+  // disappears from every restaurant's settings AND is refused server-side, so
+  // a provider having a bad week can be pulled without a deploy, and a new one
+  // can be rolled out once its credentials are in place.
+  //
+  // Removing one does not disconnect restaurants already using it — their
+  // subaccounts survive; the option simply stops being offered.
+  enabledPaymentChannels PaymentChannel[] @default([AWAMENU_PAY, OWN_GATEWAY, BANK_TRANSFER, CASH])
+
+  /// Providers offered under AwaMenu Pay. Still gated by whether the platform
+  /// actually holds credentials for them — this can only narrow that set.
+  awamenuPayProviders PaymentGateway[] @default([PAYSTACK, MONNIFY])
+
+  /// Providers a restaurant may connect with their own keys.
+  ownGatewayProviders PaymentGateway[] @default([PAYSTACK, FLUTTERWAVE, MONNIFY])
 
   updatedAt DateTime @updatedAt
 }

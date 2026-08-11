@@ -33,7 +33,7 @@ export async function requireNotificationAccess(
 		input.recipientType === "staff" &&
 		staffSession?.restaurantId === input.restaurantId
 	) {
-		// Staff terminals share one identity per restaurant.
+		// Staff Dashboards share one identity per restaurant.
 		return { ...input, recipientId: "shared" };
 	}
 

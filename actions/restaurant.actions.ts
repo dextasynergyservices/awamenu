@@ -7,6 +7,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
+import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import { decryptSecret, encryptSecret } from "@/lib/secret-box";
 
 const updateSettingsSchema = z.object({
 	slug: z.string().min(1),
@@ -56,22 +58,21 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 		select: { id: true, slug: true },
 	});
 
-	// Hashed, never stored or re-displayed in plaintext — the settings form
-	// only ever sends a new password here (left blank means "keep current"),
-	// never the existing one, so there's nothing to round-trip.
-	const hashedStaffPassword =
+	// Encrypted rather than hashed. This is a shared operational credential the
+	// owner needs to read back and pass to staff, so it has to be recoverable —
+	// see lib/secret-box.ts. Reading it back is gated behind re-entering the
+	// owner's own account password.
+	const encryptedStaffPassword =
 		input.staffDashboardPassword !== undefined
-			? await (await import("better-auth/crypto")).hashPassword(
-					input.staffDashboardPassword,
-				)
+			? encryptSecret(input.staffDashboardPassword)
 			: undefined;
 
 	await db.restaurant.update({
 		where: { id: restaurant.id },
 		data: {
 			dineInPaymentPolicy: input.dineInPaymentPolicy,
-			...(hashedStaffPassword !== undefined && {
-				staffDashboardPassword: hashedStaffPassword,
+			...(encryptedStaffPassword !== undefined && {
+				staffDashboardPassword: encryptedStaffPassword,
 			}),
 			...(input.staffDashboardAutoLockHours !== undefined && {
 				staffDashboardAutoLockHours: input.staffDashboardAutoLockHours,
@@ -179,4 +180,75 @@ export async function updateRestaurantBrandingAction(formData: FormData) {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
 	revalidatePath(`/${restaurant.slug}`);
+}
+
+const revealStaffPasswordSchema = z.object({
+	slug: z.string().min(1),
+	adminPassword: z.string().min(1),
+});
+
+/**
+ * Reveals the staff dashboard password to the restaurant owner.
+ *
+ * Re-authenticates against the owner's own account password first: the
+ * dashboard session alone isn't enough, so an unattended logged-in device
+ * can't be used to lift the staff credential.
+ *
+ * Rate limited because this is a password-guessing surface — without it, the
+ * endpoint would be an unthrottled oracle for the owner's account password.
+ */
+export async function revealStaffPasswordAction(input: {
+	slug: string;
+	adminPassword: string;
+}): Promise<{ password: string } | { error: string }> {
+	const user = await requireUser();
+	const parsed = revealStaffPasswordSchema.parse(input);
+
+	try {
+		await enforceRateLimit(
+			"staffLogin",
+			`reveal:${user.id}:${await getClientIp()}`,
+		);
+	} catch {
+		return { error: "Too many attempts. Please wait a minute and try again." };
+	}
+
+	const restaurant = await db.restaurant.findFirst({
+		where: { slug: parsed.slug, ownerId: user.id },
+		select: { staffDashboardPassword: true },
+	});
+
+	if (!restaurant) return { error: "Restaurant not found." };
+	if (!restaurant.staffDashboardPassword) {
+		return { error: "No staff password has been set yet." };
+	}
+
+	const account = await db.account.findFirst({
+		where: { userId: user.id, provider: "credential" },
+		select: { password: true },
+	});
+
+	if (!account?.password) {
+		return { error: "Password confirmation isn't available for this account." };
+	}
+
+	const { verifyPassword } = await import("better-auth/crypto");
+	const validAdmin = await verifyPassword({
+		hash: account.password,
+		password: parsed.adminPassword,
+	});
+
+	if (!validAdmin) return { error: "Incorrect password." };
+
+	const plain = decryptSecret(restaurant.staffDashboardPassword);
+	if (plain === null) {
+		// Stored before staff passwords were made recoverable — it's a one-way
+		// hash, so there is nothing to reveal.
+		return {
+			error:
+				"This password was saved in an older format and can't be shown. Set a new one below to enable viewing.",
+		};
+	}
+
+	return { password: plain };
 }

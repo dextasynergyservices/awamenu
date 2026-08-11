@@ -70,7 +70,7 @@ export function SettingsCard({
 
 			{/* Mobile Bottom Sheet Modal */}
 			{isModalOpen && (
-				<div className="fixed inset-0 z-50 flex flex-col bg-white md:hidden animate-in slide-in-from-bottom-full duration-200">
+				<div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white md:hidden animate-in slide-in-from-bottom-full duration-200">
 					<div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 shadow-sm">
 						<div className="flex items-center gap-2.5">
 							<div className="grid size-8 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
@@ -88,7 +88,10 @@ export function SettingsCard({
 							<X className="size-5" />
 						</button>
 					</div>
-					<div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 pb-24">
+					{/* `min-w-0` + `overflow-x-hidden`: the sheet is the full viewport,
+					    so any panel content wider than it (a long bank name, a key
+					    placeholder) would otherwise push the page sideways. */}
+					<div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 bg-slate-50/50 pb-24">
 						{headerAction && (
 							<div className="mb-4 flex justify-end">{headerAction}</div>
 						)}

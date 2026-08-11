@@ -135,9 +135,9 @@ export function CustomerAccountDrawer({
 }: CustomerAccountDrawerProps) {
 	const [open, setOpen] = useState(false);
 	const mounted = useMounted();
-	const [identityType, setIdentityType] = useState<IdentityType>("phone");
+	const [identityType, setIdentityType] = useState<IdentityType>("email");
 	const [identifier, setIdentifier] = useState("");
-	const [channel, setChannel] = useState<OtpChannel>("whatsapp");
+	const [channel, setChannel] = useState<OtpChannel>("email");
 	const [code, setCode] = useState("");
 	const [otpRequested, setOtpRequested] = useState(false);
 	const [activeTab, setActiveTab] = useState<ActiveTab>("orders");
@@ -347,7 +347,12 @@ export function CustomerAccountDrawer({
 										</form>
 									) : (
 										<form onSubmit={handleRequestOtp} className="grid gap-4">
-											<div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
+											{/* Phone sign-in is hidden until an SMS/WhatsApp provider is
+											    wired up. It used to be the default choice, so most
+											    customers picked a channel that could never deliver a
+											    code — the request appeared to succeed and nothing
+											    ever arrived. */}
+											<div className="hidden grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1">
 												<SegmentButton
 													active={identityType === "phone"}
 													onClick={() => {

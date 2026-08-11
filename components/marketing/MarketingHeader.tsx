@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { MarketingAuthCta } from "@/components/marketing/MarketingAuthCta";
 import { LOGO_DESKTOP_URL, LOGO_ICON_URL } from "@/lib/logo";
 import { cn } from "@/lib/utils";
 
@@ -66,17 +67,14 @@ export function MarketingHeader({ variant = "light" }: MarketingHeaderProps) {
 					))}
 				</nav>
 				<div className="flex items-center gap-2">
-					<Link
-						href="/login"
-						className={cn(
+					<MarketingAuthCta
+						signedOutClassName={cn(
 							"hidden h-11 items-center justify-center rounded-full px-5 text-sm font-bold sm:inline-flex",
 							isDark
 								? "bg-white/10 text-white hover:bg-white/15"
 								: "border border-slate-200 text-slate-700 hover:bg-slate-50",
 						)}
-					>
-						Login
-					</Link>
+					/>
 					<Link
 						href="/signup?plan=free"
 						className="inline-flex h-11 items-center justify-center rounded-full bg-yellow-400 px-4 text-sm font-bold text-emerald-950 transition-colors hover:bg-yellow-300"

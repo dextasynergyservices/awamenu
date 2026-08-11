@@ -1,5 +1,5 @@
-import { RouteLoading } from "@/components/shared/RouteLoading";
+import { RestaurantLoadingScreen } from "@/components/shared/RestaurantLoadingScreen";
 
 export default function Loading() {
-	return <RouteLoading variant="panel" />;
+	return <RestaurantLoadingScreen variant="panel" />;
 }

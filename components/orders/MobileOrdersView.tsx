@@ -73,6 +73,7 @@ type MobileOrdersViewProps = {
 	currency: string;
 	slug: string;
 	restaurantName: string;
+	whatsappEnabled: boolean;
 };
 
 // ─── Helpers ──────────────────────────────────────────
@@ -164,6 +165,7 @@ export function MobileOrdersView({
 	currency,
 	slug,
 	restaurantName,
+	whatsappEnabled,
 }: MobileOrdersViewProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [activeFilter, setActiveFilter] = useState<string>("ALL");
@@ -385,6 +387,7 @@ export function MobileOrdersView({
 					currency={currency}
 					slug={slug}
 					restaurantName={restaurantName}
+					whatsappEnabled={whatsappEnabled}
 					onClose={() => setSelectedOrderId(null)}
 				/>
 			) : null}
@@ -617,12 +620,14 @@ function OrderDetailModal({
 	currency,
 	slug,
 	restaurantName,
+	whatsappEnabled,
 	onClose,
 }: {
 	order: Order;
 	currency: string;
 	slug: string;
 	restaurantName: string;
+	whatsappEnabled: boolean;
 	onClose: () => void;
 }) {
 	const [showTimeline, setShowTimeline] = useState(false);
@@ -935,6 +940,7 @@ function OrderDetailModal({
 					<div className="mt-4">
 						<AdminOrderControls
 							slug={slug}
+							whatsappEnabled={whatsappEnabled}
 							orderId={order.id}
 							customerPhone={order.customerPhone}
 							status={order.status}

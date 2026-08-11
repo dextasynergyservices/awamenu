@@ -19,6 +19,12 @@ type Props = {
 		bankName: string;
 	}>;
 	orderType?: string;
+	/** Online providers this restaurant has live. More than one → customer picks. */
+	onlineProviders?: Array<{
+		gateway: string;
+		label: string;
+		checkoutMethods: string;
+	}>;
 };
 
 export function DineInPayNowButton({
@@ -29,11 +35,15 @@ export function DineInPayNowButton({
 	policy,
 	bankAccounts,
 	orderType,
+	onlineProviders = [],
 }: Props) {
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [isPayLaterModalOpen, setIsPayLaterModalOpen] = useState(false);
 	const [hasClickedPayLater, setHasClickedPayLater] = useState(true);
 	const [isPending, startTransition] = useTransition();
+	// Defaults to the first provider so a customer who ignores the choice still
+	// gets a working checkout rather than a validation error.
+	const [gateway, setGateway] = useState(onlineProviders[0]?.gateway ?? "");
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
@@ -57,6 +67,12 @@ export function DineInPayNowButton({
 				<form action={initiateOrderPaymentAction}>
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="orderId" value={orderId} />
+					<input type="hidden" name="gateway" value={gateway} />
+					<PaymentProviderChoice
+						providers={onlineProviders}
+						value={gateway}
+						onChange={setGateway}
+					/>
 					<button
 						type="submit"
 						disabled={isPending}
@@ -113,6 +129,61 @@ export function DineInPayNowButton({
 				onClose={() => setIsPayLaterModalOpen(false)}
 			/>
 		</div>
+	);
+}
+
+/**
+ * Lets the customer choose which provider to pay through.
+ *
+ * Renders nothing when there's one option (or none): a choice of one is just an
+ * extra tap between a hungry customer and their food. The provider names are
+ * shown because a card form that arrives branded "Monnify" after tapping "Pay
+ * online" reads as a redirect to somewhere unexpected.
+ */
+export function PaymentProviderChoice({
+	providers,
+	value,
+	onChange,
+}: {
+	providers: Array<{ gateway: string; label: string; checkoutMethods: string }>;
+	value: string;
+	onChange: (next: string) => void;
+}) {
+	if (providers.length < 2) return null;
+
+	return (
+		<fieldset className="mb-3 grid min-w-0 gap-2">
+			<legend className="mb-1.5 text-xs font-black uppercase tracking-wide text-slate-500">
+				Pay with
+			</legend>
+			{providers.map((provider) => (
+				<label
+					key={provider.gateway}
+					className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-colors ${
+						value === provider.gateway
+							? "border-emerald-600 bg-emerald-50"
+							: "border-slate-200 bg-white"
+					}`}
+				>
+					<input
+						type="radio"
+						name="gatewayChoice"
+						value={provider.gateway}
+						checked={value === provider.gateway}
+						onChange={() => onChange(provider.gateway)}
+						className="mt-0.5 size-4 shrink-0 accent-emerald-600"
+					/>
+					<span className="min-w-0">
+						<span className="block text-sm font-black text-slate-900">
+							{provider.label}
+						</span>
+						<span className="block text-xs font-medium leading-5 text-slate-500">
+							{provider.checkoutMethods}
+						</span>
+					</span>
+				</label>
+			))}
+		</fieldset>
 	);
 }
 

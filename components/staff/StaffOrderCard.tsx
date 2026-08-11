@@ -5,6 +5,7 @@ import {
 	CheckCircle2,
 	ChefHat,
 	CreditCard,
+	MessageCircle,
 	Package,
 	Truck,
 	UtensilsCrossed,
@@ -85,18 +86,35 @@ export function StaffOrderCard({
 	const canRecordPayment =
 		!isPaid && order.type === "DINE_IN" && permissions.cashPayment;
 
+	const whatsappPhone = normalizeWhatsAppPhone(order.customerPhone ?? "");
+
+	function openWhatsApp() {
+		const message = [
+			`Hello ${order.customerName},`,
+			`Your order ${orderCode} is ${order.status.replaceAll("_", " ").toLowerCase()}.`,
+			"We'll keep you posted on any updates.",
+			`Thank you for ordering with ${restaurantName}.`,
+		].join("\n\n");
+		const orderLink = `${window.location.origin}/${slug}/order/${order.id}`;
+		window.open(
+			`https://wa.me/${whatsappPhone}?text=${encodeURIComponent(`${message}\n\n${orderLink}`)}`,
+			"_blank",
+			"noopener,noreferrer",
+		);
+	}
+
 	function handleStatusUpdateClick() {
 		if (!nextStatus) return;
 		setPromptingPin(true);
 	}
 
-	function submitStatusUpdate(pin: string) {
+	function submitStatusUpdate(staffId: string) {
 		setPromptingPin(false);
 		setError(null);
 
 		const fd = new FormData();
 		fd.set("slug", slug);
-		fd.set("pin", pin);
+		fd.set("staffId", staffId);
 		fd.set("orderId", order.id);
 		fd.set("status", nextStatus);
 
@@ -219,6 +237,20 @@ export function StaffOrderCard({
 						</button>
 					) : null}
 
+					{/* Staff can now message the customer at any stage, the same way the
+					    owner can from the admin dashboard. */}
+					{whatsappPhone ? (
+						<button
+							type="button"
+							onClick={openWhatsApp}
+							className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3 text-sm font-black text-emerald-700 transition-colors hover:bg-emerald-50"
+							title={`Message ${order.customerName} on WhatsApp`}
+						>
+							<MessageCircle className="size-4" />
+							WhatsApp
+						</button>
+					) : null}
+
 					<div className="flex justify-end gap-2 text-sm scale-[0.8] origin-right">
 						<ReceiptActions
 							receipt={{
@@ -270,4 +302,18 @@ export function StaffOrderCard({
 			) : null}
 		</>
 	);
+}
+
+/**
+ * Normalises a stored phone number into the digits-only form wa.me expects,
+ * assuming Nigerian numbers when given a local 0-prefixed one. Returns an empty
+ * string for anything unusable, which hides the WhatsApp action.
+ */
+function normalizeWhatsAppPhone(phone: string) {
+	const digits = phone.replace(/\D/g, "");
+	if (!digits || phone.toLowerCase().includes("not provided")) return "";
+	if (digits.startsWith("0") && digits.length === 11) {
+		return `234${digits.slice(1)}`;
+	}
+	return digits;
 }

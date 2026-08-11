@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { env } from "@/env";
 import { getPlanIntervalPrice, parseBillingInterval } from "@/lib/billing";
+import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
-import { verifyQstashSignature } from "@/lib/qstash";
 
 type PaystackSubscriptionStatus = {
 	data?: {
@@ -77,16 +77,67 @@ async function reconcileStaleActiveSubscription(sub: {
 	}
 }
 
+/**
+ * The expiry notice ladder, in order. Storing the furthest rung reached lets a
+ * repeated (or more-frequent-than-daily) cron run skip notices already sent,
+ * while still allowing a later rung to fire.
+ */
+const NOTICE_STAGES = ["T7", "T3", "T0", "SUSPENDED"] as const;
+type NoticeStage = (typeof NOTICE_STAGES)[number];
+
+function hasSentStage(current: string | null, stage: NoticeStage) {
+	if (!current) return false;
+	const currentIndex = NOTICE_STAGES.indexOf(current as NoticeStage);
+	if (currentIndex < 0) return false;
+	return currentIndex >= NOTICE_STAGES.indexOf(stage);
+}
+
+function recordStage(subscriptionId: string, stage: NoticeStage) {
+	return db.subscription.update({
+		where: { id: subscriptionId },
+		data: { lastExpiryNoticeStage: stage },
+	});
+}
+
+/**
+ * Grace period has elapsed without payment: take the restaurant offline.
+ *
+ * Suspension reuses the existing `Restaurant.isActive` flag, which the public
+ * menu, admin dashboard and staff dashboard already gate on — so nothing is
+ * deleted and a later renewal restores everything by flipping it back.
+ */
+async function suspendRestaurant(input: {
+	subscriptionId: string;
+	restaurantId: string;
+	restaurantName: string;
+	email: string;
+	manageBillingUrl: string;
+}) {
+	await db.$transaction([
+		db.restaurant.update({
+			where: { id: input.restaurantId },
+			data: { isActive: false },
+		}),
+		db.subscription.update({
+			where: { id: input.subscriptionId },
+			data: { status: "PAST_DUE", lastExpiryNoticeStage: "SUSPENDED" },
+		}),
+	]);
+
+	await import("@/lib/email").then((m) =>
+		m.sendSuspensionEmail({
+			to: input.email,
+			restaurantName: input.restaurantName,
+			manageBillingUrl: input.manageBillingUrl,
+		}),
+	);
+}
+
 export async function POST(request: Request) {
 	const body = await request.text();
-	const isVerified = await verifyQstashSignature({
-		signature: request.headers.get("upstash-signature"),
-		body,
-		url: request.url,
-	});
 
-	if (!isVerified) {
-		return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+	if (!(await isAuthorizedCronRequest(request, body))) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	const now = new Date();
@@ -102,8 +153,9 @@ export async function POST(request: Request) {
 			currentPeriodEnd: true,
 			paystackSubscriptionCode: true,
 			billingInterval: true,
+			lastExpiryNoticeStage: true,
 			user: { select: { email: true } },
-			restaurant: { select: { name: true, slug: true } },
+			restaurant: { select: { id: true, name: true, slug: true } },
 			plan: {
 				select: {
 					monthlyPrice: true,
@@ -155,21 +207,78 @@ export async function POST(request: Request) {
 		).toLocaleString()}`;
 
 		if (sub.status === "ACTIVE") {
-			// Auto-renewing plan: send upcoming charge reminder 7 days before expiry
-			if (daysToExpiry === 7) {
+			// Auto-renewing plan: warn about the upcoming charge, not expiry.
+			if (daysToExpiry <= 7 && !hasSentStage(sub.lastExpiryNoticeStage, "T7")) {
 				await import("@/lib/email").then((m) =>
 					m.sendAutoRenewalUpcomingEmail({
 						to: sub.user.email,
 						restaurantName: restaurant.name,
-						daysLeft: 7,
+						daysLeft: Math.max(daysToExpiry, 0),
 						amount,
 						manageBillingUrl,
 					}),
 				);
+				await recordStage(sub.id, "T7");
 			}
-		} else {
-			// CANCELLED or PAST_DUE: send manual renewal reminders
-			if (daysToExpiry === 7 || daysToExpiry === 3 || daysToExpiry === 1) {
+			continue;
+		}
+
+		// Not auto-renewing (CANCELLED or PAST_DUE): walk the notice ladder.
+		//
+		// Each rung uses `<=` rather than `===` so a cron run that is missed or
+		// delayed still delivers the most relevant notice instead of skipping it
+		// entirely, and `hasSentStage` keeps repeat runs from re-sending.
+		if (daysToCutOff <= 0) {
+			if (hasSentStage(sub.lastExpiryNoticeStage, "SUSPENDED")) continue;
+
+			// Never suspend an owner who was never warned. Dates alone aren't
+			// enough: a subscription that lapsed while this job wasn't running
+			// (or before it existed) arrives here already past its cut-off, and
+			// would otherwise be taken offline in the same run that first
+			// noticed it — with none of the 7/3/0-day emails ever sent.
+			//
+			// Requiring the grace notice first guarantees at least one explicit
+			// warning before anything goes dark. Normal flow is unaffected: T0
+			// fires on the expiry day, so by the time the cut-off arrives three
+			// days later this condition is already satisfied.
+			if (!hasSentStage(sub.lastExpiryNoticeStage, "T0")) {
+				await import("@/lib/email").then((m) =>
+					m.sendGracePeriodEmail({
+						to: sub.user.email,
+						restaurantName: restaurant.name,
+						manageBillingUrl,
+					}),
+				);
+				await recordStage(sub.id, "T0");
+				continue;
+			}
+
+			await suspendRestaurant({
+				subscriptionId: sub.id,
+				restaurantId: restaurant.id,
+				restaurantName: restaurant.name,
+				email: sub.user.email,
+				manageBillingUrl,
+			});
+			continue;
+		}
+
+		if (daysToExpiry <= 0) {
+			if (!hasSentStage(sub.lastExpiryNoticeStage, "T0")) {
+				await import("@/lib/email").then((m) =>
+					m.sendGracePeriodEmail({
+						to: sub.user.email,
+						restaurantName: restaurant.name,
+						manageBillingUrl,
+					}),
+				);
+				await recordStage(sub.id, "T0");
+			}
+			continue;
+		}
+
+		if (daysToExpiry <= 3) {
+			if (!hasSentStage(sub.lastExpiryNoticeStage, "T3")) {
 				await import("@/lib/email").then((m) =>
 					m.sendUpcomingExpiryEmail({
 						to: sub.user.email,
@@ -178,27 +287,33 @@ export async function POST(request: Request) {
 						manageBillingUrl,
 					}),
 				);
-			} else if (daysToExpiry === 0) {
-				// Exact day of expiry - grace period begins
+				await recordStage(sub.id, "T3");
+			}
+			continue;
+		}
+
+		if (daysToExpiry <= 7) {
+			if (!hasSentStage(sub.lastExpiryNoticeStage, "T7")) {
 				await import("@/lib/email").then((m) =>
-					m.sendGracePeriodEmail({
+					m.sendUpcomingExpiryEmail({
 						to: sub.user.email,
 						restaurantName: restaurant.name,
+						daysLeft: daysToExpiry,
 						manageBillingUrl,
 					}),
 				);
-			} else if (daysToCutOff === 0) {
-				// Grace period ended - completely offline
-				await import("@/lib/email").then((m) =>
-					m.sendCutOffEmail({
-						to: sub.user.email,
-						restaurantName: restaurant.name,
-						manageBillingUrl,
-					}),
-				);
+				await recordStage(sub.id, "T7");
 			}
 		}
 	}
 
 	return NextResponse.json({ ok: true });
+}
+
+/**
+ * Most external schedulers (cron-jobs.org included) issue a plain GET. The work
+ * is identical — authorisation happens inside `POST` either way.
+ */
+export async function GET(request: Request) {
+	return POST(request);
 }

@@ -73,6 +73,17 @@ export function SubmitButton({
 	const { pending } = useFormStatus();
 	const [isSuccess, setIsSuccess] = useState(false);
 	const wasPending = useRef(false);
+	const buttonRef = useRef<HTMLButtonElement>(null);
+
+	// Held in a ref so it can't drive the effect below. Call sites pass inline
+	// arrows (`onSuccess={() => setOpen(false)}`), which are a new identity on
+	// every render — as a dependency that re-ran the effect, and the cleanup
+	// cancelled the timer that clears the success state. The button then stayed
+	// stuck on the tick, permanently disabled, so a second save was impossible.
+	const onSuccessRef = useRef(onSuccess);
+	useEffect(() => {
+		onSuccessRef.current = onSuccess;
+	});
 
 	useEffect(() => {
 		if (pending) {
@@ -85,20 +96,42 @@ export function SubmitButton({
 
 		wasPending.current = false;
 		setIsSuccess(true);
-		onSuccess?.();
+		onSuccessRef.current?.();
 		const timeout = window.setTimeout(
 			() => setIsSuccess(false),
 			successDuration,
 		);
 		return () => window.clearTimeout(timeout);
-	}, [onSuccess, pending, successDuration]);
+	}, [pending, successDuration]);
+
+	// Editing anything in the form clears the tick immediately, rather than
+	// waiting on the timer. The timer is a nicety; this is the guarantee — if it
+	// were ever cancelled or missed, the button would otherwise sit on "saved"
+	// while the user has unsaved changes in front of them.
+	useEffect(() => {
+		if (!isSuccess) return;
+		const form = buttonRef.current?.form;
+		if (!form) return;
+
+		const clear = () => setIsSuccess(false);
+		form.addEventListener("input", clear);
+		form.addEventListener("change", clear);
+		return () => {
+			form.removeEventListener("input", clear);
+			form.removeEventListener("change", clear);
+		};
+	}, [isSuccess]);
 
 	return (
 		<button
 			{...props}
+			ref={buttonRef}
 			type={props.type ?? "submit"}
 			aria-busy={pending}
-			disabled={disabled || pending || isSuccess}
+			// Deliberately NOT disabled on success. The tick is feedback, not a
+			// lock: a stuck success state must never be able to cost someone the
+			// ability to save. Only a genuinely in-flight submit blocks a click.
+			disabled={disabled || pending}
 			className={cn(
 				"disabled:pointer-events-none disabled:opacity-60",
 				className,
@@ -131,7 +164,9 @@ export function LoadingButton({
 		<button
 			{...props}
 			aria-busy={loading}
-			disabled={disabled || loading || success}
+			// Consistent with the other two: success shows a tick, it doesn't lock
+			// the button. Callers that genuinely need it locked pass `disabled`.
+			disabled={disabled || loading}
 			className={cn(
 				"disabled:pointer-events-none disabled:opacity-60",
 				className,
@@ -163,30 +198,60 @@ export function FormSubmitButton({
 }: FormSubmitButtonProps) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [isSuccess, setIsSuccess] = useState(false);
+	const buttonRef = useRef<HTMLButtonElement>(null);
 
+	// Each timer is owned by the state that starts it. Previously both were
+	// created in one effect keyed on `isLoading`: when loading finished, that
+	// effect's cleanup ran and cancelled the *success* timer before it could
+	// fire, so the button stayed on the tick and disabled forever — one save
+	// per page load.
 	useEffect(() => {
 		if (!isLoading) return;
 
-		const loadingTimeout = window.setTimeout(() => {
+		const timeout = window.setTimeout(() => {
 			setIsLoading(false);
 			setIsSuccess(true);
 		}, loadingDuration);
-		const successTimeout = window.setTimeout(() => {
-			setIsSuccess(false);
-		}, loadingDuration + successDuration);
 
+		return () => window.clearTimeout(timeout);
+	}, [isLoading, loadingDuration]);
+
+	useEffect(() => {
+		if (!isSuccess) return;
+
+		const timeout = window.setTimeout(
+			() => setIsSuccess(false),
+			successDuration,
+		);
+		return () => window.clearTimeout(timeout);
+	}, [isSuccess, successDuration]);
+
+	// See SubmitButton: any edit clears the tick, so a missed timer can't leave
+	// the button claiming "saved" over unsaved changes.
+	useEffect(() => {
+		if (!isSuccess) return;
+		const form = props.form
+			? document.getElementById(props.form)
+			: buttonRef.current?.form;
+		if (!(form instanceof HTMLFormElement)) return;
+
+		const clear = () => setIsSuccess(false);
+		form.addEventListener("input", clear);
+		form.addEventListener("change", clear);
 		return () => {
-			window.clearTimeout(loadingTimeout);
-			window.clearTimeout(successTimeout);
+			form.removeEventListener("input", clear);
+			form.removeEventListener("change", clear);
 		};
-	}, [isLoading, loadingDuration, successDuration]);
+	}, [isSuccess, props.form]);
 
 	return (
 		<button
 			{...props}
+			ref={buttonRef}
 			type={props.type ?? "submit"}
 			aria-busy={isLoading}
-			disabled={disabled || isLoading || isSuccess}
+			// Not disabled on success — see SubmitButton.
+			disabled={disabled || isLoading}
 			onClick={(event) => {
 				onClick?.(event);
 				if (event.defaultPrevented || disabled) return;

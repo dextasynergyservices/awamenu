@@ -50,10 +50,10 @@ export default async function StaffDashboardLayout({
 						Temporarily Unavailable
 					</p>
 					<h1 className="mt-3 text-2xl font-black text-slate-950">
-						{restaurant.name}'s staff dashboard is locked
+						{restaurant.name}&apos;s staff dashboard is locked
 					</h1>
 					<p className="mt-3 text-sm font-bold leading-6 text-slate-600">
-						This restaurant's subscription has lapsed. Please ask your
+						This restaurant&apos;s subscription has lapsed. Please ask your
 						restaurant admin to renew or update the plan before using the staff
 						dashboard again.
 					</p>
@@ -90,7 +90,7 @@ export default async function StaffDashboardLayout({
 			restaurantLogoUrl={restaurant.logoUrl}
 			slug={restaurant.slug}
 			staffId="shared"
-			staffName="Staff Terminal"
+			staffName="Staff"
 			staffCode="ACTIVE"
 			currency={restaurant.currency}
 			permissions={permissions}
