@@ -1,11 +1,13 @@
 "use server";
 
 import {
+	AuditActorType,
 	DineInPaymentMethod,
 	NotificationAudience,
 	NotificationType,
 	OrderStatus,
 	OrderType,
+	PaymentMethod,
 	PaymentPolicy,
 	PaymentStatus,
 } from "@prisma/client";
@@ -13,11 +15,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { ActionError, actionResult } from "@/lib/action-error";
+import { recordAuditEvent } from "@/lib/audit";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
+import { isStatusAllowedForType } from "@/lib/order-status-flow";
+import { creditOrder } from "@/lib/payment-ledger";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import {
 	decryptSecret,
@@ -461,33 +466,60 @@ export async function recordDineInPaymentAction(formData: FormData) {
 			},
 		});
 
+		// The amount is typed by a person at a till, so it is not evidence of
+		// anything on its own. The ledger settles the order only once the entries
+		// actually cover the total — a short payment now leaves a balance owing
+		// instead of reading as settled.
+		const credit = await creditOrder(order.id, {
+			kind: "MANUAL",
+			method:
+				input.paymentMethod === "CASH" ? PaymentMethod.CASH : PaymentMethod.POS,
+			amount: input.amountPaid,
+			recordedById: staff.id,
+		});
+
+		if (!credit.ok) {
+			throw new ActionError(credit.message);
+		}
+
 		await db.order.update({
 			where: { id: order.id },
 			data: {
 				attendingStaffId: staff.id,
-				dineInAmountPaid: input.amountPaid,
+				dineInAmountPaid: credit.amountPaid,
 				dineInPaidMethod: input.paymentMethod,
 				dineInPaymentRecordedAt: new Date(),
-				paymentStatus: PaymentStatus.PAID,
-				status:
-					order.status === OrderStatus.PENDING_PAYMENT
-						? OrderStatus.CONFIRMED
-						: order.status,
 				events: {
 					create: {
 						staffId: staff.id,
-						description: `Recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}`,
+						description: `Recorded ${input.paymentMethod === "CASH" ? "cash" : "POS/transfer"} payment of ₦${input.amountPaid.toLocaleString()}${
+							credit.outstanding > 0
+								? ` — ₦${credit.outstanding.toLocaleString()} still outstanding`
+								: ""
+						}`,
 					},
 				},
 			},
 		});
 
-		await notifyOrderPaid(input.orderId, {
-			method: input.paymentMethod === "CASH" ? "Cash" : "POS or transfer",
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: AuditActorType.STAFF,
+			actorId: staff.id,
+			actorName: staff.name,
+			action: "payment.recorded",
+			target: `Order #${order.id.slice(-6).toUpperCase()}`,
+			newValue: `${input.paymentMethod} ₦${input.amountPaid.toLocaleString()}`,
 		});
-		if (order.status === OrderStatus.PENDING_PAYMENT) {
-			await notifyOrderConfirmed(input.orderId);
-			await notifyCustomerOrderStatus(input.orderId, OrderStatus.CONFIRMED);
+
+		if (credit.newlyPaid) {
+			await notifyOrderPaid(input.orderId, {
+				method: input.paymentMethod === "CASH" ? "Cash" : "POS or transfer",
+			});
+			if (order.status === OrderStatus.PENDING_PAYMENT) {
+				await notifyOrderConfirmed(input.orderId);
+				await notifyCustomerOrderStatus(input.orderId, OrderStatus.CONFIRMED);
+			}
 		}
 
 		await dispatchNotification({
@@ -549,6 +581,10 @@ export async function staffUpdateOrderStatusAction(formData: FormData) {
 
 		if (order.status === OrderStatus.CANCELLED) {
 			throw new ActionError("Cancelled orders cannot be updated.");
+		}
+
+		if (!isStatusAllowedForType(order.type, input.status)) {
+			throw new ActionError("That status doesn't apply to this kind of order.");
 		}
 
 		// Check type-based permission

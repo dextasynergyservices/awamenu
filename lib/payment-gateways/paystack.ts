@@ -162,4 +162,28 @@ export const paystackAdapter: PaymentGatewayAdapter = {
 			return false;
 		}
 	},
+
+	async refundCharge(credentials, input) {
+		try {
+			await call(credentials, "/refund", {
+				method: "POST",
+				body: JSON.stringify({
+					transaction: input.reference,
+					// Omitted for a full refund — Paystack then returns the whole
+					// charge, which is what "refund this payment" should mean.
+					...(input.amountKobo ? { amount: input.amountKobo } : {}),
+					...(input.reason ? { merchant_note: input.reason } : {}),
+				}),
+			});
+			return { ok: true as const };
+		} catch (error) {
+			return {
+				ok: false as const,
+				error:
+					error instanceof Error
+						? error.message
+						: "Paystack rejected the refund.",
+			};
+		}
+	},
 };

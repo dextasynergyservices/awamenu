@@ -21,6 +21,7 @@ import {
 	deleteTableSeatAction,
 	updateTableSeatAction,
 } from "@/actions/reservation.actions";
+import { TableBookingRulesFields } from "@/components/admin/TableBookingRulesFields";
 import { uploadTablePhoto } from "@/components/admin/table-photo-upload";
 import {
 	Dialog,
@@ -29,6 +30,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/Dialog";
+import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
 
 type TableStatus = "AVAILABLE" | "RESERVED" | "OCCUPIED" | "DISABLED";
@@ -48,9 +50,13 @@ type TableEditModalProps = {
 		capacity: number;
 		isActive: boolean;
 		sortOrder: number;
-		bookingModeOverride: string | null;
-		paymentTimingOverride: string | null;
-		inclusionTypeOverride: string | null;
+		bookingMode: string;
+		paymentTiming: string;
+		inclusionType: string;
+		holdMinutes: number;
+		depositPercent: number;
+		minPartySize: number;
+		maxPartySize: number;
 		tableFee: string;
 		minimumSpend: string;
 		displayMinimumSpend: string;
@@ -105,7 +111,8 @@ export function TableEditModal({
 		setError(null);
 
 		try {
-			await updateTableSeatAction(new FormData(form));
+			const result = await updateTableSeatAction(new FormData(form));
+			if ("error" in result) throw new Error(result.error);
 			setOpen(false);
 			router.refresh();
 		} catch (caughtError) {
@@ -176,9 +183,12 @@ export function TableEditModal({
 				variant="sheet"
 				size="2xl"
 			>
-				<DialogHeader title="Table Details" className="px-6 pt-6 pb-0" />
-				<DialogBody className="px-6 pb-5 pt-5">
-					<div className="grid gap-5">
+				<DialogHeader
+					title="Table Details"
+					className="px-4 pt-5 pb-0 sm:px-6 sm:pt-6"
+				/>
+				<DialogBody className="px-4 pb-5 pt-4 sm:px-6 sm:pt-5">
+					<div className="grid min-w-0 gap-5">
 						<div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
 							<div className="flex min-w-0 items-center gap-4">
 								<span className="grid size-20 shrink-0 place-items-center rounded-3xl bg-emerald-50 text-emerald-700">
@@ -215,27 +225,13 @@ export function TableEditModal({
 						>
 							<input type="hidden" name="slug" value={restaurantSlug} />
 							<input type="hidden" name="tableId" value={table.id} />
-							<input
-								type="hidden"
-								name="bookingModeOverride"
-								value={table.bookingModeOverride ?? ""}
-							/>
-							<input
-								type="hidden"
-								name="paymentTimingOverride"
-								value={table.paymentTimingOverride ?? ""}
-							/>
-							<input
-								type="hidden"
-								name="inclusionTypeOverride"
-								value={table.inclusionTypeOverride ?? ""}
-							/>
+
 							<input
 								type="hidden"
 								name="sortOrder"
 								value={String(table.sortOrder)}
 							/>
-							<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+							<div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
 								<section className="rounded-2xl border border-slate-200 p-4">
 									<div className="mb-4 flex items-center justify-between gap-3">
 										<h4 className="text-sm font-black text-slate-950 md:text-base">
@@ -281,32 +277,6 @@ export function TableEditModal({
 												className={inputClass}
 											/>
 										</EditableInfoRow>
-										<EditableInfoRow
-											icon={<WalletCards className="size-4" />}
-											label="Minimum Spend"
-										>
-											<input
-												name="minimumSpend"
-												type="number"
-												min="0"
-												step="100"
-												defaultValue={table.minimumSpend}
-												className={inputClass}
-											/>
-										</EditableInfoRow>
-										<EditableInfoRow
-											icon={<WalletCards className="size-4" />}
-											label={`Table Fee (${currency})`}
-										>
-											<input
-												name="tableFee"
-												type="number"
-												min="0"
-												step="100"
-												defaultValue={table.tableFee}
-												className={inputClass}
-											/>
-										</EditableInfoRow>
 										<StaticInfoRow
 											icon={<CheckCircle2 className="size-4" />}
 											label="Status"
@@ -325,14 +295,39 @@ export function TableEditModal({
 								</section>
 
 								<section className="rounded-2xl border border-slate-200 p-4">
+									<h4 className="mb-3 text-sm font-black text-slate-950 md:text-base">
+										Booking rules
+									</h4>
+									<TableBookingRulesFields
+										currency={currency}
+										defaults={{
+											bookingMode: table.bookingMode,
+											paymentTiming: table.paymentTiming,
+											inclusionType: table.inclusionType,
+											holdMinutes: table.holdMinutes,
+											depositPercent: table.depositPercent,
+											minPartySize: table.minPartySize,
+											maxPartySize: table.maxPartySize,
+											tableFee: table.tableFee ? Number(table.tableFee) : null,
+											minimumSpend: table.minimumSpend
+												? Number(table.minimumSpend)
+												: null,
+										}}
+									/>
+								</section>
+
+								<section className="rounded-2xl border border-slate-200 p-4">
 									<h4 className="text-sm font-black text-slate-950 md:text-base">
 										Table Photo
 									</h4>
+									{/* See TableCreateModal: controlled so the uploaded URL is
+									    exactly what submits. */}
 									<input
 										type="hidden"
 										id={`table-image-${table.id}`}
 										name="imageUrl"
-										defaultValue={table.imageUrl ?? ""}
+										value={previewUrl}
+										readOnly
 									/>
 									<div className="relative mt-4 aspect-[1.35] overflow-hidden rounded-xl bg-slate-100">
 										{previewUrl ? (
@@ -360,13 +355,7 @@ export function TableEditModal({
 											onChange={async (event) => {
 												const input = event.currentTarget;
 												const file = input.files?.[0];
-												const hiddenInput = document.getElementById(
-													`table-image-${table.id}`,
-												);
-												if (
-													!file ||
-													!(hiddenInput instanceof HTMLInputElement)
-												) {
+												if (!file) {
 													return;
 												}
 												try {
@@ -375,7 +364,6 @@ export function TableEditModal({
 														restaurantId,
 														file,
 													);
-													hiddenInput.value = imageUrl;
 													setPreviewUrl(imageUrl);
 												} catch (caughtError) {
 													setError(
@@ -495,11 +483,14 @@ export function TableEditModal({
 					>
 						<input type="hidden" name="slug" value={restaurantSlug} />
 						<input type="hidden" name="tableId" value={table.id} />
-						<label className="grid gap-1 text-xs font-black text-slate-700 md:text-sm">
+						<label
+							htmlFor="table-delete-password"
+							className="grid gap-1 text-xs font-black text-slate-700 md:text-sm"
+						>
 							Admin password
-							<input
+							<PasswordInput
+								id="table-delete-password"
 								name="password"
-								type="password"
 								required
 								autoComplete="current-password"
 								className={inputClass}

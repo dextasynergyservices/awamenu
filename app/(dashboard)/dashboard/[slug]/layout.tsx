@@ -27,7 +27,19 @@ export async function generateMetadata({
 	const restaurant = await getRestaurantBrand(slug);
 	const icon = restaurant?.logoUrl ?? LOGO_ICON_URL;
 
-	return { icons: { icon, shortcut: icon, apple: icon } };
+	// Declared here, not in the root layout, so only signed-in users are
+	// offered "Install app". This is one AwaMenu manifest with `start_url: "/"`,
+	// so a customer installing from a restaurant's menu would get an app that
+	// opens AwaMenu's homepage rather than that restaurant — worse than no
+	// prompt at all.
+	return {
+		manifest: "/manifest.webmanifest",
+		// `apple` is the AwaMenu mark, not the restaurant's: iOS takes the
+		// Home Screen icon from apple-touch-icon rather than the manifest, so
+		// leaving it as the restaurant logo would install an app badged as one
+		// restaurant. The browser-tab favicon stays restaurant-branded.
+		icons: { icon, shortcut: icon, apple: LOGO_ICON_URL },
+	};
 }
 
 export default async function DashboardLayout({

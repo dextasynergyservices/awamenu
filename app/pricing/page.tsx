@@ -21,6 +21,7 @@ type PricingPlan = {
 	yearlyPrice: unknown;
 	maxCategories: number;
 	maxMenuItems: number;
+	maxTables: number;
 	advancedAnalytics: boolean;
 	removeAwamenuBranding: boolean;
 	whatsappIntegration: boolean;
@@ -36,6 +37,7 @@ function planFeatures(plan: PricingPlan) {
 	return [
 		formatLimit(plan.maxCategories, "Categories"),
 		formatLimit(plan.maxMenuItems, "Items"),
+		formatLimit(plan.maxTables, "Tables"),
 		plan.whatsappIntegration
 			? "WhatsApp chat included"
 			: "WhatsApp chat not included",
@@ -63,6 +65,7 @@ export default async function PricingPage() {
 			yearlyPrice: true,
 			maxCategories: true,
 			maxMenuItems: true,
+			maxTables: true,
 			advancedAnalytics: true,
 			removeAwamenuBranding: true,
 			whatsappIntegration: true,

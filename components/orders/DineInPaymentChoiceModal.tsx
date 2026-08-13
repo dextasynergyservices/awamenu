@@ -199,17 +199,11 @@ export function DineInPaymentChoiceModal({
 						    Paystack and Monnify offers both here; the label has to name
 						    the provider, because the checkout the customer lands on is
 						    branded and an unexpected name reads as a wrong redirect. */}
-						{(onlineProviders.length > 0
-							? onlineProviders
-							: [
-									{
-										gateway: "",
-										label: "Paystack",
-										checkoutMethods:
-											"Pay online securely using your card or bank",
-									},
-								]
-						).map((provider) => (
+						{/* No invented fallback. A restaurant with no payout account
+						    connected has no online option, and offering one would take
+						    the customer's money into AwaMenu's account with no way to
+						    pass it on. */}
+						{onlineProviders.map((provider) => (
 							<form key={provider.gateway} action={initiateOrderPaymentAction}>
 								<input type="hidden" name="slug" value={slug} />
 								<input type="hidden" name="orderId" value={orderId} />

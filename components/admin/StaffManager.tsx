@@ -818,6 +818,7 @@ function CreateStaffModal({
 // ─── Rotate Staff ID Modal ────────────────────────────
 
 import { rotateStaffIdAction } from "@/actions/staff.actions";
+import { PasswordInput } from "@/components/ui/password-input";
 
 function ResetPinModal({
 	slug,
@@ -1205,9 +1206,8 @@ function DeactivateModal({
 						>
 							Confirm your password
 						</label>
-						<input
+						<PasswordInput
 							id="deactivate-password"
-							type="password"
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							required

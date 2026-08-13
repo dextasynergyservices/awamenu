@@ -280,6 +280,10 @@ model Plan {
   yearlyPrice    Decimal @default(0) @db.Decimal(10, 2)
 
   maxCategories Int @default(1)
+  /// Tables a restaurant may create for reservations. -1 is unlimited,
+  /// matching maxCategories/maxMenuItems so the resolver treats all three
+  /// limits identically.
+  maxTables     Int @default(1)
   maxMenuItems  Int @default(8)
 
   advancedAnalytics     Boolean @default(false)
@@ -366,6 +370,11 @@ model Restaurant {
   /// credentials exist — never to an unexpected SMS bill.
   customerUpdateChannel CustomerUpdateChannel @default(WHATSAPP)
 
+  /// Collapsed rather than deleted — someone who dismissed the setup list in
+  /// week one still needs to find it in week three, and from any device, so
+  /// this lives on the record rather than in localStorage.
+  setupChecklistDismissedAt DateTime?
+
   dineInEnabled           Boolean @default(true)
   pickupEnabled           Boolean @default(true)
   deliveryEnabled         Boolean @default(true)
@@ -408,6 +417,10 @@ model Restaurant {
   bankAccounts       RestaurantBankAccount[]
   paymentMethods     RestaurantPaymentMethod[]
   payoutAccounts     RestaurantPayoutAccount[]
+  openingHours       RestaurantOpeningHour[]
+  blackoutDates      RestaurantBlackoutDate[]
+  payments           OrderPayment[]
+  auditEvents        RestaurantAuditEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -484,6 +497,54 @@ model RestaurantPaymentMethod {
 /// subaccount only exists at the provider that created it. Bank codes are
 /// provider-specific too, so each row stores the code as that provider issued
 /// it — a Paystack code is not valid at Monnify.
+/// One opening period. A day can have several — a kitchen that closes between
+/// lunch and dinner needs two rows for the same weekday, which a single
+/// open/close pair per day cannot express.
+///
+/// Times are stored as "HH:mm" in the restaurant's own timezone rather than as
+/// timestamps: opening hours are wall-clock facts ("we open at 9"), and a
+/// timestamp would shift them across DST.
+/// A one-off closure: a public holiday, a private event, a refurbishment.
+///
+/// Opening hours describe the repeating week and cannot express "closed on the
+/// 25th". Without this a restaurant has to switch reservations off entirely
+/// and remember to switch them back.
+model RestaurantBlackoutDate {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  /// Stored as YYYY-MM-DD in the restaurant's own timezone. A timestamp would
+  /// shift the date across timezones for the same reason opening hours are
+  /// wall-clock strings.
+  date   String
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([restaurantId, date])
+  @@index([restaurantId])
+}
+
+model RestaurantOpeningHour {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  /// 0 = Sunday … 6 = Saturday, matching JavaScript's getDay().
+  dayOfWeek Int
+  /// "HH:mm", 24-hour. `closesAt` earlier than `opensAt` means the period runs
+  /// past midnight into the next day (18:00–02:00), which is normal for
+  /// restaurants and the main thing naive implementations get wrong.
+  opensAt   String
+  closesAt  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([restaurantId, dayOfWeek])
+}
+
 model RestaurantPayoutAccount {
   id           String     @id @default(cuid())
   restaurantId String
@@ -700,17 +761,133 @@ model OrderItem {
   @@index([orderId])
 }
 
+enum PaymentDirection {
+  CREDIT
+  REFUND
+}
+
+enum LedgerEntryStatus {
+  /// Money moved and the amount matched what was owed.
+  SUCCESS
+  /// The gateway reported success but the amount or currency disagreed with
+  /// the order. Recorded and NOT credited, so it can be investigated.
+  MISMATCH
+  /// Superseded by a later refund entry. The original row is never edited.
+  REVERSED
+}
+
+enum SettlementStatus {
+  PENDING
+  SETTLED
+  /// Our record and the provider's disagree — surfaced for reconciliation.
+  DISPUTED
+}
+
+/// The financial ledger: one row per movement of money, append-only.
+///
+/// Append-only is the whole discipline. A row is never edited to reflect a
+/// later event — a refund is a new REFUND row, and the original is marked
+/// REVERSED. Editing a money row destroys the evidence of what it previously
+/// claimed, which is exactly what an audit needs to see.
+///
+/// Every fee is stored as it was AT THE TIME OF PAYMENT rather than derived on
+/// read. Plan percentages change; a report that recalculates last year's
+/// payments at today's rate is simply wrong.
+///
+/// restaurantId is denormalised so financial reports can scan by restaurant and
+/// date without joining through orders — the export is the main read path.
 model OrderPayment {
   id           String        @id @default(cuid())
   orderId      String
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  restaurantId String
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   amount       Decimal       @db.Decimal(10, 2)
   method       PaymentMethod
   reference    String? // E.g., Paystack ref, bank transfer ref
   recordedById String? // ID of staff or admin who recorded this
   createdAt    DateTime      @default(now())
 
+  direction PaymentDirection  @default(CREDIT)
+  status    LedgerEntryStatus @default(SUCCESS)
+  currency  String            @default("NGN")
+
+  /// Null for cash/POS/transfer taken in person.
+  gateway PaymentGateway?
+
+  /// What the order was owed when this entry was written, so a later change to
+  /// the order can never make a historic entry look wrong.
+  expectedAmount Decimal? @db.Decimal(10, 2)
+
+  gatewayFee      Decimal? @db.Decimal(10, 2)
+  platformFee     Decimal? @db.Decimal(10, 2)
+  netToRestaurant Decimal? @db.Decimal(10, 2)
+  subaccountCode  String?
+
+  settlementStatus SettlementStatus @default(PENDING)
+  settledAt        DateTime?
+
+  /// The provider's payload verbatim. When our numbers and theirs disagree,
+  /// this is the only record of what they actually said.
+  rawPayload Json?
+
+  /// Free-text reason, used by refunds.
+  note String?
+
+  @@unique([gateway, reference])
   @@index([orderId])
+  @@index([restaurantId, createdAt])
+  @@index([settlementStatus])
+}
+
+enum AuditActorType {
+  OWNER
+  STAFF
+  SUPER_ADMIN
+  /// A webhook or scheduled job, which has no human behind it.
+  SYSTEM
+  CUSTOMER
+}
+
+/// Who did what, inside one restaurant.
+///
+/// The platform AuditLog only covers super-admin actions, which leaves the
+/// questions an owner actually asks unanswerable: who marked this cash order
+/// paid, who changed the payout bank account, who cancelled this booking.
+///
+/// Payout changes matter most. Swapping the settlement account is the classic
+/// insider-fraud path — every subsequent payment leaves quietly — so those
+/// entries record the before and after values and also email the owner.
+///
+/// Append-only, like the ledger. Entries are never edited or deleted.
+model RestaurantAuditEvent {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  actorType AuditActorType
+  /// Null for SYSTEM. Staff id, user id, or super-admin id otherwise.
+  actorId   String?
+  /// Captured at write time: staff get deleted, and "who did this" must still
+  /// answer years later.
+  actorName String
+
+  /// Dotted and stable, e.g. "payment.recorded", "payout.account_changed".
+  action String
+  /// Human-readable target, e.g. "Order #A12F" — safe to show in a UI.
+  target String
+
+  /// Only set where the before/after matters, as with payout details.
+  previousValue String?
+  newValue      String?
+
+  /// Kept for security questions ("who was this, and from where").
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, action])
 }
 
 // ─── Tables & Reservations ────────────────────────────
@@ -720,17 +897,29 @@ model ReservationSetting {
   restaurantId String     @unique
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  bookingMode     TableBookingMode   @default(FREE_BOOKING)
-  paymentTiming   TablePaymentTiming @default(PAY_ON_ARRIVAL)
-  inclusionType   TableInclusionType @default(TABLE_FEE_ONLY)
-  defaultTableFee Decimal?           @db.Decimal(10, 2)
+  /// How far ahead a customer may book. Genuinely restaurant-wide.
+  advanceBookingHours Int @default(0)
 
-  advanceBookingHours Int     @default(0)
-  holdDurationMinutes Int     @default(60)
-  minPartySize        Int     @default(1)
-  maxPartySize        Int     @default(0)
-  cancellationPolicy  String?
-  bookingDescription  String?
+  /// Bookings land on a grid rather than any minute the customer types. A raw
+  /// time input let people book 19:37, which no kitchen can pace around and
+  /// which makes the overlap arithmetic close to meaningless.
+  slotIntervalMinutes Int @default(30)
+
+  /// How long a table is held past the booking time before it is released to
+  /// walk-ins. Distinct from the booking length: this is the no-show window.
+  graceMinutes Int @default(15)
+
+  /// Confirm free bookings without anyone pressing accept. Only ever applied
+  /// once the table is verified free for the slot — an auto-confirmed double
+  /// booking is worse than a wait.
+  autoConfirmFreeBookings Boolean @default(false)
+  /// Shown to the customer before they commit money. Previously stored but
+  /// never rendered on the public booking page, which is the most serious gap
+  /// in this flow — people were paying deposits with no stated terms.
+  cancellationPolicy      String?
+  refundPolicy            String?
+  /// Free-text note shown on the public booking page.
+  bookingDescription      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -748,11 +937,27 @@ model TableSeat {
   isActive    Boolean @default(true)
   sortOrder   Int     @default(0)
 
-  bookingModeOverride   TableBookingMode?
-  paymentTimingOverride TablePaymentTiming?
-  inclusionTypeOverride TableInclusionType?
-  tableFee              Decimal?            @db.Decimal(10, 2)
-  minimumSpend          Decimal?            @db.Decimal(10, 2)
+  /// Booking rules live on the table, not the restaurant: a window seat for
+  /// two and a private room for twelve do not share a hold time, a minimum
+  /// spend, or whether food is required. The old restaurant-wide defaults plus
+  /// per-table overrides said the same thing in two places and could disagree.
+  bookingMode   TableBookingMode   @default(FREE_BOOKING)
+  paymentTiming TablePaymentTiming @default(PAY_ON_ARRIVAL)
+  inclusionType TableInclusionType @default(TABLE_FEE_ONLY)
+
+  /// How long the table is held before an unconfirmed booking expires.
+  holdMinutes  Int @default(60)
+  minPartySize Int @default(1)
+  /// 0 means "up to capacity".
+  maxPartySize Int @default(0)
+
+  /// Percentage of the booking total taken up front when bookingMode is
+  /// DEPOSIT_REQUIRED. 0 falls back to charging the table fee alone, which is
+  /// what "deposit" used to mean here — a flat fee, unrelated to the total.
+  depositPercent Int @default(0)
+
+  tableFee     Decimal? @db.Decimal(10, 2)
+  minimumSpend Decimal? @db.Decimal(10, 2)
 
   reservations Reservation[]
   orders       Order[]       @relation("TableOrders")
@@ -782,10 +987,14 @@ model Reservation {
   declinedAt      DateTime?
   declineReason   String?
 
-  effectiveBookingMode   TableBookingMode
-  effectivePaymentTiming TablePaymentTiming
-  effectiveInclusionType TableInclusionType
-  effectiveTableFee      Decimal?           @db.Decimal(10, 2)
+  effectiveBookingMode    TableBookingMode
+  effectivePaymentTiming  TablePaymentTiming
+  effectiveInclusionType  TableInclusionType
+  /// Snapshot, like the other effective* fields: the terms agreed at booking
+  /// time must not change if the table is edited afterwards.
+  effectiveDepositPercent Int                @default(0)
+
+  effectiveTableFee Decimal? @db.Decimal(10, 2)
 
   reservationPaymentStatus PaymentStatus @default(PENDING)
   reservationPaymentRef    String?
@@ -795,6 +1004,16 @@ model Reservation {
   preOrder   Order?  @relation("ReservationPreOrder", fields: [preOrderId], references: [id])
 
   specialRequests String?
+
+  /// Claimed with a conditional UPDATE before sending, exactly like the order
+  /// emails. Several paths can confirm one reservation — the customer returning
+  /// from Paystack, the webhook, an owner approving it by hand — and a guest
+  /// receiving "your table is confirmed" three times reads as a broken system.
+  requestedEmailSentAt DateTime?
+  confirmedEmailSentAt DateTime?
+  declinedEmailSentAt  DateTime?
+  cancelledEmailSentAt DateTime?
+  reminderEmailSentAt  DateTime?
 
   rating Rating?
 

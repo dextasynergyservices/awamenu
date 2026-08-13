@@ -8,6 +8,9 @@ interface SettingsCardProps {
 	title: string;
 	description: string;
 	headerAction?: React.ReactNode;
+	/** Anchor target, so the setup checklist can link to this exact card
+	 * rather than dropping someone at the top of a long settings page. */
+	anchorId?: string;
 	children: React.ReactNode;
 }
 
@@ -16,13 +19,19 @@ export function SettingsCard({
 	title,
 	description,
 	headerAction,
+	anchorId,
 	children,
 }: SettingsCardProps) {
 	const [isModalOpen, setIsModalOpen] = useState(false);
 
 	return (
 		<>
-			<div className="min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.03)]">
+			<div
+				id={anchorId}
+				// scroll-mt clears the sticky dashboard header, which would
+				// otherwise cover the card you just jumped to.
+				className="min-w-0 scroll-mt-24 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.03)] target:ring-2 target:ring-emerald-500"
+			>
 				{/* A real <button> can't be used here — `headerAction` may render
 				    its own interactive elements (e.g. a button), and buttons
 				    can't contain nested interactive content. */}

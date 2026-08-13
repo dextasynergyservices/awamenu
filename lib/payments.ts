@@ -18,7 +18,9 @@ import {
 import { db } from "@/lib/db";
 import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
+import { creditOrder } from "@/lib/payment-ledger";
 import { scheduleReservationExpiry } from "@/lib/qstash";
+import { notifyReservationConfirmed } from "@/lib/reservation-emails";
 
 type PaystackSubscriptionParams = {
 	userId: string;
@@ -70,6 +72,11 @@ type PaystackVerifyResponse = {
 	data?: {
 		status?: string;
 		reference?: string;
+		/** Kobo. Never assume it equals what the order was owed. */
+		amount?: number;
+		currency?: string;
+		fees?: number;
+		subaccount?: { subaccount_code?: string };
 		metadata?: {
 			type?: string;
 			userId?: string;
@@ -115,7 +122,18 @@ export async function initiateOrderPaymentForRestaurant(params: {
 	);
 
 	if (!routed) {
-		return initiateOrderPayment(params);
+		// Deliberately refused rather than falling back to the platform's own
+		// Paystack account. That fallback charged the customer into AwaMenu's
+		// balance with no subaccount and no split — the money settled to AwaMenu's
+		// bank with nothing tying it to the restaurant and no way to pay it on.
+		// It also turns the product from "payments settle to the restaurant" into
+		// "AwaMenu holds other people's money", which is a regulated activity.
+		//
+		// Cash, POS and bank transfer still work and need no setup, so a
+		// restaurant that hasn't connected a payout account degrades to those.
+		throw new Error(
+			"This restaurant hasn't set up online payments yet. Please choose cash or bank transfer.",
+		);
 	}
 
 	const { getGatewayAdapter } = await import("@/lib/payment-gateways");
@@ -229,29 +247,27 @@ export async function verifyOrderPaymentReference(
 		return false;
 	}
 
-	const order = await db.order.findUnique({
-		where: { id: params.orderId },
-		select: { id: true, paymentStatus: true },
+	const credit = await creditOrder(params.orderId, {
+		kind: "GATEWAY",
+		gateway: "PAYSTACK",
+		reference: payload.data.reference ?? params.reference,
+		paidMinorUnits: payload.data.amount ?? 0,
+		currency: payload.data.currency ?? "NGN",
+		gatewayFeeMinorUnits: payload.data.fees ?? null,
+		subaccountCode: payload.data.subaccount?.subaccount_code ?? null,
+		rawPayload: payload.data,
 	});
 
-	if (!order) return false;
-	if (order.paymentStatus === PaymentStatus.PAID) return true;
+	if (!credit.ok) return false;
 
-	await db.order.update({
-		where: { id: params.orderId },
-		data: {
-			status: OrderStatus.CONFIRMED,
-			paymentStatus: PaymentStatus.PAID,
-			paymentProvider: "paystack",
-			paymentRef: payload.data.reference ?? params.reference,
-		},
-	});
-
-	// Both of these are claim-guarded, so the webhook arriving at the same
-	// instant cannot produce a second receipt.
-	await notifyOrderPaid(params.orderId, { method: "Card or bank transfer" });
-	await notifyOrderConfirmed(params.orderId);
-	await notifyCustomerOrderStatus(params.orderId, OrderStatus.CONFIRMED);
+	// This runs on the customer's return from Paystack, racing the webhook for
+	// the same reference. Only whichever call actually settled the order sends,
+	// so the customer gets one receipt rather than two.
+	if (credit.newlyPaid) {
+		await notifyOrderPaid(params.orderId, { method: "Card or bank transfer" });
+		await notifyOrderConfirmed(params.orderId);
+		await notifyCustomerOrderStatus(params.orderId, OrderStatus.CONFIRMED);
+	}
 
 	return true;
 }
@@ -313,21 +329,32 @@ export async function verifyReservationPaymentReference(
 		},
 	});
 
+	// The table is paid for and held, so this is the moment it is genuinely
+	// theirs. Claim-guarded, so the webhook confirming the same payment a
+	// moment later cannot send a second one.
+	await notifyReservationConfirmed(params.reservationId);
+
 	if (reservation.preOrderId) {
-		await db.order.update({
-			where: { id: reservation.preOrderId },
-			data: {
-				status: OrderStatus.CONFIRMED,
-				paymentStatus: PaymentStatus.PAID,
-				paymentProvider: "paystack",
-				paymentRef: payload.data.reference ?? params.reference,
-			},
+		// A deposit, so the charge is expected to be a part payment — see the
+		// matching branch in the Paystack webhook.
+		const credit = await creditOrder(reservation.preOrderId, {
+			kind: "GATEWAY",
+			gateway: "PAYSTACK",
+			reference: payload.data.reference ?? params.reference,
+			paidMinorUnits: payload.data.amount ?? 0,
+			expectedMinorUnits: payload.data.amount ?? 0,
+			currency: payload.data.currency ?? "NGN",
+			gatewayFeeMinorUnits: payload.data.fees ?? null,
+			subaccountCode: payload.data.subaccount?.subaccount_code ?? null,
+			rawPayload: payload.data,
 		});
 
-		await notifyOrderPaid(reservation.preOrderId, {
-			method: "Card or bank transfer",
-		});
-		await notifyOrderConfirmed(reservation.preOrderId);
+		if (credit.ok && credit.newlyPaid) {
+			await notifyOrderPaid(reservation.preOrderId, {
+				method: "Card or bank transfer",
+			});
+			await notifyOrderConfirmed(reservation.preOrderId);
+		}
 	}
 
 	return true;
