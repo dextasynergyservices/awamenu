@@ -5,6 +5,8 @@ import { useState } from "react";
 import { OrderActionForm } from "@/components/orders/OrderActionForm";
 import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
+import { getStatusFlow } from "@/lib/order-status-flow";
 import { cn } from "@/lib/utils";
 
 type AdminOrderControlsProps = {
@@ -25,10 +27,7 @@ type AdminOrderControlsProps = {
 };
 
 function getStatusOptions(type: string) {
-	if (type === "DINE_IN" || type === "TABLE_RESERVATION") {
-		return ["CONFIRMED", "PREPARING", "READY", "COMPLETED"];
-	}
-	return ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+	return getStatusFlow(type) as string[];
 }
 
 function getStatusOptionLabel(status: string, type: string) {
@@ -329,11 +328,14 @@ function AdminOrderControlsContent({
 							/>
 						</label>
 
-						<label className="mt-4 block text-xs font-black text-slate-700">
+						<label
+							htmlFor="order-cancel-password"
+							className="mt-4 block text-xs font-black text-slate-700"
+						>
 							Admin password
-							<input
+							<PasswordInput
+								id="order-cancel-password"
 								name="password"
-								type="password"
 								required
 								autoComplete="current-password"
 								className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100"

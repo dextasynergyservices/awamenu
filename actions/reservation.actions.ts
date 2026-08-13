@@ -19,13 +19,24 @@ import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
+import { isWithinOpeningHours } from "@/lib/opening-hours";
 import { initiateReservationPayment } from "@/lib/payments";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 import {
 	cancelReservationExpiry,
 	scheduleReservationExpiry,
 } from "@/lib/qstash";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
-import { resolveEffectivePolicy } from "@/lib/reservation-policy";
+import {
+	notifyReservationCancelled,
+	notifyReservationConfirmed,
+	notifyReservationDeclined,
+	notifyReservationRequested,
+} from "@/lib/reservation-emails";
+import {
+	requiresFoodOrder,
+	resolveEffectivePolicy,
+} from "@/lib/reservation-policy";
 
 const reservationItemSchema = z.object({
 	id: z.string().cuid(),
@@ -59,17 +70,17 @@ const optionalMoneySchema = z.preprocess(
 	z.coerce.number().min(0).nullable(),
 );
 
-const optionalBookingModeSchema = z.preprocess(
+const _optionalBookingModeSchema = z.preprocess(
 	(value) => (value === "" ? null : value),
 	z.nativeEnum(TableBookingMode).nullable(),
 );
 
-const optionalPaymentTimingSchema = z.preprocess(
+const _optionalPaymentTimingSchema = z.preprocess(
 	(value) => (value === "" ? null : value),
 	z.nativeEnum(TablePaymentTiming).nullable(),
 );
 
-const optionalInclusionTypeSchema = z.preprocess(
+const _optionalInclusionTypeSchema = z.preprocess(
 	(value) => (value === "" ? null : value),
 	z.nativeEnum(TableInclusionType).nullable(),
 );
@@ -77,14 +88,15 @@ const optionalInclusionTypeSchema = z.preprocess(
 const reservationSettingSchema = z.object({
 	slug: z.string().min(1),
 	tableReservationEnabled: z.boolean(),
-	bookingMode: z.nativeEnum(TableBookingMode),
-	paymentTiming: z.nativeEnum(TablePaymentTiming),
-	inclusionType: z.nativeEnum(TableInclusionType),
-	defaultTableFee: optionalMoneySchema,
 	advanceBookingHours: z.coerce.number().int().min(0).max(8760),
-	holdDurationMinutes: z.coerce.number().int().min(15).max(480),
-	minPartySize: z.coerce.number().int().min(1).max(100),
-	maxPartySize: z.coerce.number().int().min(0).max(500),
+	slotIntervalMinutes: z.coerce.number().int().min(5).max(240),
+	graceMinutes: z.coerce.number().int().min(0).max(120),
+	autoConfirmFreeBookings: z.boolean(),
+	refundPolicy: z.preprocess(
+		(value) =>
+			typeof value === "string" && value.trim() === "" ? null : value,
+		z.string().trim().max(500).nullable(),
+	),
 	bookingDescription: z.preprocess(
 		(value) =>
 			typeof value === "string" && value.trim() === "" ? null : value,
@@ -113,9 +125,13 @@ const tableSeatSchema = z.object({
 	capacity: z.coerce.number().int().min(1).max(100),
 	sortOrder: z.coerce.number().int().min(0).max(9999),
 	isActive: z.boolean(),
-	bookingModeOverride: optionalBookingModeSchema,
-	paymentTimingOverride: optionalPaymentTimingSchema,
-	inclusionTypeOverride: optionalInclusionTypeSchema,
+	bookingMode: z.nativeEnum(TableBookingMode),
+	paymentTiming: z.nativeEnum(TablePaymentTiming),
+	inclusionType: z.nativeEnum(TableInclusionType),
+	holdMinutes: z.coerce.number().int().min(15).max(480),
+	depositPercent: z.coerce.number().int().min(0).max(100),
+	minPartySize: z.coerce.number().int().min(1).max(100),
+	maxPartySize: z.coerce.number().int().min(0).max(500),
 	tableFee: optionalMoneySchema,
 	minimumSpend: optionalMoneySchema,
 });
@@ -242,7 +258,7 @@ function revalidateReservationAdminPaths(slug: string) {
 	revalidatePath(`/${slug}/tables`);
 }
 
-function shouldRequireFood(
+function _shouldRequireFood(
 	bookingMode: TableBookingMode,
 	inclusionType: TableInclusionType,
 ) {
@@ -271,16 +287,18 @@ function calculateReservationAmountDue({
 	inclusionType,
 	tableFee,
 	foodTotal,
+	depositPercent = 0,
 }: {
 	bookingMode: TableBookingMode;
 	paymentTiming: TablePaymentTiming;
 	inclusionType: TableInclusionType;
 	tableFee: number;
 	foodTotal: number;
+	depositPercent?: number;
 }) {
 	if (paymentTiming !== TablePaymentTiming.PAY_ON_BOOKING) return 0;
 
-	return (
+	const total =
 		(bookingMode === TableBookingMode.ORDER_REQUIRED &&
 		inclusionType === TableInclusionType.FOOD_ONLY
 			? foodTotal
@@ -289,8 +307,16 @@ function calculateReservationAmountDue({
 		(shouldChargeTableFee(bookingMode, inclusionType) &&
 		inclusionType === TableInclusionType.FOOD_AND_TABLE_FEE
 			? foodTotal
-			: 0)
-	);
+			: 0);
+
+	// A percentage deposit is taken off the whole booking — food and table fee
+	// together — which is what "deposit" normally means. Zero keeps the older
+	// behaviour of charging the table fee alone.
+	if (bookingMode === TableBookingMode.DEPOSIT_REQUIRED && depositPercent > 0) {
+		return Math.round((total * depositPercent) / 100);
+	}
+
+	return total;
 }
 
 export async function createReservationAction(formData: FormData) {
@@ -330,53 +356,79 @@ export async function createReservationAction(formData: FormData) {
 				reservationSetting: true,
 			},
 		});
-		const setting =
-			restaurant.reservationSetting ??
-			({
-				bookingMode: TableBookingMode.FREE_BOOKING,
-				paymentTiming: TablePaymentTiming.PAY_ON_ARRIVAL,
-				inclusionType: TableInclusionType.TABLE_FEE_ONLY,
-				defaultTableFee: null,
-				advanceBookingHours: 0,
-				holdDurationMinutes: 60,
-				minPartySize: 1,
-				maxPartySize: 0,
-				cancellationPolicy: null,
-				bookingDescription: null,
-			} as const);
 
-		if (input.partySize < setting.minPartySize) {
-			throw new ActionError(`Minimum party size is ${setting.minPartySize}.`);
-		}
+		// Opening hours, one-off closures and the table are all keyed off the
+		// restaurant id and none reads the others, so they go together. Run in
+		// sequence they cost three round trips — seconds each on a link to
+		// Frankfurt — before the customer sees anything.
+		const [openingHours, blackout, table] = await Promise.all([
+			db.restaurantOpeningHour.findMany({
+				where: { restaurantId: restaurant.id },
+				select: { dayOfWeek: true, opensAt: true, closesAt: true },
+			}),
+			db.restaurantBlackoutDate.findUnique({
+				where: {
+					restaurantId_date: { restaurantId: restaurant.id, date: input.date },
+				},
+				select: { reason: true },
+			}),
+			db.tableSeat.findFirstOrThrow({
+				where: {
+					id: input.tableId,
+					restaurantId: restaurant.id,
+					isActive: true,
+				},
+			}),
+		]);
 
-		if (setting.maxPartySize > 0 && input.partySize > setting.maxPartySize) {
-			throw new ActionError(`Maximum party size is ${setting.maxPartySize}.`);
+		// A booking for a day or hour the restaurant is shut is a no-show waiting
+		// to happen — someone turns up to a locked door.
+		if (!isWithinOpeningHours(openingHours, input.date, input.time)) {
+			throw new ActionError(
+				"We're closed at that time. Please pick a time within our opening hours.",
+			);
 		}
+		if (blackout) {
+			throw new ActionError(
+				blackout.reason
+					? `We're closed that day — ${blackout.reason}. Please pick another date.`
+					: "We're closed that day. Please pick another date.",
+			);
+		}
+		// Restaurant level now holds only what is genuinely one-per-restaurant:
+		// how far ahead people may book, and the customer-facing policies.
+		const advanceBookingHours =
+			restaurant.reservationSetting?.advanceBookingHours ?? 0;
 
 		const earliestStart = new Date(
-			Date.now() + setting.advanceBookingHours * 60 * 60 * 1000,
+			Date.now() + advanceBookingHours * 60 * 60 * 1000,
 		);
 		earliestStart.setSeconds(0, 0);
 		if (startsAt < earliestStart) {
 			throw new ActionError("This reservation time is no longer available.");
 		}
 
-		const endsAt = new Date(
-			startsAt.getTime() + setting.holdDurationMinutes * 60 * 1000,
-		);
-		const table = await db.tableSeat.findFirstOrThrow({
-			where: {
-				id: input.tableId,
-				restaurantId: restaurant.id,
-				isActive: true,
-			},
-		});
+		// Every booking rule is the table's own.
+		const policy = resolveEffectivePolicy(table);
 
-		if (input.partySize > table.capacity) {
+		if (input.partySize < policy.minPartySize) {
 			throw new ActionError(
-				`${table.label} seats up to ${table.capacity} guests.`,
+				`${table.label} takes a minimum of ${policy.minPartySize} guests.`,
 			);
 		}
+		if (input.partySize > policy.maxPartySize) {
+			throw new ActionError(
+				`${table.label} seats up to ${policy.maxPartySize} guests.`,
+			);
+		}
+
+		// The table stays blocked for the booking length plus the grace window, so
+		// a guest running ten minutes late doesn't find it given away — and a
+		// no-show releases it rather than holding it for the whole sitting.
+		const graceMinutes = restaurant.reservationSetting?.graceMinutes ?? 15;
+		const endsAt = new Date(
+			startsAt.getTime() + (policy.holdMinutes + graceMinutes) * 60 * 1000,
+		);
 
 		const overlappingReservation = await db.reservation.findFirst({
 			where: {
@@ -398,11 +450,7 @@ export async function createReservationAction(formData: FormData) {
 			throw new ActionError("This table is already reserved for that time.");
 		}
 
-		const policy = resolveEffectivePolicy(setting, table);
-		const requiresFood = shouldRequireFood(
-			policy.bookingMode,
-			policy.inclusionType,
-		);
+		const requiresFood = requiresFoodOrder(policy);
 
 		if (requiresFood && input.items.length === 0) {
 			throw new ActionError("Please choose food items for this reservation.");
@@ -447,54 +495,87 @@ export async function createReservationAction(formData: FormData) {
 			inclusionType: policy.inclusionType,
 			tableFee,
 			foodTotal,
+			depositPercent: policy.depositPercent,
 		});
 
-		const reservation = await db.$transaction(async (tx) => {
-			const preOrder =
-				lines.length > 0
-					? await tx.order.create({
-							data: {
-								restaurantId: restaurant.id,
-								customerName: input.customerName,
-								customerPhone: input.customerPhone,
-								customerEmail: input.customerEmail,
-								type: OrderType.TABLE_RESERVATION,
-								status: OrderStatus.PENDING_PAYMENT,
-								paymentStatus: PaymentStatus.PENDING,
-								tableId: table.id,
-								tableLabel: table.label,
-								tableNumber: table.label,
-								deliveryNotes: input.specialRequests,
-								subtotal: foodTotal,
-								total: foodTotal,
-								items: { create: lines },
-							},
-						})
-					: null;
+		// Auto-confirm only when nothing is owed AND the table has just been
+		// verified free for the slot. Anything taking money still needs a human,
+		// and an auto-confirmed double booking would be worse than a short wait —
+		// this sits after the overlap check for exactly that reason.
+		const autoConfirm =
+			(restaurant.reservationSetting?.autoConfirmFreeBookings ?? false) &&
+			policy.bookingMode === TableBookingMode.FREE_BOOKING &&
+			amountDue <= 0;
+		const reservationStatus = autoConfirm
+			? ReservationStatus.APPROVED
+			: ReservationStatus.PENDING_APPROVAL;
 
-			return tx.reservation.create({
-				data: {
-					restaurantId: restaurant.id,
-					tableId: table.id,
-					customerName: input.customerName,
-					customerPhone: input.customerPhone,
-					customerEmail: input.customerEmail,
-					partySize: input.partySize,
-					startsAt,
-					endsAt,
-					expiresAt: endsAt,
-					effectiveBookingMode: policy.bookingMode,
-					effectivePaymentTiming: policy.paymentTiming,
-					effectiveInclusionType: policy.inclusionType,
-					effectiveTableFee: policy.tableFee,
-					status: ReservationStatus.PENDING_APPROVAL,
-					reservationPaymentStatus: PaymentStatus.PENDING,
-					reservationAmountPaid: amountDue > 0 ? amountDue : null,
-					preOrderId: preOrder?.id,
-					specialRequests: input.specialRequests,
-				},
-			});
-		});
+		const reservation = await db.$transaction(
+			async (tx) => {
+				const preOrder =
+					lines.length > 0
+						? await tx.order.create({
+								data: {
+									restaurantId: restaurant.id,
+									customerName: input.customerName,
+									customerPhone: input.customerPhone,
+									customerEmail: input.customerEmail,
+									type: OrderType.TABLE_RESERVATION,
+									status: OrderStatus.PENDING_PAYMENT,
+									paymentStatus: PaymentStatus.PENDING,
+									tableId: table.id,
+									tableLabel: table.label,
+									tableNumber: table.label,
+									deliveryNotes: input.specialRequests,
+									subtotal: foodTotal,
+									total: foodTotal,
+									items: { create: lines },
+								},
+							})
+						: null;
+
+				return tx.reservation.create({
+					data: {
+						restaurantId: restaurant.id,
+						tableId: table.id,
+						customerName: input.customerName,
+						customerPhone: input.customerPhone,
+						customerEmail: input.customerEmail,
+						partySize: input.partySize,
+						startsAt,
+						endsAt,
+						expiresAt: endsAt,
+						effectiveBookingMode: policy.bookingMode,
+						effectivePaymentTiming: policy.paymentTiming,
+						effectiveInclusionType: policy.inclusionType,
+						effectiveTableFee: policy.tableFee,
+						effectiveDepositPercent: policy.depositPercent,
+						status: reservationStatus,
+						reservationPaymentStatus: PaymentStatus.PENDING,
+						reservationAmountPaid: amountDue > 0 ? amountDue : null,
+						preOrderId: preOrder?.id,
+						specialRequests: input.specialRequests,
+					},
+				});
+			},
+			{
+				// An interactive transaction holds the connection open across
+				// every query inside it. The database is in Frankfurt and a
+				// round trip from West Africa is seconds, so a few writes exceed
+				// Prisma's 5s default and the commit is rejected after the work
+				// is already done — P2028.
+				timeout: 20000,
+				maxWait: 10000,
+			},
+		);
+
+		// Auto-confirmed free bookings are already theirs, so they get the
+		// confirmation rather than a "we'll get back to you" that never follows.
+		if (autoConfirm) {
+			await notifyReservationConfirmed(reservation.id);
+		} else {
+			await notifyReservationRequested(reservation.id);
+		}
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,
@@ -520,24 +601,17 @@ export async function upsertReservationSettingAction(formData: FormData) {
 			tableReservationEnabled:
 				formData.get("tableReservationEnabled") === "on" ||
 				formData.get("tableReservationEnabled") === "true",
-			bookingMode: formData.get("bookingMode"),
-			paymentTiming: formData.get("paymentTiming"),
-			inclusionType: formData.get("inclusionType"),
-			defaultTableFee: formData.get("defaultTableFee"),
 			advanceBookingHours: formData.get("advanceBookingHours") || 0,
-			holdDurationMinutes: formData.get("holdDurationMinutes") || 60,
-			minPartySize: formData.get("minPartySize") || 1,
-			maxPartySize: formData.get("maxPartySize") || 0,
+			slotIntervalMinutes: formData.get("slotIntervalMinutes") || 30,
+			graceMinutes: formData.get("graceMinutes") || 15,
+			autoConfirmFreeBookings:
+				formData.get("autoConfirmFreeBookings") === "on" ||
+				formData.get("autoConfirmFreeBookings") === "true",
 			bookingDescription: formData.get("bookingDescription"),
 			cancellationPolicy: formData.get("cancellationPolicy"),
+			refundPolicy: formData.get("refundPolicy"),
 		});
 		const restaurant = await requireOwnedRestaurantBySlug(input.slug);
-
-		if (input.maxPartySize > 0 && input.maxPartySize < input.minPartySize) {
-			throw new ActionError(
-				"Max party size cannot be lower than min party size.",
-			);
-		}
 
 		await db.$transaction([
 			db.restaurant.update({
@@ -551,28 +625,22 @@ export async function upsertReservationSettingAction(formData: FormData) {
 				where: { restaurantId: restaurant.id },
 				create: {
 					restaurantId: restaurant.id,
-					bookingMode: input.bookingMode,
-					paymentTiming: input.paymentTiming,
-					inclusionType: input.inclusionType,
-					defaultTableFee: input.defaultTableFee,
 					advanceBookingHours: input.advanceBookingHours,
-					holdDurationMinutes: input.holdDurationMinutes,
-					minPartySize: input.minPartySize,
-					maxPartySize: input.maxPartySize,
+					slotIntervalMinutes: input.slotIntervalMinutes,
+					graceMinutes: input.graceMinutes,
+					autoConfirmFreeBookings: input.autoConfirmFreeBookings,
 					bookingDescription: input.bookingDescription,
 					cancellationPolicy: input.cancellationPolicy,
+					refundPolicy: input.refundPolicy,
 				},
 				update: {
-					bookingMode: input.bookingMode,
-					paymentTiming: input.paymentTiming,
-					inclusionType: input.inclusionType,
-					defaultTableFee: input.defaultTableFee,
 					advanceBookingHours: input.advanceBookingHours,
-					holdDurationMinutes: input.holdDurationMinutes,
-					minPartySize: input.minPartySize,
-					maxPartySize: input.maxPartySize,
+					slotIntervalMinutes: input.slotIntervalMinutes,
+					graceMinutes: input.graceMinutes,
+					autoConfirmFreeBookings: input.autoConfirmFreeBookings,
 					bookingDescription: input.bookingDescription,
 					cancellationPolicy: input.cancellationPolicy,
+					refundPolicy: input.refundPolicy,
 				},
 			}),
 		]);
@@ -582,95 +650,136 @@ export async function upsertReservationSettingAction(formData: FormData) {
 }
 
 export async function createTableSeatAction(formData: FormData) {
-	const input = tableSeatSchema.parse({
-		slug: formData.get("slug"),
-		label: formData.get("label"),
-		imageUrl: formData.get("imageUrl"),
-		description: formData.get("description"),
-		capacity: formData.get("capacity") || 2,
-		sortOrder: formData.get("sortOrder") || 0,
-		isActive:
-			formData.get("isActive") === "on" || formData.get("isActive") === "true",
-		bookingModeOverride: formData.get("bookingModeOverride"),
-		paymentTimingOverride: formData.get("paymentTimingOverride"),
-		inclusionTypeOverride: formData.get("inclusionTypeOverride"),
-		tableFee: formData.get("tableFee"),
-		minimumSpend: formData.get("minimumSpend"),
-	});
-	const restaurant = await requireOwnedRestaurantBySlug(input.slug);
+	return actionResult(async () => {
+		const input = tableSeatSchema.parse({
+			slug: formData.get("slug"),
+			label: formData.get("label"),
+			imageUrl: formData.get("imageUrl"),
+			description: formData.get("description"),
+			capacity: formData.get("capacity") || 2,
+			sortOrder: formData.get("sortOrder") || 0,
+			isActive:
+				formData.get("isActive") === "on" ||
+				formData.get("isActive") === "true",
+			bookingMode: formData.get("bookingMode"),
+			paymentTiming: formData.get("paymentTiming"),
+			inclusionType: formData.get("inclusionType"),
+			holdMinutes: formData.get("holdMinutes") || 60,
+			depositPercent: formData.get("depositPercent") || 0,
+			minPartySize: formData.get("minPartySize") || 1,
+			maxPartySize: formData.get("maxPartySize") || 0,
+			tableFee: formData.get("tableFee"),
+			minimumSpend: formData.get("minimumSpend"),
+		});
+		const restaurant = await requireOwnedRestaurantBySlug(input.slug);
 
-	await db.tableSeat.create({
-		data: {
-			restaurantId: restaurant.id,
-			label: input.label,
-			imageUrl: input.imageUrl,
-			description: input.description,
-			capacity: input.capacity,
-			sortOrder: input.sortOrder,
-			isActive: input.isActive,
-			bookingModeOverride: input.bookingModeOverride,
-			paymentTimingOverride: input.paymentTimingOverride,
-			inclusionTypeOverride: input.inclusionTypeOverride,
-			tableFee: input.tableFee,
-			minimumSpend: input.minimumSpend,
-		},
-	});
+		// Enforced server-side, not just hidden in the UI — the limit is what the
+		// customer is paying for. -1 means unlimited, matching the category and
+		// item limits so all three read the same way.
+		const features = await getRestaurantPlanFeatures(restaurant.id);
+		if (features.maxTables !== -1) {
+			const existing = await db.tableSeat.count({
+				where: { restaurantId: restaurant.id, isActive: true },
+			});
+			if (existing >= features.maxTables) {
+				throw new ActionError(
+					features.maxTables === 1
+						? "Your plan includes 1 table. Upgrade to add more."
+						: `Your plan includes ${features.maxTables} tables. Upgrade to add more.`,
+				);
+			}
+		}
 
-	revalidateReservationAdminPaths(restaurant.slug);
+		await db.tableSeat.create({
+			data: {
+				restaurantId: restaurant.id,
+				label: input.label,
+				imageUrl: input.imageUrl,
+				description: input.description,
+				capacity: input.capacity,
+				sortOrder: input.sortOrder,
+				isActive: input.isActive,
+				bookingMode: input.bookingMode,
+				paymentTiming: input.paymentTiming,
+				inclusionType: input.inclusionType,
+				holdMinutes: input.holdMinutes,
+				depositPercent: input.depositPercent,
+				minPartySize: input.minPartySize,
+				maxPartySize: input.maxPartySize,
+				tableFee: input.tableFee,
+				minimumSpend: input.minimumSpend,
+			},
+		});
+
+		revalidateReservationAdminPaths(restaurant.slug);
+	});
 }
 
 export async function updateTableSeatAction(formData: FormData) {
-	const input = updateTableSeatSchema.parse({
-		slug: formData.get("slug"),
-		tableId: formData.get("tableId"),
-		label: formData.get("label"),
-		imageUrl: formData.get("imageUrl"),
-		description: formData.get("description"),
-		capacity: formData.get("capacity") || 2,
-		sortOrder: formData.get("sortOrder") || 0,
-		isActive:
-			formData.get("isActive") === "on" || formData.get("isActive") === "true",
-		bookingModeOverride: formData.get("bookingModeOverride"),
-		paymentTimingOverride: formData.get("paymentTimingOverride"),
-		inclusionTypeOverride: formData.get("inclusionTypeOverride"),
-		tableFee: formData.get("tableFee"),
-		minimumSpend: formData.get("minimumSpend"),
-	});
-	const restaurant = await requireOwnedRestaurantBySlug(input.slug);
+	return actionResult(async () => {
+		const input = updateTableSeatSchema.parse({
+			slug: formData.get("slug"),
+			tableId: formData.get("tableId"),
+			label: formData.get("label"),
+			imageUrl: formData.get("imageUrl"),
+			description: formData.get("description"),
+			capacity: formData.get("capacity") || 2,
+			sortOrder: formData.get("sortOrder") || 0,
+			isActive:
+				formData.get("isActive") === "on" ||
+				formData.get("isActive") === "true",
+			bookingMode: formData.get("bookingMode"),
+			paymentTiming: formData.get("paymentTiming"),
+			inclusionType: formData.get("inclusionType"),
+			holdMinutes: formData.get("holdMinutes") || 60,
+			depositPercent: formData.get("depositPercent") || 0,
+			minPartySize: formData.get("minPartySize") || 1,
+			maxPartySize: formData.get("maxPartySize") || 0,
+			tableFee: formData.get("tableFee"),
+			minimumSpend: formData.get("minimumSpend"),
+		});
+		const restaurant = await requireOwnedRestaurantBySlug(input.slug);
 
-	await db.tableSeat.updateMany({
-		where: { id: input.tableId, restaurantId: restaurant.id },
-		data: {
-			label: input.label,
-			imageUrl: input.imageUrl,
-			description: input.description,
-			capacity: input.capacity,
-			sortOrder: input.sortOrder,
-			isActive: input.isActive,
-			bookingModeOverride: input.bookingModeOverride,
-			paymentTimingOverride: input.paymentTimingOverride,
-			inclusionTypeOverride: input.inclusionTypeOverride,
-			tableFee: input.tableFee,
-			minimumSpend: input.minimumSpend,
-		},
-	});
+		await db.tableSeat.updateMany({
+			where: { id: input.tableId, restaurantId: restaurant.id },
+			data: {
+				label: input.label,
+				imageUrl: input.imageUrl,
+				description: input.description,
+				capacity: input.capacity,
+				sortOrder: input.sortOrder,
+				isActive: input.isActive,
+				bookingMode: input.bookingMode,
+				paymentTiming: input.paymentTiming,
+				inclusionType: input.inclusionType,
+				holdMinutes: input.holdMinutes,
+				depositPercent: input.depositPercent,
+				minPartySize: input.minPartySize,
+				maxPartySize: input.maxPartySize,
+				tableFee: input.tableFee,
+				minimumSpend: input.minimumSpend,
+			},
+		});
 
-	revalidateReservationAdminPaths(restaurant.slug);
+		revalidateReservationAdminPaths(restaurant.slug);
+	});
 }
 
 export async function deactivateTableSeatAction(formData: FormData) {
-	const input = tableSeatIdSchema.parse({
-		slug: formData.get("slug"),
-		tableId: formData.get("tableId"),
-	});
-	const restaurant = await requireOwnedRestaurantBySlug(input.slug);
+	return actionResult(async () => {
+		const input = tableSeatIdSchema.parse({
+			slug: formData.get("slug"),
+			tableId: formData.get("tableId"),
+		});
+		const restaurant = await requireOwnedRestaurantBySlug(input.slug);
 
-	await db.tableSeat.updateMany({
-		where: { id: input.tableId, restaurantId: restaurant.id },
-		data: { isActive: false },
-	});
+		await db.tableSeat.updateMany({
+			where: { id: input.tableId, restaurantId: restaurant.id },
+			data: { isActive: false },
+		});
 
-	revalidateReservationAdminPaths(restaurant.slug);
+		revalidateReservationAdminPaths(restaurant.slug);
+	});
 }
 
 export async function deleteTableSeatAction(formData: FormData) {
@@ -764,6 +873,7 @@ export async function approveReservationAction(formData: FormData) {
 				effectivePaymentTiming: true,
 				effectiveInclusionType: true,
 				effectiveTableFee: true,
+				effectiveDepositPercent: true,
 				preOrderId: true,
 				preOrder: { select: { total: true } },
 				table: { select: { label: true } },
@@ -807,6 +917,7 @@ export async function approveReservationAction(formData: FormData) {
 			inclusionType: reservation.effectiveInclusionType,
 			tableFee: Number(reservation.effectiveTableFee ?? 0),
 			foodTotal: Number(reservation.preOrder?.total ?? 0),
+			depositPercent: reservation.effectiveDepositPercent,
 		});
 		const isPaymentRequired = amountDue > 0;
 		const nextStatus = isPaymentRequired
@@ -819,8 +930,13 @@ export async function approveReservationAction(formData: FormData) {
 					expiresAt: reservation.expiresAt,
 				});
 
-		await db.$transaction(async (tx) => {
-			await tx.reservation.update({
+		// A batch transaction, not an interactive one: these writes don't read
+		// each other, so they travel as a single round trip instead of holding a
+		// connection open across two. Over a link where each hop costs seconds
+		// that is the difference between "instant" and the 11s timeout this
+		// action used to hit.
+		await db.$transaction([
+			db.reservation.update({
 				where: { id: reservation.id },
 				data: {
 					status: nextStatus,
@@ -833,22 +949,30 @@ export async function approveReservationAction(formData: FormData) {
 						: PaymentStatus.PAID,
 					reservationAmountPaid: isPaymentRequired ? amountDue : null,
 				},
-			});
+			}),
+			...(reservation.preOrderId
+				? [
+						db.order.update({
+							where: { id: reservation.preOrderId },
+							data: {
+								status: isPaymentRequired
+									? OrderStatus.PENDING_PAYMENT
+									: OrderStatus.CONFIRMED,
+								paymentStatus: isPaymentRequired
+									? PaymentStatus.PENDING
+									: PaymentStatus.PAID,
+							},
+						}),
+					]
+				: []),
+		]);
 
-			if (reservation.preOrderId) {
-				await tx.order.update({
-					where: { id: reservation.preOrderId },
-					data: {
-						status: isPaymentRequired
-							? OrderStatus.PENDING_PAYMENT
-							: OrderStatus.CONFIRMED,
-						paymentStatus: isPaymentRequired
-							? PaymentStatus.PENDING
-							: PaymentStatus.PAID,
-					},
-				});
-			}
-		});
+		// Only when the table is actually theirs. An APPROVED booking still owing
+		// a deposit is not confirmed yet — telling a guest "table confirmed" and
+		// then expiring it for non-payment is worse than saying nothing.
+		if (!isPaymentRequired) {
+			await notifyReservationConfirmed(reservation.id);
+		}
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,
@@ -899,8 +1023,10 @@ export async function declineReservationAction(formData: FormData) {
 		}
 
 		await cancelReservationExpiry(reservation.qstashMessageId);
-		await db.$transaction(async (tx) => {
-			await tx.reservation.update({
+		// Batched for the same reason as approval: independent writes, one round
+		// trip.
+		await db.$transaction([
+			db.reservation.update({
 				where: { id: reservation.id },
 				data: {
 					status: ReservationStatus.DECLINED,
@@ -908,19 +1034,22 @@ export async function declineReservationAction(formData: FormData) {
 					declineReason: input.declineReason,
 					qstashMessageId: null,
 				},
-			});
+			}),
+			...(reservation.preOrderId
+				? [
+						db.order.update({
+							where: { id: reservation.preOrderId },
+							data: {
+								status: OrderStatus.CANCELLED,
+								paymentStatus: PaymentStatus.PENDING,
+								cancellationNote: input.declineReason,
+							},
+						}),
+					]
+				: []),
+		]);
 
-			if (reservation.preOrderId) {
-				await tx.order.update({
-					where: { id: reservation.preOrderId },
-					data: {
-						status: OrderStatus.CANCELLED,
-						paymentStatus: PaymentStatus.PENDING,
-						cancellationNote: input.declineReason,
-					},
-				});
-			}
-		});
+		await notifyReservationDeclined(reservation.id);
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,
@@ -1061,6 +1190,8 @@ export async function cancelReservationAction(formData: FormData) {
 			},
 		});
 
+		await notifyReservationCancelled(reservation.id);
+
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.RESERVATION_CANCELLED,
@@ -1112,4 +1243,107 @@ export async function checkOutReservationAction(formData: FormData) {
 		revalidateReservationAdminPaths(restaurant.slug);
 		revalidatePath(`/${restaurant.slug}/reservation/${reservation.id}`);
 	});
+}
+
+/**
+ * One-click switch for whether customers can book at all.
+ *
+ * Separate from the full settings form because the master switch was a small
+ * checkbox inside a collapsed panel — restaurants configured tables and never
+ * found the control that publishes them.
+ */
+export async function toggleTableReservationsAction(input: {
+	slug: string;
+	enabled: boolean;
+}): Promise<{ ok: true } | { error: string }> {
+	const parsed = z
+		.object({ slug: z.string().min(1), enabled: z.boolean() })
+		.safeParse(input);
+	if (!parsed.success) return { error: "Invalid request." };
+
+	const restaurant = await requireOwnedRestaurantBySlug(parsed.data.slug);
+
+	if (parsed.data.enabled) {
+		const tables = await db.tableSeat.count({
+			where: { restaurantId: restaurant.id, isActive: true },
+		});
+		if (tables === 0) {
+			return { error: "Add at least one table before taking reservations." };
+		}
+	}
+
+	await db.restaurant.update({
+		where: { id: restaurant.id },
+		data: { tableReservationEnabled: parsed.data.enabled },
+	});
+
+	revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
+	revalidatePath(`/dashboard/${restaurant.slug}/reservations/tables`);
+	revalidatePath(`/${restaurant.slug}`);
+	revalidatePath(`/${restaurant.slug}/tables`);
+	return { ok: true };
+}
+
+const blackoutSchema = z.object({
+	slug: z.string().min(1),
+	date: z.string().regex(/^d{4}-d{2}-d{2}$/, "Pick a valid date."),
+	reason: z.preprocess(
+		(value) =>
+			typeof value === "string" && value.trim() === "" ? null : value,
+		z.string().trim().max(120).nullable(),
+	),
+});
+
+/** Closes a single date to bookings — a holiday, a private event. */
+export async function addBlackoutDateAction(input: {
+	slug: string;
+	date: string;
+	reason?: string | null;
+}): Promise<{ ok: true } | { error: string }> {
+	const parsed = blackoutSchema.safeParse(input);
+	if (!parsed.success) {
+		return { error: parsed.error.issues[0]?.message ?? "Invalid date." };
+	}
+
+	const restaurant = await requireOwnedRestaurantBySlug(parsed.data.slug);
+
+	// Upsert rather than create: adding the same date twice is a slip, not an
+	// error worth showing anyone.
+	await db.restaurantBlackoutDate.upsert({
+		where: {
+			restaurantId_date: {
+				restaurantId: restaurant.id,
+				date: parsed.data.date,
+			},
+		},
+		create: {
+			restaurantId: restaurant.id,
+			date: parsed.data.date,
+			reason: parsed.data.reason,
+		},
+		update: { reason: parsed.data.reason },
+	});
+
+	revalidateReservationAdminPaths(restaurant.slug);
+	revalidatePath(`/${restaurant.slug}/tables`);
+	return { ok: true };
+}
+
+export async function removeBlackoutDateAction(input: {
+	slug: string;
+	date: string;
+}): Promise<{ ok: true } | { error: string }> {
+	const parsed = z
+		.object({ slug: z.string().min(1), date: z.string().min(1) })
+		.safeParse(input);
+	if (!parsed.success) return { error: "Invalid request." };
+
+	const restaurant = await requireOwnedRestaurantBySlug(parsed.data.slug);
+	await db.restaurantBlackoutDate.deleteMany({
+		where: { restaurantId: restaurant.id, date: parsed.data.date },
+	});
+
+	revalidateReservationAdminPaths(restaurant.slug);
+	revalidatePath(`/${restaurant.slug}/tables`);
+	return { ok: true };
 }

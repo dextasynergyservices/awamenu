@@ -1,5 +1,6 @@
 import { updatePlatformSettingsAction } from "@/actions/super-admin.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
 	AWAMENU_PAY_PROVIDERS,
 	GATEWAY_CATALOG,
@@ -158,9 +159,8 @@ export function PlatformSettingsForm({
 						<label htmlFor="paystackSecretKey" className={labelClassName}>
 							Paystack Secret Key
 						</label>
-						<input
+						<PasswordInput
 							id="paystackSecretKey"
-							type="password"
 							name="paystackSecretKey"
 							placeholder={
 								hasSecretKey

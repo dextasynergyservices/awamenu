@@ -12,6 +12,7 @@ import { MarketingBottomNav } from "@/components/marketing/MarketingBottomNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { LoadingButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const inputClassName =
 	"h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
@@ -196,21 +197,24 @@ export default function ForgotPasswordPage() {
 						{/* STEP 3: NEW PASSWORD */}
 						{step === "new_password" && (
 							<form className="grid gap-4" onSubmit={handleNewPasswordSubmit}>
-								<label className={labelClassName}>
+								<label htmlFor="new-password" className={labelClassName}>
 									New Password
-									<input
+									<PasswordInput
+										id="new-password"
 										name="newPassword"
-										type="password"
 										required
 										minLength={8}
 										className={inputClassName}
 									/>
 								</label>
-								<label className={labelClassName}>
+								<label
+									htmlFor="confirm-new-password"
+									className={labelClassName}
+								>
 									Confirm New Password
-									<input
+									<PasswordInput
+										id="confirm-new-password"
 										name="confirmPassword"
-										type="password"
 										required
 										minLength={8}
 										className={inputClassName}

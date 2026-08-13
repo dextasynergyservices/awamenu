@@ -71,6 +71,7 @@ export function RestaurantBrandingForm({
 
 	return (
 		<SettingsCard
+			anchorId="branding"
 			title="Branding"
 			description="Customize how your brand appears to your customers."
 			icon={BadgeCheck}

@@ -17,6 +17,7 @@ export type PlanFeatures = {
 	planName: string;
 	tier: PlanTier;
 	maxCategories: number;
+	maxTables: number;
 	maxMenuItems: number;
 	advancedAnalytics: boolean;
 	whatsappIntegration: boolean;
@@ -39,6 +40,7 @@ const FALLBACK_FREE: PlanFeatures = {
 	planName: "Free",
 	tier: "FREE",
 	maxCategories: 1,
+	maxTables: 1,
 	maxMenuItems: 8,
 	advancedAnalytics: false,
 	whatsappIntegration: true,
@@ -52,6 +54,7 @@ type PlanRow = {
 	name: string;
 	tier: PlanTier;
 	maxCategories: number;
+	maxTables: number;
 	maxMenuItems: number;
 	advancedAnalytics: boolean;
 	whatsappIntegration: boolean;
@@ -65,6 +68,7 @@ const planSelect = {
 	name: true,
 	tier: true,
 	maxCategories: true,
+	maxTables: true,
 	maxMenuItems: true,
 	advancedAnalytics: true,
 	whatsappIntegration: true,
@@ -81,6 +85,7 @@ function toFeatures(plan: PlanRow): PlanFeatures {
 		planName: plan.name,
 		tier: plan.tier,
 		maxCategories: plan.maxCategories,
+		maxTables: plan.maxTables,
 		maxMenuItems: plan.maxMenuItems,
 		advancedAnalytics: plan.advancedAnalytics,
 		whatsappIntegration: plan.whatsappIntegration,

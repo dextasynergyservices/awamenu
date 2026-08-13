@@ -58,6 +58,10 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			whatsappNumber: true,
 			currency: true,
 			reservationSetting: true,
+			openingHours: {
+				select: { dayOfWeek: true, opensAt: true, closesAt: true },
+			},
+			blackoutDates: { select: { date: true } },
 			subscription: {
 				select: { status: true, currentPeriodEnd: true },
 			},
@@ -70,10 +74,15 @@ export default async function TablesPage({ params }: TablesPageProps) {
 					description: true,
 					imageUrl: true,
 					capacity: true,
-					bookingModeOverride: true,
-					paymentTimingOverride: true,
-					inclusionTypeOverride: true,
+					bookingMode: true,
+					paymentTiming: true,
+					inclusionType: true,
+					holdMinutes: true,
+					depositPercent: true,
+					minPartySize: true,
+					maxPartySize: true,
 					tableFee: true,
+					minimumSpend: true,
 					reservations: {
 						where: { status: "ACTIVE" },
 						select: { startsAt: true, expiresAt: true },
@@ -123,7 +132,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			bookingDescription: null,
 		} as const);
 	const tables = restaurant.tables.map((table) => {
-		const policy = resolveEffectivePolicy(setting, table);
+		const policy = resolveEffectivePolicy(table);
 
 		return {
 			id: table.id,
@@ -131,11 +140,18 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			description: table.description,
 			imageUrl: table.imageUrl,
 			capacity: table.capacity,
+			// Every booking rule now travels with the table it belongs to, so the
+			// customer sees the terms for the table they're actually choosing.
 			policy: {
 				bookingMode: policy.bookingMode,
 				paymentTiming: policy.paymentTiming,
 				inclusionType: policy.inclusionType,
 				tableFee: Number(policy.tableFee ?? 0),
+				depositPercent: policy.depositPercent,
+				minimumSpend: Number(policy.minimumSpend ?? 0),
+				holdMinutes: policy.holdMinutes,
+				minPartySize: policy.minPartySize,
+				maxPartySize: policy.maxPartySize,
 			},
 			reservations: table.reservations.map((reservation) => ({
 				startsAt: reservation.startsAt.toISOString(),
@@ -156,6 +172,8 @@ export default async function TablesPage({ params }: TablesPageProps) {
 
 	return (
 		<TableReservationFlow
+			openingHours={restaurant.openingHours}
+			blackoutDates={restaurant.blackoutDates.map((d) => d.date)}
 			restaurantName={restaurant.name}
 			restaurantSlug={restaurant.slug}
 			logoUrl={restaurant.logoUrl}
@@ -165,10 +183,10 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			setting={{
 				bookingDescription: setting.bookingDescription,
 				advanceBookingHours: setting.advanceBookingHours,
-				holdDurationMinutes: setting.holdDurationMinutes,
-				minPartySize: setting.minPartySize,
-				maxPartySize: setting.maxPartySize,
+				slotIntervalMinutes:
+					"slotIntervalMinutes" in setting ? setting.slotIntervalMinutes : 30,
 				cancellationPolicy: setting.cancellationPolicy,
+				refundPolicy: "refundPolicy" in setting ? setting.refundPolicy : null,
 			}}
 			initialReservationDateTime={initialReservationDateTime}
 			tables={tables}

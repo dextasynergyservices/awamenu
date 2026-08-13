@@ -80,6 +80,7 @@ export function RestaurantInfoForm({
 
 	return (
 		<SettingsCard
+			anchorId="contact"
 			title="Restaurant Profile"
 			description="Update your public information and location details."
 			icon={Store}

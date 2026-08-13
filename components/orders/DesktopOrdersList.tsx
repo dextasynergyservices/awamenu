@@ -22,6 +22,8 @@ import {
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
+import { getStatusFlow, getStatusLabel } from "@/lib/order-status-flow";
 import { cn } from "@/lib/utils";
 
 type OrderItem = {
@@ -74,10 +76,7 @@ type DesktopOrdersListProps = {
 };
 
 function getStatusOptions(type: string) {
-	if (type === "DINE_IN" || type === "TABLE_RESERVATION") {
-		return ["CONFIRMED", "PREPARING", "READY", "COMPLETED"];
-	}
-	return ["CONFIRMED", "PREPARING", "READY", "DELIVERED", "COMPLETED"];
+	return getStatusFlow(type) as string[];
 }
 
 function getStatusOptionLabel(status: string, type: string) {
@@ -176,33 +175,14 @@ function getDefaultWhatsAppMessage(order: Order, status: string) {
 }
 
 function getStatusSteps(type: string) {
-	if (type === "DELIVERY") {
-		return [
-			{ value: "PENDING_PAYMENT", label: "Pending" },
-			{ value: "CONFIRMED", label: "Confirmed" },
-			{ value: "PREPARING", label: "Preparing" },
-			{ value: "READY", label: "Out for Delivery" },
-			{ value: "DELIVERED", label: "Delivered" },
-		];
-	}
-
-	if (type === "PICKUP") {
-		return [
-			{ value: "PENDING_PAYMENT", label: "Pending" },
-			{ value: "CONFIRMED", label: "Confirmed" },
-			{ value: "PREPARING", label: "Preparing" },
-			{ value: "READY", label: "Ready" },
-			{ value: "DELIVERED", label: "Collected" },
-			{ value: "COMPLETED", label: "Completed" },
-		];
-	}
-
+	// Derived from the shared flow so this stepper can't drift from the status
+	// options the same page offers — they disagreed before.
 	return [
 		{ value: "PENDING_PAYMENT", label: "Pending" },
-		{ value: "CONFIRMED", label: "Confirmed" },
-		{ value: "PREPARING", label: "Preparing" },
-		{ value: "READY", label: "Ready" },
-		{ value: "COMPLETED", label: "Completed" },
+		...getStatusFlow(type).map((status) => ({
+			value: status,
+			label: getStatusLabel(type, status),
+		})),
 	];
 }
 
@@ -1044,11 +1024,14 @@ function CancelOrderModal({
 					/>
 				</label>
 
-				<label className="mt-4 block text-xs font-black text-slate-700">
+				<label
+					htmlFor="orders-cancel-password"
+					className="mt-4 block text-xs font-black text-slate-700"
+				>
 					Admin password
-					<input
+					<PasswordInput
+						id="orders-cancel-password"
 						name="password"
-						type="password"
 						required
 						autoComplete="current-password"
 						className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100"

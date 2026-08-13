@@ -13,6 +13,7 @@ import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
+import { getOpenState } from "@/lib/opening-hours";
 import { getRestaurantPlanFeaturesBySlug } from "@/lib/plan-features";
 import { isSubscriptionActive } from "@/lib/subscription";
 
@@ -50,6 +51,10 @@ export default async function PublicMenuPage({
 			name: true,
 			description: true,
 			logoUrl: true,
+			timezone: true,
+			openingHours: {
+				select: { dayOfWeek: true, opensAt: true, closesAt: true },
+			},
 			currency: true,
 			whatsappNumber: true,
 			tableReservationEnabled: true,
@@ -111,6 +116,20 @@ export default async function PublicMenuPage({
 	// restaurant with multiple visible categories doesn't get the limit
 	// multiplied out across each one.
 	const maxMenuItems = planFeatures.maxMenuItems;
+
+	// Same rule as the favicon and loading screen: showing the restaurant's own
+	// logo is the paid "remove AwaMenu branding" entitlement, so a Free menu
+	// carries the AwaMenu mark instead.
+	// Evaluated in the restaurant's timezone, not the viewer's — a Lagos menu
+	// must read "Closed" at 3am Lagos time however far away the customer is.
+	const openState = getOpenState(
+		restaurant.openingHours,
+		restaurant.timezone ?? "Africa/Lagos",
+	);
+
+	const displayLogoUrl = planFeatures.showAwamenuBranding
+		? null
+		: restaurant.logoUrl;
 	const maxCategories = planFeatures.maxCategories;
 	let remainingItemBudget = maxMenuItems;
 
@@ -150,8 +169,12 @@ export default async function PublicMenuPage({
 	return (
 		<main className="min-h-screen bg-white text-slate-950">
 			<PublicMenuNavbar
+				openState={openState}
+				reservationsEnabled={restaurant.tableReservationEnabled}
+				openingPeriods={restaurant.openingHours}
+				timezone={restaurant.timezone ?? "Africa/Lagos"}
 				name={restaurant.name}
-				logoUrl={restaurant.logoUrl}
+				logoUrl={displayLogoUrl}
 				mode="mobile"
 				restaurantSlug={slug}
 			/>
@@ -169,8 +192,12 @@ export default async function PublicMenuPage({
 			</div>
 
 			<DesktopPublicMenu
+				openState={openState}
+				openingPeriods={restaurant.openingHours}
+				timezone={restaurant.timezone ?? "Africa/Lagos"}
+				reservationsEnabled={restaurant.tableReservationEnabled}
 				name={restaurant.name}
-				logoUrl={restaurant.logoUrl}
+				logoUrl={displayLogoUrl}
 				bannerItems={bannerItems}
 				categories={categories}
 				restaurantSlug={slug}

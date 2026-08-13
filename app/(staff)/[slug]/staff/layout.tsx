@@ -13,9 +13,16 @@ export async function generateMetadata({
 	const restaurant = await getRestaurantBrand(slug);
 	const icon = restaurant?.logoUrl ?? LOGO_ICON_URL;
 
+	// Declared here, not in the root layout, so only signed-in users are
+	// offered "Install app" — see the dashboard layout for why.
 	return {
+		manifest: "/manifest.webmanifest",
 		title: restaurant ? `${restaurant.name} — Staff` : "Staff",
-		icons: { icon, shortcut: icon, apple: icon },
+		// `apple` is the AwaMenu mark, not the restaurant's: iOS takes the
+		// Home Screen icon from apple-touch-icon rather than the manifest, so
+		// leaving it as the restaurant logo would install an app badged as one
+		// restaurant. The browser-tab favicon stays restaurant-branded.
+		icons: { icon, shortcut: icon, apple: LOGO_ICON_URL },
 	};
 }
 

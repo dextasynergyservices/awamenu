@@ -9,6 +9,7 @@ import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
 import { verifyReservationPaymentReference } from "@/lib/payments";
+import { getCustomerReservationLabel } from "@/lib/reservation-status";
 import { isSubscriptionActive } from "@/lib/subscription";
 
 type ReservationStatusPageProps = {
@@ -244,7 +245,7 @@ export default async function ReservationStatusPage({
 						>
 							<p className="text-sm font-bold">Status</p>
 							<p className="mt-1 text-lg font-black">
-								{reservation.status.replace("_", " ")}
+								{getCustomerReservationLabel(reservation.status)}
 							</p>
 						</div>
 						<div className="rounded-2xl bg-yellow-50 p-4">

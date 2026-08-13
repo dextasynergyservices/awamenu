@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import type React from "react";
 import { useId, useState } from "react";
 import { createTableSeatAction } from "@/actions/reservation.actions";
+import { TableBookingRulesFields } from "@/components/admin/TableBookingRulesFields";
 import { uploadTablePhoto } from "@/components/admin/table-photo-upload";
 import {
 	Dialog,
@@ -62,7 +63,8 @@ export function TableCreateModal({
 		setError(null);
 
 		try {
-			await createTableSeatAction(new FormData(form));
+			const result = await createTableSeatAction(new FormData(form));
+			if ("error" in result) throw new Error(result.error);
 			setOpen(false);
 			setPreviewUrl("");
 			form.reset();
@@ -104,9 +106,12 @@ export function TableCreateModal({
 				variant="sheet"
 				size="2xl"
 			>
-				<DialogHeader title="Add Table" className="px-6 pt-6 pb-0" />
-				<DialogBody className="px-6 pb-5 pt-5">
-					<div className="grid gap-5">
+				<DialogHeader
+					title="Add Table"
+					className="px-4 pt-5 pb-0 sm:px-6 sm:pt-6"
+				/>
+				<DialogBody className="px-4 pb-5 pt-4 sm:px-6 sm:pt-5">
+					<div className="grid min-w-0 gap-5">
 						<div className="flex min-w-0 items-center gap-4">
 							<span className="grid size-20 shrink-0 place-items-center rounded-3xl bg-emerald-50 text-emerald-700">
 								<Armchair className="size-7 md:size-9" aria-hidden="true" />
@@ -128,11 +133,8 @@ export function TableCreateModal({
 							className="grid gap-5"
 						>
 							<input type="hidden" name="slug" value={restaurantSlug} />
-							<input type="hidden" name="bookingModeOverride" value="" />
-							<input type="hidden" name="paymentTimingOverride" value="" />
-							<input type="hidden" name="inclusionTypeOverride" value="" />
 							<input type="hidden" name="sortOrder" value="0" />
-							<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+							<div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
 								<section className="rounded-2xl border border-slate-200 p-4">
 									<div className="mb-4 flex items-center justify-between gap-3">
 										<h4 className="text-sm font-black text-slate-950 md:text-base">
@@ -177,30 +179,13 @@ export function TableCreateModal({
 												className={inputClass}
 											/>
 										</EditableInfoRow>
-										<EditableInfoRow
-											icon={<WalletCards className="size-4" />}
-											label="Minimum Spend"
-										>
-											<input
-												name="minimumSpend"
-												type="number"
-												min="0"
-												step="100"
-												className={inputClass}
-											/>
-										</EditableInfoRow>
-										<EditableInfoRow
-											icon={<WalletCards className="size-4" />}
-											label={`Table Fee (${currency})`}
-										>
-											<input
-												name="tableFee"
-												type="number"
-												min="0"
-												step="100"
-												className={inputClass}
-											/>
-										</EditableInfoRow>
+									</div>
+
+									<div className="mt-5 border-t border-slate-100 pt-5">
+										<h4 className="mb-3 text-sm font-black text-slate-950">
+											Booking rules
+										</h4>
+										<TableBookingRulesFields currency={currency} />
 									</div>
 								</section>
 
@@ -208,11 +193,17 @@ export function TableCreateModal({
 									<h4 className="text-sm font-black text-slate-950 md:text-base">
 										Table Photo
 									</h4>
+									{/* Controlled, not written through the DOM. The uploaded URL
+									    used to be assigned with `hiddenInput.value = …`, which
+									    React can overwrite on the next reconcile — the preview
+									    updated while the submitted value stayed empty, so the
+									    photo silently never saved. */}
 									<input
 										type="hidden"
 										id={imageInputId}
 										name="imageUrl"
-										defaultValue=""
+										value={previewUrl}
+										readOnly
 									/>
 									<div className="relative mt-4 aspect-[1.35] overflow-hidden rounded-xl bg-slate-100">
 										{previewUrl ? (
@@ -240,12 +231,8 @@ export function TableCreateModal({
 											onChange={async (event) => {
 												const input = event.currentTarget;
 												const file = input.files?.[0];
-												const hiddenInput =
-													document.getElementById(imageInputId);
-												if (
-													!file ||
-													!(hiddenInput instanceof HTMLInputElement)
-												) {
+
+												if (!file) {
 													return;
 												}
 												try {
@@ -254,7 +241,6 @@ export function TableCreateModal({
 														restaurantId,
 														file,
 													);
-													hiddenInput.value = imageUrl;
 													setPreviewUrl(imageUrl);
 												} catch (caughtError) {
 													setError(

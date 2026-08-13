@@ -4,6 +4,7 @@ import { Check, Copy, Eye, EyeOff, Lock, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { revealStaffPasswordAction } from "@/actions/restaurant.actions";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const emptySubscribe = () => () => {};
 
@@ -184,16 +185,19 @@ export function StaffPasswordReveal({
 								</p>
 
 								<form onSubmit={handleConfirm} className="mt-4 grid gap-3">
-									<label className="grid gap-1.5 text-xs font-black text-slate-700">
+									<label
+										htmlFor="reveal-admin-password"
+										className="grid gap-1.5 text-xs font-black text-slate-700"
+									>
 										Your account password
 										<div className="relative">
 											<Lock
 												className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400"
 												aria-hidden="true"
 											/>
-											<input
+											<PasswordInput
+												id="reveal-admin-password"
 												ref={passwordInputRef}
-												type="password"
 												value={adminPassword}
 												onChange={(event) =>
 													setAdminPassword(event.target.value)

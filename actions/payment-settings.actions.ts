@@ -1,11 +1,17 @@
 "use server";
 
-import type { PaymentChannel, PaymentGateway } from "@prisma/client";
+import {
+	AuditActorType,
+	type PaymentChannel,
+	type PaymentGateway,
+} from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { env } from "@/env";
+import { recordAuditEvent } from "@/lib/audit";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { sendPayoutAccountChangedEmail } from "@/lib/email";
 import {
 	type GatewayCredentials,
 	getGatewayAdapter,
@@ -441,6 +447,20 @@ export async function connectPayoutAccountAction(input: {
 		};
 	}
 
+	// Read before writing so the audit entry can say what it changed FROM.
+	// Redirecting settlement to a different account is the classic insider-fraud
+	// path — every payment afterwards leaves quietly and nothing looks broken —
+	// so this is recorded and the owner is told, whoever made the change.
+	const previous = await db.restaurantPayoutAccount.findUnique({
+		where: {
+			restaurantId_gateway: {
+				restaurantId: restaurant.id,
+				gateway: data.gateway,
+			},
+		},
+		select: { bankName: true, accountNumber: true, accountName: true },
+	});
+
 	await db.restaurantPayoutAccount.upsert({
 		where: {
 			restaurantId_gateway: {
@@ -466,6 +486,41 @@ export async function connectPayoutAccountAction(input: {
 			isEnabled: true,
 		},
 	});
+
+	const describe = (account: {
+		bankName: string;
+		accountNumber: string;
+		accountName: string;
+	}) =>
+		// Only the last four digits. An audit trail is read by more people than
+		// the settings page, and it does not need the whole account number to
+		// answer "did this change, and to what".
+		`${account.bankName} ••••${account.accountNumber.slice(-4)} (${account.accountName})`;
+
+	const nextDescription = describe(data);
+	const previousDescription = previous ? describe(previous) : null;
+
+	if (previousDescription !== nextDescription) {
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: AuditActorType.OWNER,
+			actorId: user.id,
+			actorName: user.name ?? user.email ?? "Owner",
+			action: previous ? "payout.account_changed" : "payout.account_connected",
+			target: getGatewayDescriptorCatalog(data.gateway).label,
+			previousValue: previousDescription,
+			newValue: nextDescription,
+		});
+
+		if (previous) {
+			await sendPayoutAccountChangedEmail({
+				to: user.email,
+				restaurantName: restaurant.name,
+				previous: previousDescription ?? "—",
+				next: nextDescription,
+			});
+		}
+	}
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
 	return { ok: true };
@@ -615,6 +670,40 @@ export async function saveOwnGatewayAction(input: {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
 	return { ok: true };
+}
+
+/**
+ * Credentials that can refund a charge this restaurant took.
+ *
+ * A refund has to go back through whichever account was actually billed: the
+ * restaurant's own keys if they used them, otherwise the platform's. Sending it
+ * through the wrong one either fails or refunds from the wrong balance.
+ */
+export async function resolveRefundCredentials(
+	restaurantId: string,
+	gateway: PaymentGateway,
+): Promise<GatewayCredentials | null> {
+	const own = await db.restaurantPaymentMethod.findFirst({
+		where: {
+			restaurantId,
+			channel: "OWN_GATEWAY",
+			gateway,
+			NOT: { secretKeyEncrypted: null },
+		},
+		select: { secretKeyEncrypted: true, contractCode: true },
+	});
+
+	if (own?.secretKeyEncrypted) {
+		// An undecryptable key means the encryption secret changed. Falling back
+		// to the platform account would refund from the wrong balance, so this
+		// stops instead.
+		const secretKey = decryptSecret(own.secretKeyEncrypted);
+		if (!secretKey) return null;
+		return { secretKey, contractCode: own.contractCode ?? undefined };
+	}
+
+	const platform = await getPlatformPaymentConfig();
+	return platform.credentialsFor(gateway);
 }
 
 export type CheckoutGatewayOption = {

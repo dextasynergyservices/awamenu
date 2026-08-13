@@ -19,9 +19,11 @@ import {
 	type SalesPoint,
 } from "@/components/admin/DashboardSalesChart";
 import { QRDownload } from "@/components/admin/QRDownload";
+import { SetupChecklist } from "@/components/admin/SetupChecklist";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { getQrScanUrl } from "@/lib/qr";
+import { getSetupTasks } from "@/lib/setup-checklist";
 
 function formatMoney(value: number, currency: string) {
 	return new Intl.NumberFormat("en-NG", {
@@ -104,8 +106,15 @@ export default async function DashboardPage({
 	const { slug } = await params;
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug, ownerId: user.id },
-		select: { id: true, name: true, currency: true },
+		select: {
+			id: true,
+			name: true,
+			currency: true,
+			setupChecklistDismissedAt: true,
+		},
 	});
+
+	const setupTasks = await getSetupTasks(slug);
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
 
@@ -286,6 +295,11 @@ export default async function DashboardPage({
 
 	return (
 		<section className="grid min-w-0 max-w-full overflow-hidden gap-4 md:gap-5">
+			<SetupChecklist
+				slug={slug}
+				tasks={setupTasks}
+				dismissed={Boolean(restaurant.setupChecklistDismissedAt)}
+			/>
 			<div className="min-w-0 md:hidden">
 				<p className="text-xs font-medium text-slate-500">Welcome back,</p>
 				<h2 className="mt-1 truncate text-sm font-black text-slate-950">

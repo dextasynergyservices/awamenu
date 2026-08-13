@@ -30,6 +30,7 @@ type LandingPlan = {
 	yearlyPrice: unknown;
 	maxCategories: number;
 	maxMenuItems: number;
+	maxTables: number;
 	advancedAnalytics: boolean;
 	removeAwamenuBranding: boolean;
 	whatsappIntegration: boolean;
@@ -88,6 +89,7 @@ function planFeatures(plan: LandingPlan) {
 	return [
 		formatLimit(plan.maxCategories, "Categories"),
 		formatLimit(plan.maxMenuItems, "Items"),
+		formatLimit(plan.maxTables, "Tables"),
 		plan.whatsappIntegration ? "WhatsApp included" : "WhatsApp not included",
 		plan.advancedAnalytics ? "Advanced Analytics" : "Basic Analytics",
 		plan.removeAwamenuBranding ? "Remove Branding" : "AwaMenu branding shown",
@@ -113,6 +115,7 @@ export default async function Home() {
 			yearlyPrice: true,
 			maxCategories: true,
 			maxMenuItems: true,
+			maxTables: true,
 			advancedAnalytics: true,
 			removeAwamenuBranding: true,
 			whatsappIntegration: true,

@@ -5,7 +5,6 @@ import {
 	CalendarDays,
 	ClipboardList,
 	Ellipsis,
-	Grid2X2,
 	LayoutDashboard,
 	LogOut,
 	MonitorSmartphone,
@@ -14,6 +13,7 @@ import {
 	Settings,
 	Users,
 	Utensils,
+	Wallet,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -46,12 +46,12 @@ type AdminDashboardShellProps = {
 const navItems = [
 	{ label: "Dashboard", href: "", icon: LayoutDashboard },
 	{ label: "Menu", href: "/menu", icon: Utensils },
-	{ label: "Tables", href: "/tables", icon: Grid2X2 },
 	{ label: "Orders", href: "/orders", icon: ClipboardList },
 	{ label: "Reservations", href: "/reservations", icon: CalendarDays },
 	{ label: "Staff", href: "/staff", icon: Users },
 	{ label: "Settings", href: "/settings", icon: Settings },
 	{ label: "Analytics", href: "/analytics", icon: BarChart3 },
+	{ label: "Payments", href: "/financials", icon: Wallet },
 ];
 
 const mobileNavItems = [
@@ -380,12 +380,12 @@ export function AdminDashboardShell({
 								"grid min-h-14 place-items-center rounded-2xl px-0.5 text-xs font-black text-slate-600 min-[390px]:min-h-16 min-[390px]:px-1",
 								(pathname === `${basePath}/settings` ||
 									pathname.startsWith(`${basePath}/settings`) ||
-									pathname === `${basePath}/tables` ||
-									pathname.startsWith(`${basePath}/tables`) ||
 									pathname === `${basePath}/staff` ||
 									pathname.startsWith(`${basePath}/staff`) ||
 									pathname === `${basePath}/analytics` ||
-									pathname.startsWith(`${basePath}/analytics`)) &&
+									pathname.startsWith(`${basePath}/analytics`) ||
+									pathname === `${basePath}/financials` ||
+									pathname.startsWith(`${basePath}/financials`)) &&
 									"text-emerald-700",
 							)}
 						>
@@ -408,19 +408,6 @@ export function AdminDashboardShell({
 						/>
 						<div className="absolute right-3 bottom-24 left-3 rounded-3xl border border-slate-100 bg-white p-3 shadow-2xl">
 							<div className="grid gap-2">
-								<Link
-									href={`${basePath}/tables`}
-									onClick={() => setMoreOpen(false)}
-									className={cn(
-										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
-										(pathname === `${basePath}/tables` ||
-											pathname.startsWith(`${basePath}/tables`)) &&
-											"bg-emerald-50 text-emerald-700",
-									)}
-								>
-									<Grid2X2 className="size-5 text-emerald-700" />
-									Tables
-								</Link>
 								<Link
 									href={`${basePath}/staff`}
 									onClick={() => setMoreOpen(false)}
@@ -446,6 +433,19 @@ export function AdminDashboardShell({
 								>
 									<BarChart3 className="size-5 text-emerald-700" />
 									Analytics
+								</Link>
+								<Link
+									href={`${basePath}/financials`}
+									onClick={() => setMoreOpen(false)}
+									className={cn(
+										"flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-black text-slate-700 hover:bg-emerald-50",
+										(pathname === `${basePath}/financials` ||
+											pathname.startsWith(`${basePath}/financials`)) &&
+											"bg-emerald-50 text-emerald-700",
+									)}
+								>
+									<Wallet className="size-5 text-emerald-700" />
+									Payments
 								</Link>
 								<div className="my-1 border-t border-slate-100" />
 								<Link

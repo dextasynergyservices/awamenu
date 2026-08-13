@@ -10,6 +10,7 @@ function formatLimit(value: number, label: string) {
 function planFeatures(plan: {
 	maxCategories: number;
 	maxMenuItems: number;
+	maxTables: number;
 	whatsappIntegration: boolean;
 	advancedAnalytics: boolean;
 	removeAwamenuBranding: boolean;
@@ -19,6 +20,7 @@ function planFeatures(plan: {
 	return [
 		formatLimit(plan.maxCategories, "Categories"),
 		formatLimit(plan.maxMenuItems, "Items"),
+		formatLimit(plan.maxTables, "Tables"),
 		plan.whatsappIntegration ? "WhatsApp included" : "WhatsApp not included",
 		plan.advancedAnalytics ? "Advanced analytics" : "Basic analytics",
 		plan.removeAwamenuBranding ? "Remove branding" : "AwaMenu branding shown",

@@ -1,4 +1,9 @@
-import { OrderStatus, PaymentPolicy, PaymentStatus } from "@prisma/client";
+import {
+	OrderStatus,
+	type OrderType,
+	PaymentPolicy,
+	PaymentStatus,
+} from "@prisma/client";
 import { Check, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -10,6 +15,7 @@ import { OrderStatusPoller } from "@/components/orders/OrderStatusPoller";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
+import { getStatusFlow, getStatusLabel } from "@/lib/order-status-flow";
 import { verifyOrderPaymentReference } from "@/lib/payments";
 import { isOrderRatingEligible } from "@/lib/rating";
 import { isSubscriptionActive } from "@/lib/subscription";
@@ -45,29 +51,38 @@ function getOrderNumberMessage(type: string) {
 	return "Copy this order number or save the receipt. Keep it for tracking or any question about your order.";
 }
 
-const orderProgressSteps = [
-	{ status: OrderStatus.CONFIRMED, label: "Confirmed" },
-	{ status: OrderStatus.PREPARING, label: "Preparing" },
-	{ status: OrderStatus.READY, label: "Ready" },
-	{ status: OrderStatus.COMPLETED, label: "Completed" },
-];
+function OrderProgressTracker({
+	status,
+	type,
+}: {
+	status: OrderStatus;
+	type: OrderType | string;
+}) {
+	// Built from the order's own flow, so a diner sees three steps
+	// (Confirmed → Ready → Completed) rather than a "Preparing" step that
+	// never lights up and a "Delivered" one that never applies.
+	const steps = getStatusFlow(type).map((value) => ({
+		status: value,
+		label: getStatusLabel(type, value),
+	}));
 
-function getOrderProgressIndex(status: OrderStatus) {
-	if (status === OrderStatus.CONFIRMED) return 0;
-	if (status === OrderStatus.PREPARING) return 1;
-	if (status === OrderStatus.READY || status === OrderStatus.DELIVERED)
-		return 2;
-	if (status === OrderStatus.COMPLETED) return 3;
-	return -1;
-}
-
-function OrderProgressTracker({ status }: { status: OrderStatus }) {
-	const currentIndex = getOrderProgressIndex(status);
+	// DELIVERED and READY share a step for fulfilment orders: the customer
+	// cares that it left the kitchen, and the restaurant marks both.
+	const normalised =
+		status === OrderStatus.DELIVERED && !steps.some((s) => s.status === status)
+			? OrderStatus.READY
+			: status;
+	const currentIndex = steps.findIndex((step) => step.status === normalised);
 
 	return (
 		<div className="mt-5 rounded-2xl bg-white p-4">
-			<div className="grid grid-cols-4 items-start">
-				{orderProgressSteps.map((step, index) => {
+			<div
+				className="grid items-start"
+				style={{
+					gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`,
+				}}
+			>
+				{steps.map((step, index) => {
 					const isComplete = currentIndex >= index;
 					const isCurrent = currentIndex === index;
 
@@ -533,7 +548,9 @@ export default async function OrderStatusPage({
 					/>
 					<div className="my-6 h-px w-full bg-slate-100" />
 
-					{showProgress ? <OrderProgressTracker status={order.status} /> : null}
+					{showProgress ? (
+						<OrderProgressTracker status={order.status} type={order.type} />
+					) : null}
 					{statusNotice ? <OrderStatusNotice notice={statusNotice} /> : null}
 					{order.status !== OrderStatus.CANCELLED && order.statusNote ? (
 						<div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">

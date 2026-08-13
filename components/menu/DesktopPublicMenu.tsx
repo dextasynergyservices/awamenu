@@ -9,6 +9,7 @@ import { OrderLookupForm } from "@/components/menu/OrderLookupForm";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
 import { useCart } from "@/hooks/useCart";
 import type { BannerItem } from "@/lib/banners";
+import type { OpeningPeriod, OpenState } from "@/lib/opening-hours";
 import { cn } from "@/lib/utils";
 
 type DesktopCategory = {
@@ -29,6 +30,10 @@ type DesktopPublicMenuProps = {
 	bannerItems: BannerItem[];
 	categories: DesktopCategory[];
 	restaurantSlug: string;
+	openState?: OpenState;
+	openingPeriods?: OpeningPeriod[];
+	timezone?: string;
+	reservationsEnabled?: boolean;
 	currency: string;
 	appendOrderId?: string;
 	tableReservationEnabled: boolean;
@@ -48,6 +53,10 @@ export function DesktopPublicMenu({
 	bannerItems,
 	categories,
 	restaurantSlug,
+	openState,
+	openingPeriods,
+	timezone,
+	reservationsEnabled,
 	currency,
 	appendOrderId,
 	tableReservationEnabled,
@@ -89,6 +98,10 @@ export function DesktopPublicMenu({
 				logoUrl={logoUrl}
 				mode="desktop"
 				restaurantSlug={restaurantSlug}
+				openState={openState}
+				openingPeriods={openingPeriods}
+				timezone={timezone}
+				reservationsEnabled={reservationsEnabled}
 			/>
 
 			{bannerItems.length > 0 ? (
@@ -118,7 +131,7 @@ export function DesktopPublicMenu({
 										unoptimized
 									/>
 									{banner.title || banner.subtitle ? (
-										<div className="absolute inset-0 flex items-center bg-gradient-to-r from-emerald-950/80 via-emerald-950/25 to-transparent px-8 text-white">
+										<div className="absolute inset-0 flex items-center bg-emerald-950/55 px-8 text-white">
 											<div className="max-w-sm">
 												{banner.title ? (
 													<h2 className="text-3xl font-semibold leading-tight lg:text-4xl">

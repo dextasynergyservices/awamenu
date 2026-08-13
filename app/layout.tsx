@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Montserrat, Open_Sans, Roboto } from "next/font/google";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import "./globals.css";
 import { PosthogProvider } from "@/components/shared/PosthogProvider";
 import { LOGO_ICON_URL } from "@/lib/logo";
@@ -27,7 +28,6 @@ export const metadata: Metadata = {
 	title: "AwaMenu — Restaurant Management",
 	description:
 		"Modern restaurant menu management, ordering, and reservation platform.",
-	manifest: "/manifest.webmanifest",
 	icons: {
 		icon: LOGO_ICON_URL,
 		shortcut: LOGO_ICON_URL,
@@ -66,6 +66,7 @@ export default function RootLayout({
 			<body className="min-h-full flex flex-col">
 				<PosthogProvider />
 				{children}
+				<ServiceWorkerRegistrar />
 			</body>
 		</html>
 	);

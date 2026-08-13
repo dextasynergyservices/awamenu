@@ -2,6 +2,7 @@ import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminAccountSettings } from "@/components/admin/AdminAccountSettings";
 import { BankAccountsManager } from "@/components/admin/BankAccountsManager";
+import { OpeningHoursEditor } from "@/components/admin/OpeningHoursEditor";
 import { PaymentIntegrations } from "@/components/admin/PaymentIntegrations";
 import { QRDownload } from "@/components/admin/QRDownload";
 import { RestaurantBrandingForm } from "@/components/admin/RestaurantBrandingForm";
@@ -50,6 +51,10 @@ export default async function SettingsPage({
 			fontFamily: true,
 			activeTemplate: true,
 			dineInPaymentPolicy: true,
+			openingHours: {
+				select: { dayOfWeek: true, opensAt: true, closesAt: true },
+				orderBy: [{ dayOfWeek: "asc" }, { opensAt: "asc" }],
+			},
 			customerUpdateChannel: true,
 			staffDashboardPassword: true,
 			staffDashboardAutoLockHours: true,
@@ -202,6 +207,12 @@ export default async function SettingsPage({
 						slug={restaurant.slug}
 					/>
 
+					<OpeningHoursEditor
+						slug={restaurant.slug}
+						timezone={restaurant.timezone ?? "Africa/Lagos"}
+						initial={restaurant.openingHours}
+					/>
+
 					<RestaurantSettingsForm
 						slug={restaurant.slug}
 						customerUpdateChannel={restaurant.customerUpdateChannel}
@@ -212,7 +223,7 @@ export default async function SettingsPage({
 						staffLoginUrl={staffLoginUrl}
 					/>
 
-					<AdminAccountSettings />
+					<AdminAccountSettings email={user.email} />
 				</div>
 			</div>
 		</div>

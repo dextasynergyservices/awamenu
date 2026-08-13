@@ -1,12 +1,14 @@
 "use server";
 
 import {
+	AuditActorType,
 	DineInPaymentMethod,
 	DineInServiceMode,
 	NotificationAudience,
 	NotificationType,
 	OrderStatus,
 	OrderType,
+	PaymentMethod,
 	PaymentPolicy,
 	PaymentStatus,
 } from "@prisma/client";
@@ -15,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { ActionError, actionResult } from "@/lib/action-error";
+import { recordAuditEvent } from "@/lib/audit";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
@@ -26,6 +29,8 @@ import {
 } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { notifyNewOrder } from "@/lib/order-notifications";
+import { isStatusAllowedForType } from "@/lib/order-status-flow";
+import { creditOrder } from "@/lib/payment-ledger";
 import { initiateOrderPaymentForRestaurant } from "@/lib/payments";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
 import { getStaffSession } from "@/lib/staff-auth";
@@ -500,6 +505,13 @@ export async function updateOrderStatusAction(formData: FormData) {
 			throw new ActionError("Cancelled orders cannot be updated.");
 		}
 
+		// The UI only offers statuses in this order type's flow, but the action is
+		// a public POST endpoint — a dine-in order must not be moved to
+		// "Delivered" by anything that skips the UI.
+		if (!isStatusAllowedForType(order.type, input.status)) {
+			throw new ActionError("That status doesn't apply to this kind of order.");
+		}
+
 		const paymentRequiredBeforePreparation =
 			order.type !== OrderType.DINE_IN ||
 			(Boolean(order.dineInPaymentMethod) &&
@@ -566,6 +578,7 @@ export async function acceptOrderAction(formData: FormData) {
 				id: true,
 				status: true,
 				type: true,
+				paymentStatus: true,
 				dineInPaymentPolicy: true,
 				dineInPaymentMethod: true,
 			},
@@ -573,6 +586,21 @@ export async function acceptOrderAction(formData: FormData) {
 
 		if (order.status !== OrderStatus.PENDING_APPROVAL) {
 			throw new ActionError("Only pending orders can be accepted.");
+		}
+
+		// A restaurant that chose "pay before service" has said the kitchen does
+		// not start until the money is in. Accepting an unpaid order would put it
+		// straight into the queue and quietly break that policy. Customers can
+		// already pay while an order is pending approval, so this doesn't
+		// deadlock — it waits for them.
+		if (
+			order.type === OrderType.DINE_IN &&
+			order.dineInPaymentPolicy === PaymentPolicy.PAY_BEFORE_SERVICE &&
+			order.paymentStatus !== PaymentStatus.PAID
+		) {
+			throw new ActionError(
+				"This order is set to pay before service. Confirm the customer's payment first, then accept it.",
+			);
 		}
 
 		const requiresOnlinePayment = order.type !== OrderType.DINE_IN;
@@ -707,26 +735,50 @@ export async function markOrderPaidAction(formData: FormData) {
 			);
 		}
 
+		// The owner is confirming the full amount was taken in person, so the
+		// order total is the credit — but it still goes through the ledger so
+		// that cash and card payments appear in the same financial report.
+		const credit = await creditOrder(order.id, {
+			kind: "MANUAL",
+			method:
+				order.dineInPaymentMethod === DineInPaymentMethod.CASH
+					? PaymentMethod.CASH
+					: PaymentMethod.POS,
+			amount: Number(order.total),
+			recordedById: user.id,
+		});
+
+		if (!credit.ok) {
+			throw new ActionError(credit.message);
+		}
+
 		await db.order.update({
 			where: { id: order.id },
 			data: {
-				status:
-					order.status === OrderStatus.PENDING_PAYMENT
-						? OrderStatus.CONFIRMED
-						: order.status,
-				paymentStatus: PaymentStatus.PAID,
-				dineInAmountPaid: order.total,
+				dineInAmountPaid: credit.amountPaid,
 				dineInPaidMethod: order.dineInPaymentMethod ?? DineInPaymentMethod.CASH,
 				dineInPaymentRecordedAt: new Date(),
 			},
 		});
 
-		await notifyOrderPaid(order.id, {
-			method:
-				order.dineInPaymentMethod === "CASH" ? "Cash" : "Card or transfer",
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: AuditActorType.OWNER,
+			actorId: user.id,
+			actorName: user.name ?? user.email ?? "Owner",
+			action: "payment.recorded",
+			target: `Order #${order.id.slice(-6).toUpperCase()}`,
+			newValue: `₦${Number(order.total).toLocaleString()}`,
 		});
-		if (order.status === OrderStatus.PENDING_PAYMENT) {
-			await notifyOrderConfirmed(order.id);
+
+		if (credit.newlyPaid) {
+			await notifyOrderPaid(order.id, {
+				method:
+					order.dineInPaymentMethod === "CASH" ? "Cash" : "Card or transfer",
+			});
+			if (order.status === OrderStatus.PENDING_PAYMENT) {
+				await notifyOrderConfirmed(order.id);
+			}
 		}
 
 		await dispatchNotification({
@@ -766,6 +818,9 @@ export async function recordSplitPaymentAction(formData: FormData) {
 		const staffIdStr = formData.get("staffId")?.toString();
 
 		let recordedById: string | undefined;
+		// Captured for the audit trail, which has to survive the staff row being
+		// deleted later.
+		let recordedByName: string;
 		let restaurant: { id: string; slug: string };
 
 		if (staffIdStr) {
@@ -774,6 +829,7 @@ export async function recordSplitPaymentAction(formData: FormData) {
 				staffIdStr,
 			);
 			recordedById = staff.id;
+			recordedByName = staff.name;
 			restaurant = res;
 		} else {
 			const user = await requireUser();
@@ -782,6 +838,7 @@ export async function recordSplitPaymentAction(formData: FormData) {
 				select: { id: true, slug: true },
 			});
 			recordedById = user.id;
+			recordedByName = user.name ?? user.email ?? "Owner";
 		}
 
 		const order = await db.order.findUniqueOrThrow({
@@ -829,44 +886,58 @@ export async function recordSplitPaymentAction(formData: FormData) {
 			});
 		}
 
-		await db.$transaction(async (tx) => {
-			for (const payment of payments) {
-				await tx.orderPayment.create({
-					data: {
-						orderId: order.id,
-						method: payment.method,
-						amount: payment.amount,
-						recordedById: payment.recordedById,
-					},
-				});
+		// Each tender is its own ledger entry — that is what makes "₦2,000 cash
+		// and ₦3,000 on the card" reportable afterwards rather than a single
+		// undifferentiated ₦5,000. The order settles once they cover the total.
+		let credit: Awaited<ReturnType<typeof creditOrder>> | null = null;
+		for (const payment of payments) {
+			credit = await creditOrder(order.id, {
+				kind: "MANUAL",
+				method: payment.method,
+				amount: payment.amount,
+				recordedById: payment.recordedById,
+			});
+			if (!credit.ok) {
+				throw new ActionError(credit.message);
 			}
+		}
 
-			await tx.order.update({
-				where: { id: order.id },
-				data: {
-					status:
-						order.status === OrderStatus.PENDING_PAYMENT
-							? OrderStatus.CONFIRMED
-							: order.status,
-					paymentStatus: PaymentStatus.PAID,
-					dineInAmountPaid: totalInput,
-					dineInPaymentRecordedAt: new Date(),
-					events: {
-						create: {
-							staffId: staffIdStr ? recordedById : undefined,
-							description: staffIdStr
-								? `Recorded split payment of ₦${totalInput.toLocaleString()}`
-								: `Admin recorded split payment of ₦${totalInput.toLocaleString()}`,
-						},
+		await db.order.update({
+			where: { id: order.id },
+			data: {
+				dineInAmountPaid: credit?.ok ? credit.amountPaid : totalInput,
+				dineInPaymentRecordedAt: new Date(),
+				events: {
+					create: {
+						staffId: staffIdStr ? recordedById : undefined,
+						description: staffIdStr
+							? `Recorded split payment of ₦${totalInput.toLocaleString()}`
+							: `Admin recorded split payment of ₦${totalInput.toLocaleString()}`,
 					},
 				},
-			});
+			},
+		});
 
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: staffIdStr ? AuditActorType.STAFF : AuditActorType.OWNER,
+			actorId: recordedById,
+			actorName: recordedByName,
+			action: "payment.recorded",
+			target: `Order #${order.id.slice(-6).toUpperCase()}`,
+			newValue: `Split ₦${totalInput.toLocaleString()}`,
+		});
+
+		// Deliberately not inside a transaction. These send email over the network,
+		// and holding a Postgres transaction open across a third-party API call
+		// blew the 5s interactive limit — P2028, "transaction already closed" —
+		// which failed the whole payment after the rows had been written.
+		if (credit?.ok && credit.newlyPaid) {
 			await notifyOrderPaid(order.id, { method: "Split payment" });
 			if (order.status === OrderStatus.PENDING_PAYMENT) {
 				await notifyOrderConfirmed(order.id);
 			}
-		});
+		}
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,

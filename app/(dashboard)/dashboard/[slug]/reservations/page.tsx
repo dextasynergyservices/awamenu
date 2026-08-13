@@ -1,6 +1,8 @@
 import { PaymentStatus, ReservationStatus } from "@prisma/client";
 import { Calendar, ChevronDown, Filter, Search } from "lucide-react";
 import Link from "next/link";
+import { ReservationStatusBanner } from "@/components/admin/ReservationStatusBanner";
+import { ReservationTabs } from "@/components/admin/ReservationTabs";
 import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { ReservationsList } from "@/components/reservation/ReservationsList";
 import { db } from "@/lib/db";
@@ -76,6 +78,8 @@ export default async function ReservationsPage({
 			slug: true,
 			name: true,
 			currency: true,
+			tableReservationEnabled: true,
+			tables: { where: { isActive: true }, select: { id: true } },
 			reservations: {
 				where: reservationWhere,
 				orderBy: { startsAt: "desc" },
@@ -142,6 +146,12 @@ export default async function ReservationsPage({
 	return (
 		<section className="grid gap-5">
 			<ReservationStatusPoller />
+			<ReservationTabs slug={slug} />
+			<ReservationStatusBanner
+				slug={slug}
+				enabled={restaurant.tableReservationEnabled}
+				tableCount={restaurant.tables.length}
+			/>
 			<div>
 				<p className="text-sm font-medium text-slate-500">{restaurant.name}</p>
 				<h1 className="mt-1 text-xl font-black text-slate-950 md:text-3xl">

@@ -24,6 +24,7 @@ import {
 } from "@/components/orders/OrderTimeline";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { getStatusFlow } from "@/lib/order-status-flow";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────
@@ -102,16 +103,7 @@ function timeAgo(dateStr: string) {
 // ─── Status stepper config ────────────────────────────
 
 function getStatusSteps(type: string) {
-	if (type === "DELIVERY" || type === "PICKUP") {
-		return [
-			"CONFIRMED",
-			"PREPARING",
-			"READY",
-			"DELIVERED",
-			"COMPLETED",
-		] as const;
-	}
-	return ["CONFIRMED", "PREPARING", "READY", "COMPLETED"] as const;
+	return getStatusFlow(type) as readonly string[];
 }
 
 function getStepIndex(status: string, type: string) {
@@ -416,6 +408,16 @@ function OrderCard({
 }) {
 	const steps = getStatusSteps(order.type);
 	const currentStep = getStepIndex(order.status, order.type);
+	// "Pay before service" means the kitchen doesn't start until the money is
+
+	// in, so acceptance is held rather than failing on submit.
+
+	const blockedOnPayment =
+		order.status === "PENDING_APPROVAL" &&
+		order.type === "DINE_IN" &&
+		order.dineInPaymentPolicy === "PAY_BEFORE_SERVICE" &&
+		order.paymentStatus !== "PAID";
+
 	const nextStatusLabel = getNextStatusLabel(order.status, order.type);
 	const nextStatus = getNextStatus(order.status, order.type);
 
@@ -584,7 +586,14 @@ function OrderCard({
 					<FileText className="size-3" aria-hidden="true" />
 					View Details
 				</button>
-				{nextStatus ? (
+				{blockedOnPayment ? (
+					// Shown instead of the accept button, not as an error after the
+					// click: staff need to know why it can't move, and the reason is
+					// actionable — take the payment.
+					<span className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-bold text-amber-800">
+						Waiting for payment
+					</span>
+				) : nextStatus ? (
 					<OrderActionForm
 						actionKind={
 							order.status === "PENDING_APPROVAL"

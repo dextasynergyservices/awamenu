@@ -17,6 +17,17 @@ export function getAccountsFromEmail() {
 	return env.RESEND_ACCOUNTS_FROM_EMAIL ?? requireEnv("RESEND_FROM_EMAIL");
 }
 
+/**
+ * The From line for mail a customer receives about one restaurant.
+ *
+ * The restaurant's name leads because that is who the guest thinks they are
+ * dealing with — but the sending domain stays AwaMenu's, since a restaurant has
+ * not authorised us to send as their domain and SPF/DKIM would fail if we tried.
+ */
+export function getRestaurantFromEmail(restaurantName: string) {
+	return `${restaurantName} via AwaMenu <${requireEnv("RESEND_FROM_EMAIL")}>`;
+}
+
 export async function sendVerificationEmail(input: {
 	to: string;
 	verifyUrl: string;
@@ -101,6 +112,28 @@ export async function sendAutoRenewalUpcomingEmail(input: {
 		to: input.to,
 		subject: `Upcoming Charge: ${input.restaurantName} Auto-Renewal in ${input.daysLeft} Days`,
 		text: `Hello,\n\nYour subscription for ${input.restaurantName} will automatically renew in ${input.daysLeft} day(s).\n\nWe will auto-debit the amount of ${input.amount} from your saved payment method on your renewal date.\n\nTo manage your plan or billing details, visit: ${input.manageBillingUrl}\n\nThank you,\nThe AwaMenu Team`,
+	});
+}
+
+/**
+ * Tells the owner their settlement account changed.
+ *
+ * Sent unconditionally rather than behind a preference. Redirecting payouts is
+ * how money is stolen from a business like this, and the only reliable defence
+ * is that the owner hears about it even when the person who made the change
+ * would rather they didn't. Banks send this for the same reason.
+ */
+export async function sendPayoutAccountChangedEmail(input: {
+	to: string;
+	restaurantName: string;
+	previous: string;
+	next: string;
+}) {
+	await getResendClient().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `Payout account changed for ${input.restaurantName}`,
+		text: `Hello,\n\nThe bank account that receives payments for ${input.restaurantName} was just changed.\n\nPrevious: ${input.previous}\nNew: ${input.next}\n\nIf you made this change, no action is needed.\n\nIf you did NOT make this change, your payouts are now going somewhere else. Sign in and change it back immediately, then contact us.\n\nThe AwaMenu Team`,
 	});
 }
 

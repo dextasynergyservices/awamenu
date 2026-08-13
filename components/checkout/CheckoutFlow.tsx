@@ -10,7 +10,6 @@ import {
 	Loader2,
 	Lock,
 	Mail,
-	MapPin,
 	Minus,
 	Phone,
 	Plus,
@@ -330,20 +329,6 @@ export function CheckoutFlow({
 									<h1 className="truncate text-sm sm:text-2xl md:text-3xl font-black">
 										{name}
 									</h1>
-								</div>
-								<div className="mt-2 sm:mt-4 flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm md:text-base font-medium">
-									<span className="inline-flex items-center gap-1.5 sm:gap-2">
-										<Flame className="size-3 sm:size-4 text-yellow-300" />
-										25-35 mins
-									</span>
-									<span className="inline-flex items-center gap-1.5 sm:gap-2">
-										<MapPin className="size-3 sm:size-4 text-yellow-300" />
-										3.2 km away
-									</span>
-									<span className="inline-flex items-center gap-1.5 sm:gap-2">
-										<ShoppingBag className="size-3 sm:size-4 text-yellow-300" />
-										Burgers & Drinks
-									</span>
 								</div>
 								{heroBanner?.title || heroBanner?.subtitle ? (
 									<div className="mt-3 sm:mt-5 max-w-xl">

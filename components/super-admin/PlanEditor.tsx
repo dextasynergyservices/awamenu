@@ -192,6 +192,19 @@ export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 						className={inputClassName}
 					/>
 				</div>
+				<div>
+					<label htmlFor="maxTables" className={labelClassName}>
+						Max Tables (-1 = unlimited)
+					</label>
+					<input
+						id="maxTables"
+						type="number"
+						name="maxTables"
+						defaultValue={plan?.maxTables ?? 1}
+						required
+						className={inputClassName}
+					/>
+				</div>
 			</div>
 
 			<div>

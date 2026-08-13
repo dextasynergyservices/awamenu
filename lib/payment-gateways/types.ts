@@ -94,4 +94,16 @@ export interface PaymentGatewayAdapter {
 	/** Cheap authenticated call so a wrong key is caught on save rather than at
 	 * a customer's first checkout. */
 	testCredentials(credentials: GatewayCredentials): Promise<boolean>;
+	/**
+	 * Returns money to the customer.
+	 *
+	 * Optional because provider support differs and an adapter that cannot do it
+	 * should say so rather than pretend. Callers must handle its absence — the
+	 * refund is then recorded as an offline one for the restaurant to settle by
+	 * hand, which is honest about what actually happened.
+	 */
+	refundCharge?(
+		credentials: GatewayCredentials,
+		input: { reference: string; amountKobo?: number; reason?: string },
+	): Promise<{ ok: true } | { ok: false; error: string }>;
 }

@@ -62,6 +62,18 @@ export function DineInPayNowButton({
 	}
 
 	if (orderType && orderType !== "DINE_IN") {
+		// Nothing to offer if the restaurant hasn't connected a payout account.
+		// Showing "Pay online" anyway would charge the customer into AwaMenu's
+		// balance with no way to pass the money on.
+		if (onlineProviders.length === 0) {
+			return (
+				<p className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
+					This restaurant takes payment on delivery or pickup. They&apos;ll be
+					in touch to arrange it.
+				</p>
+			);
+		}
+
 		return (
 			<div className="mt-5 grid gap-3">
 				<form action={initiateOrderPaymentAction}>
