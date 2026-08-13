@@ -60,7 +60,7 @@ export function BannerSlider({ name, bannerItems }: BannerSliderProps) {
 									unoptimized
 								/>
 								{banner.title || banner.subtitle ? (
-									<div className="absolute inset-0 flex items-center bg-gradient-to-r from-emerald-950/80 via-emerald-950/25 to-transparent px-5 text-white">
+									<div className="absolute inset-0 flex items-center bg-emerald-950/55 px-5 text-white">
 										<div className="max-w-[14rem]">
 											{banner.title ? (
 												<h2 className="text-2xl font-black leading-tight">

@@ -5,8 +5,9 @@ import { useEffect, useState, useTransition } from "react";
 import { updateAdminPasswordAction } from "@/actions/auth.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { LoadingButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 
-export function AdminAccountSettings() {
+export function AdminAccountSettings({ email }: { email: string }) {
 	const [error, setError] = useState<string | null>(null);
 	const [isSuccess, setIsSuccess] = useState(false);
 	const [isPending, startTransition] = useTransition();
@@ -52,9 +53,23 @@ export function AdminAccountSettings() {
 	return (
 		<SettingsCard
 			title="Admin Account Security"
-			description="Update your personal login password."
+			description="Your sign-in details and password."
 			icon={Lock}
 		>
+			{/* Read-only. Which address receives billing, verification and expiry
+			    mail is not obvious once you're signed in, and changing it is an
+			    identity change that needs its own verified flow — showing it
+			    answers the common question without implying it's editable here. */}
+			<div className="mb-6 min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
+				<p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+					Signed in as
+				</p>
+				<p className="mt-1 break-words font-black text-slate-900">{email}</p>
+				<p className="mt-1 text-xs font-medium text-slate-500">
+					Billing, verification and subscription emails go here.
+				</p>
+			</div>
+
 			<form onSubmit={handleSubmit} className="grid gap-6">
 				<div>
 					<label
@@ -63,8 +78,7 @@ export function AdminAccountSettings() {
 					>
 						Current Password
 					</label>
-					<input
-						type="password"
+					<PasswordInput
 						id="currentPassword"
 						name="currentPassword"
 						required
@@ -80,8 +94,7 @@ export function AdminAccountSettings() {
 						>
 							New Password
 						</label>
-						<input
-							type="password"
+						<PasswordInput
 							id="newPassword"
 							name="newPassword"
 							required
@@ -96,8 +109,7 @@ export function AdminAccountSettings() {
 						>
 							Confirm New Password
 						</label>
-						<input
-							type="password"
+						<PasswordInput
 							id="confirmPassword"
 							name="confirmPassword"
 							required

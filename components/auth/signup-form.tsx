@@ -10,6 +10,7 @@ import {
 import { verifyTurnstileAction } from "@/actions/turnstile.actions";
 import { TurnstileWidget } from "@/components/shared/TurnstileWidget";
 import { LoadingButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 import { env } from "@/env";
 import { authClient } from "@/lib/auth-client";
 
@@ -126,11 +127,14 @@ export function SignupForm() {
 					autoComplete="email"
 				/>
 			</label>
-			<label className="grid gap-2 text-sm font-bold text-slate-700">
+			<label
+				htmlFor="signup-password"
+				className="grid gap-2 text-sm font-bold text-slate-700"
+			>
 				Password
-				<input
+				<PasswordInput
+					id="signup-password"
 					name="password"
-					type="password"
 					required
 					minLength={8}
 					className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"

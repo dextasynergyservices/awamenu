@@ -258,3 +258,93 @@ export async function revealStaffPasswordAction(input: {
 
 	return { password: plain };
 }
+
+const openingHoursSchema = z.object({
+	slug: z.string().min(1),
+	periods: z
+		.array(
+			z.object({
+				dayOfWeek: z.number().int().min(0).max(6),
+				opensAt: z.string().regex(/^\d{2}:\d{2}$/),
+				closesAt: z.string().regex(/^\d{2}:\d{2}$/),
+			}),
+		)
+		.max(35),
+});
+
+/**
+ * Replaces a restaurant's opening hours wholesale.
+ *
+ * Replace-all rather than diffing: the editor submits the complete schedule,
+ * and reconciling row-by-row would risk leaving an orphaned period behind that
+ * silently keeps a restaurant "open".
+ */
+export async function saveOpeningHoursAction(input: {
+	slug: string;
+	periods: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
+}): Promise<{ ok: true } | { error: string }> {
+	const parsed = openingHoursSchema.safeParse(input);
+	if (!parsed.success) return { error: "Please check the times you entered." };
+
+	const user = await requireUser();
+	const restaurant = await db.restaurant.findFirst({
+		where: { slug: parsed.data.slug, ownerId: user.id },
+		select: { id: true, slug: true },
+	});
+	if (!restaurant) return { error: "Restaurant not found." };
+
+	// A period that opens and closes at the same minute is almost certainly a
+	// half-filled row, and would otherwise read as "never open" all day.
+	for (const period of parsed.data.periods) {
+		if (period.opensAt === period.closesAt) {
+			return { error: "Opening and closing times can't be the same." };
+		}
+	}
+
+	await db.$transaction([
+		db.restaurantOpeningHour.deleteMany({
+			where: { restaurantId: restaurant.id },
+		}),
+		db.restaurantOpeningHour.createMany({
+			data: parsed.data.periods.map((period) => ({
+				restaurantId: restaurant.id,
+				dayOfWeek: period.dayOfWeek,
+				opensAt: period.opensAt,
+				closesAt: period.closesAt,
+			})),
+		}),
+	]);
+
+	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+	revalidatePath(`/${restaurant.slug}`);
+	return { ok: true };
+}
+
+/**
+ * Collapses the setup checklist.
+ *
+ * Stored on the record, not in localStorage: an owner who dismisses it on
+ * their laptop shouldn't meet it again on their phone. Collapsed rather than
+ * deleted — the work is still outstanding and they'll want it back.
+ */
+export async function dismissSetupChecklistAction(input: {
+	slug: string;
+}): Promise<{ ok: true } | { error: string }> {
+	const parsed = z.object({ slug: z.string().min(1) }).safeParse(input);
+	if (!parsed.success) return { error: "Invalid request." };
+
+	const user = await requireUser();
+	const restaurant = await db.restaurant.findFirst({
+		where: { slug: parsed.data.slug, ownerId: user.id },
+		select: { id: true, slug: true },
+	});
+	if (!restaurant) return { error: "Restaurant not found." };
+
+	await db.restaurant.update({
+		where: { id: restaurant.id },
+		data: { setupChecklistDismissedAt: new Date() },
+	});
+
+	revalidatePath(`/dashboard/${restaurant.slug}`);
+	return { ok: true };
+}

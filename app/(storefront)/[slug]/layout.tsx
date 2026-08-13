@@ -12,8 +12,17 @@ export async function generateMetadata({
 	params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
 	const { slug } = await params;
-	const restaurant = await getRestaurantBrand(slug);
-	const icon = restaurant?.logoUrl ?? LOGO_ICON_URL;
+	const [restaurant, planFeatures] = await Promise.all([
+		getRestaurantBrand(slug),
+		getRestaurantPlanFeaturesBySlug(slug),
+	]);
+
+	// "Remove AwaMenu branding" is a paid entitlement, and the favicon is
+	// branding — a Free restaurant showing its own mark here was the one place
+	// the rule wasn't applied.
+	const icon = planFeatures.showAwamenuBranding
+		? LOGO_ICON_URL
+		: (restaurant?.logoUrl ?? LOGO_ICON_URL);
 
 	return { icons: { icon, shortcut: icon, apple: icon } };
 }
@@ -34,7 +43,12 @@ export default async function StorefrontLayout({
 
 	const brand = {
 		name: restaurant?.name ?? null,
-		logoUrl: restaurant?.logoUrl ?? null,
+		// Withheld on Free so RestaurantLoadingScreen falls back to the AwaMenu
+		// mark. Menu pages take the logo from their own props, so this only
+		// affects the branding surfaces.
+		logoUrl: planFeatures.showAwamenuBranding
+			? null
+			: (restaurant?.logoUrl ?? null),
 		primaryColor: restaurant?.primaryColor ?? null,
 		showAwamenuBranding: planFeatures.showAwamenuBranding,
 	};

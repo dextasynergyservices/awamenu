@@ -7,6 +7,7 @@ import { updateRestaurantSettingsAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { StaffPasswordReveal } from "@/components/admin/StaffPasswordReveal";
 import { SubmitButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 import { PaymentPolicy } from "@/lib/payment-policy";
 
 type RestaurantSettingsProps = {
@@ -42,6 +43,7 @@ export function RestaurantSettingsForm({
 	return (
 		<SettingsCard
 			title="Restaurant Settings"
+			anchorId="staff"
 			description="Configure your dining policies and preferences."
 			icon={Settings}
 		>
@@ -259,8 +261,7 @@ export function RestaurantSettingsForm({
 							>
 								Master Password
 							</label>
-							<input
-								type="password"
+							<PasswordInput
 								id="staffDashboardPassword"
 								name="staffDashboardPassword"
 								autoComplete="new-password"

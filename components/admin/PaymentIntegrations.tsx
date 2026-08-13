@@ -459,6 +459,7 @@ export function PaymentIntegrations({
 	return (
 		<SettingsCard
 			title="Payments"
+			anchorId="payments"
 			description="Choose how customers can pay you. You can enable more than one."
 			icon={Wallet}
 		>

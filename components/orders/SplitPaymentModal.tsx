@@ -153,23 +153,30 @@ export function SplitPaymentModal({
 							</p>
 						</div>
 
-						<label className="flex items-center justify-between gap-3 sm:gap-4">
-							<span className="text-xs sm:text-sm font-black text-slate-700 w-20 sm:w-24">
-								Staff ID
-							</span>
-							<input
-								type="text"
-								name="staffId"
-								maxLength={6}
-								minLength={6}
-								required
-								onChange={(e) => {
-									e.target.value = e.target.value.toUpperCase();
-								}}
-								placeholder="6 chars"
-								className="h-10 sm:h-11 flex-1 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none uppercase placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-							/>
-						</label>
+						{/* Staff only. The Staff ID attributes the payment to whoever took
+						    it, which matters on a shared staff device — an owner acting
+						    from their own dashboard is already identified by their
+						    session, so asking them to type a Staff ID they may not even
+						    have is a dead end. */}
+						{requirePin ? (
+							<label className="flex items-center justify-between gap-3 sm:gap-4">
+								<span className="w-20 text-xs font-black text-slate-700 sm:w-24 sm:text-sm">
+									Staff ID
+								</span>
+								<input
+									type="text"
+									name="staffId"
+									maxLength={6}
+									minLength={6}
+									required
+									onChange={(e) => {
+										e.target.value = e.target.value.toUpperCase();
+									}}
+									placeholder="6 chars"
+									className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold uppercase text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 sm:h-11"
+								/>
+							</label>
+						) : null}
 					</div>
 
 					<SubmitButton

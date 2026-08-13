@@ -7,6 +7,7 @@ import {
 	resumeEmailVerificationAction,
 } from "@/actions/email-verification.actions";
 import { LoadingButton } from "@/components/ui/action-button";
+import { PasswordInput } from "@/components/ui/password-input";
 import { authClient } from "@/lib/auth-client";
 
 type PostLoginRedirect =
@@ -91,7 +92,10 @@ export function LoginForm() {
 					autoComplete="email"
 				/>
 			</label>
-			<label className="grid gap-2 text-sm font-bold text-slate-700">
+			<label
+				htmlFor="login-password"
+				className="grid gap-2 text-sm font-bold text-slate-700"
+			>
 				<div className="flex items-center justify-between">
 					<span>Password</span>
 					<a
@@ -101,9 +105,9 @@ export function LoginForm() {
 						Forgot your password?
 					</a>
 				</div>
-				<input
+				<PasswordInput
+					id="login-password"
 					name="password"
-					type="password"
 					required
 					className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
 					autoComplete="current-password"

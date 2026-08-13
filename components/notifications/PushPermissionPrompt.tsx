@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, X } from "lucide-react";
+import { Bell, Share, X } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 const emptySubscribe = () => () => {};
@@ -12,6 +12,27 @@ type PushPermissionPromptProps = {
 	recipientType: "admin" | "staff";
 	recipientId: string;
 };
+
+/**
+ * True on an iPhone or iPad browsing normally, rather than from an installed
+ * Home Screen app. Feature detection isn't possible here: Safari exposes
+ * `PushManager` either way and simply never resolves the permission request,
+ * so the platform has to be detected directly.
+ */
+function isIosSafariNotInstalled() {
+	if (typeof window === "undefined") return false;
+	const ua = window.navigator.userAgent;
+	const isIos =
+		/iPad|iPhone|iPod/.test(ua) ||
+		// iPadOS 13+ reports itself as a Mac; the touch points give it away.
+		(ua.includes("Macintosh") && navigator.maxTouchPoints > 1);
+	if (!isIos) return false;
+
+	const installed =
+		window.matchMedia("(display-mode: standalone)").matches ||
+		(window.navigator as { standalone?: boolean }).standalone === true;
+	return !installed;
+}
 
 export function PushPermissionPrompt({
 	restaurantId,
@@ -25,6 +46,7 @@ export function PushPermissionPrompt({
 	});
 	const [dismissed, setDismissed] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [needsInstall, setNeedsInstall] = useState(false);
 	const mounted = useSyncExternalStore(
 		emptySubscribe,
 		() => true,
@@ -43,9 +65,55 @@ export function PushPermissionPrompt({
 	}
 
 	async function handleEnable() {
+		// iOS refuses push outright until the site is installed to the Home
+		// Screen — `Notification.requestPermission()` never resolves in Safari,
+		// which is exactly why the button sat on "Enabling…" forever. Tell them
+		// what to do instead of spinning.
+		if (isIosSafariNotInstalled()) {
+			setNeedsInstall(true);
+			return;
+		}
+
 		setIsLoading(true);
-		await subscribe();
-		setIsLoading(false);
+		try {
+			await subscribe();
+		} finally {
+			// In a finally block so a rejected permission prompt can't strand the
+			// button in its loading state.
+			setIsLoading(false);
+		}
+	}
+
+	if (needsInstall) {
+		return (
+			<div className="relative mx-auto mb-4 max-w-2xl overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 shadow-sm sm:rounded-2xl sm:px-5 sm:py-4">
+				<button
+					type="button"
+					onClick={() => setDismissed(true)}
+					className="absolute top-1 right-1 grid size-6 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-slate-600 sm:top-3 sm:right-3"
+					aria-label="Dismiss"
+				>
+					<X className="size-3.5 sm:size-4" />
+				</button>
+				<div className="flex items-start gap-2 sm:gap-3">
+					<span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700 sm:size-10 sm:rounded-xl">
+						<Share className="size-3.5 sm:size-5" />
+					</span>
+					<div className="min-w-0 flex-1 pr-4 sm:pr-5">
+						<p className="text-xs font-black leading-tight text-slate-800 sm:text-sm">
+							Add AwaMenu to your Home Screen first
+						</p>
+						<p className="mt-1 text-xs leading-snug text-slate-600 sm:text-sm">
+							iPhone only allows notifications for installed apps. Tap{" "}
+							<strong className="font-black">Share</strong> at the bottom of
+							Safari, choose{" "}
+							<strong className="font-black">Add to Home Screen</strong>, then
+							open AwaMenu from your Home Screen and tap Enable again.
+						</p>
+					</div>
+				</div>
+			</div>
+		);
 	}
 
 	return (

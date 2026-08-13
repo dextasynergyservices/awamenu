@@ -20,13 +20,20 @@ import { dispatchNotification } from "@/lib/notifications";
 import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { notifyNewOrder } from "@/lib/order-notifications";
+import { creditOrder } from "@/lib/payment-ledger";
 import { verifyPaystackWebhook } from "@/lib/payments";
 import { scheduleReservationExpiry } from "@/lib/qstash";
+import { notifyReservationConfirmed } from "@/lib/reservation-emails";
 
 type PaystackWebhook = {
 	event?: string;
 	data?: {
 		reference?: string;
+		/** Kobo. Never assume it equals what the order was owed. */
+		amount?: number;
+		currency?: string;
+		fees?: number;
+		subaccount?: { subaccount_code?: string };
 		metadata?: {
 			type?: string;
 			userId?: string;
@@ -93,26 +100,33 @@ export async function POST(request: Request) {
 			);
 		}
 
-		const existingOrder = await db.order.findUnique({
-			where: { id: metadata.orderId },
-			select: { id: true, paymentStatus: true },
+		const credit = await creditOrder(metadata.orderId, {
+			kind: "GATEWAY",
+			gateway: "PAYSTACK",
+			reference: payload.data?.reference ?? "",
+			paidMinorUnits: payload.data?.amount ?? 0,
+			currency: payload.data?.currency ?? "NGN",
+			gatewayFeeMinorUnits: payload.data?.fees ?? null,
+			subaccountCode: payload.data?.subaccount?.subaccount_code ?? null,
+			rawPayload: payload.data,
 		});
 
-		if (!existingOrder) {
-			return NextResponse.json({ error: "Order not found" }, { status: 404 });
+		if (!credit.ok) {
+			if (credit.reason === "ORDER_NOT_FOUND") {
+				return NextResponse.json({ error: "Order not found" }, { status: 404 });
+			}
+			// 200 on purpose. The mismatch is already in the ledger, and asking
+			// Paystack to retry cannot make a wrong amount right — it would just
+			// replay the same disagreement every few minutes.
+			console.error(
+				`[paystack] refused credit for order ${metadata.orderId}: ${credit.message}`,
+			);
+			return NextResponse.json({ ok: true, recorded: "mismatch" });
 		}
 
-		if (existingOrder.paymentStatus !== PaymentStatus.PAID) {
-			await db.order.update({
-				where: { id: metadata.orderId },
-				data: {
-					status: OrderStatus.CONFIRMED,
-					paymentStatus: PaymentStatus.PAID,
-					paymentProvider: "paystack",
-					paymentRef: payload.data?.reference,
-				},
-			});
-
+		// Only the caller that actually settled the order notifies, so a replayed
+		// webhook cannot send a second receipt.
+		if (credit.newlyPaid) {
 			await notifyOrderPaid(metadata.orderId, {
 				method: "Card or bank transfer",
 			});
@@ -168,15 +182,25 @@ export async function POST(request: Request) {
 				},
 			});
 
+			// Claim-guarded, so whichever of this and the customer's return from
+			// Paystack arrives first is the only one that emails.
+			await notifyReservationConfirmed(reservation.id);
+
 			if (reservation.preOrderId) {
-				await db.order.update({
-					where: { id: reservation.preOrderId },
-					data: {
-						status: OrderStatus.CONFIRMED,
-						paymentStatus: PaymentStatus.PAID,
-						paymentProvider: "paystack",
-						paymentRef: payload.data?.reference,
-					},
+				// The deposit is a percentage of the food total, so this charge is
+				// expected to be a part payment. Passing it as the expected amount
+				// keeps it out of the mismatch path while leaving the balance owing
+				// — the restaurant should not read "paid" for food only 30% covered.
+				await creditOrder(reservation.preOrderId, {
+					kind: "GATEWAY",
+					gateway: "PAYSTACK",
+					reference: payload.data?.reference ?? "",
+					paidMinorUnits: payload.data?.amount ?? 0,
+					expectedMinorUnits: payload.data?.amount ?? 0,
+					currency: payload.data?.currency ?? "NGN",
+					gatewayFeeMinorUnits: payload.data?.fees ?? null,
+					subaccountCode: payload.data?.subaccount?.subaccount_code ?? null,
+					rawPayload: payload.data,
 				});
 			}
 
