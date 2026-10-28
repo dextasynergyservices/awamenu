@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
@@ -18,6 +19,28 @@ function suspensionMessage(reason: string) {
 	return reason
 		? `Your account has been suspended. Reason: ${reason}`
 		: "Your account has been suspended.";
+}
+
+const WRONG_CREDENTIALS =
+	"That email and password don't match. Check for typos (and that it's the email you signed up with), or reset your password.";
+
+/**
+ * Plain-language sign-in errors. A plan that has run out never blocks sign-in
+ * (the dashboard opens read-only), so these are only about the credentials or
+ * too many attempts.
+ */
+function signInErrorMessage(error: {
+	status?: number;
+	code?: string;
+	message?: string;
+}) {
+	if (error.status === 429) {
+		return "Too many sign-in attempts. Please wait a minute and try again.";
+	}
+	if (error.code === "INVALID_EMAIL_OR_PASSWORD" || error.status === 401) {
+		return WRONG_CREDENTIALS;
+	}
+	return error.message ?? "Unable to sign in. Please try again.";
 }
 
 export function LoginForm() {
@@ -63,7 +86,7 @@ export function LoginForm() {
 							window.location.href = `/verify-email/code?email=${encodeURIComponent(email)}&resumed=1`;
 							return;
 						}
-						setError(result.error.message ?? "Unable to sign in.");
+						setError(signInErrorMessage(result.error));
 						return;
 					}
 
@@ -113,7 +136,19 @@ export function LoginForm() {
 					autoComplete="current-password"
 				/>
 			</label>
-			{error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
+			{error ? (
+				<div role="alert" className="grid gap-1 rounded-xl bg-red-50 px-3 py-2">
+					<p className="text-sm font-bold text-red-700">{error}</p>
+					{error === WRONG_CREDENTIALS ? (
+						<Link
+							href="/forgot-password"
+							className="text-sm font-black text-emerald-700 underline"
+						>
+							Reset your password
+						</Link>
+					) : null}
+				</div>
+			) : null}
 			<LoadingButton
 				type="submit"
 				loading={isPending}

@@ -1,9 +1,10 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { toggleRatingHiddenAction } from "@/actions/super-admin.actions";
-import { SubmitButton } from "@/components/ui/action-button";
 import { MobileModal } from "@/components/ui/MobileModal";
+import { RowActionForm, RowActions } from "@/components/ui/RowActions";
 
 type ReviewRow = {
 	id: string;
@@ -15,27 +16,16 @@ type ReviewRow = {
 	createdAt: string;
 };
 
-function HideToggleForm({ review }: { review: ReviewRow }) {
+function HideToggleItem({ review }: { review: ReviewRow }) {
 	return (
-		<form action={toggleRatingHiddenAction}>
-			<input type="hidden" name="ratingId" value={review.id} />
-			<input
-				type="hidden"
-				name="isHidden"
-				value={(!review.isHidden).toString()}
-			/>
-			<SubmitButton
-				loadingText="Updating..."
-				successText="Updated"
-				className={`inline-flex h-11 items-center justify-center rounded-lg px-3 text-xs font-black ${
-					review.isHidden
-						? "bg-emerald-700 text-white hover:bg-emerald-800"
-						: "border border-red-100 bg-white text-red-600 hover:bg-red-50"
-				}`}
-			>
-				{review.isHidden ? "Show Review" : "Hide Review"}
-			</SubmitButton>
-		</form>
+		<RowActionForm
+			action={toggleRatingHiddenAction}
+			fields={{ ratingId: review.id, isHidden: String(!review.isHidden) }}
+			icon={review.isHidden ? Eye : EyeOff}
+			tone={review.isHidden ? "success" : "danger"}
+		>
+			{review.isHidden ? "Show review" : "Hide review"}
+		</RowActionForm>
 	);
 }
 
@@ -91,7 +81,9 @@ export function ReviewsTable({ reviews }: { reviews: ReviewRow[] }) {
 							<th className="p-4">Comment</th>
 							<th className="p-4">Status</th>
 							<th className="p-4">Date</th>
-							<th className="p-4">Actions</th>
+							<th className="w-12 p-4">
+								<span className="sr-only">Actions</span>
+							</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -131,7 +123,11 @@ export function ReviewsTable({ reviews }: { reviews: ReviewRow[] }) {
 									{new Date(review.createdAt).toLocaleDateString()}
 								</td>
 								<td className="p-4">
-									<HideToggleForm review={review} />
+									<RowActions
+										label={`Actions for review by ${review.customerName ?? "customer"}`}
+									>
+										<HideToggleItem review={review} />
+									</RowActions>
 								</td>
 							</tr>
 						))}
@@ -190,7 +186,9 @@ export function ReviewsTable({ reviews }: { reviews: ReviewRow[] }) {
 								{selectedReview.isHidden ? "Hidden" : "Visible"}
 							</span>
 						</div>
-						<HideToggleForm review={selectedReview} />
+						<div className="grid gap-0.5 rounded-xl border border-slate-100 p-1">
+							<HideToggleItem review={selectedReview} />
+						</div>
 					</div>
 				) : null}
 			</MobileModal>

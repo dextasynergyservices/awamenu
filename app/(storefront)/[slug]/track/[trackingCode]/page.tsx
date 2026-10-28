@@ -1,6 +1,21 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
-import { db } from "@/lib/db";
+import { privateStorefrontMetadata } from "@/lib/storefront-share";
+import {
+	normalizeTrackingCode,
+	resolveTrackingCode,
+} from "@/lib/tracking-code";
+
+/** The restaurant's name in the tab and link preview; never indexed. */
+export async function generateMetadata({
+	params,
+}: {
+	params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+	const { slug } = await params;
+	return privateStorefrontMetadata(slug, "Track your delivery");
+}
 
 type TrackPageProps = {
 	params: Promise<{ slug: string; trackingCode: string }>;
@@ -8,52 +23,30 @@ type TrackPageProps = {
 
 export const dynamic = "force-dynamic";
 
-function normalizeTrackingCode(value: string) {
-	return decodeURIComponent(value).replace(/^#/, "").trim();
-}
-
+/**
+ * "Track my order" by the code on the receipt. Accepts the full id or the exact
+ * 6-character code, nothing shorter (see lib/tracking-code.ts).
+ */
 export default async function TrackPage({ params }: TrackPageProps) {
 	const { slug, trackingCode } = await params;
 	const cleanCode = normalizeTrackingCode(trackingCode);
 
-	if (!cleanCode) {
-		return (
-			<TrackingUnavailable restaurantSlug={slug} trackingCode={trackingCode} />
+	if (cleanCode) {
+		const orderId = await resolveTrackingCode("order", slug, cleanCode);
+		if (orderId) redirect(`/${slug}/order/${orderId}`);
+
+		const reservationId = await resolveTrackingCode(
+			"reservation",
+			slug,
+			cleanCode,
 		);
+		if (reservationId) redirect(`/${slug}/reservation/${reservationId}`);
 	}
 
-	const lowerCode = cleanCode.toLowerCase();
-	const order = await db.order.findFirst({
-		where: {
-			restaurant: { slug, isActive: true },
-			OR: [
-				{ id: cleanCode },
-				{ id: lowerCode },
-				{ id: { endsWith: lowerCode } },
-			],
-		},
-		select: { id: true },
-	});
-
-	if (order) {
-		redirect(`/${slug}/order/${order.id}`);
-	}
-
-	const reservation = await db.reservation.findFirst({
-		where: {
-			restaurant: { slug, isActive: true },
-			OR: [
-				{ id: cleanCode },
-				{ id: lowerCode },
-				{ id: { endsWith: lowerCode } },
-			],
-		},
-		select: { id: true },
-	});
-
-	if (reservation) {
-		redirect(`/${slug}/reservation/${reservation.id}`);
-	}
-
-	return <TrackingUnavailable restaurantSlug={slug} trackingCode={cleanCode} />;
+	return (
+		<TrackingUnavailable
+			restaurantSlug={slug}
+			trackingCode={cleanCode || trackingCode}
+		/>
+	);
 }

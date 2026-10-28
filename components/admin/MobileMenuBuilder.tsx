@@ -30,6 +30,10 @@ import {
 	updateCategoryAction,
 	updateMenuItemAction,
 } from "@/actions/menu.actions";
+import {
+	MenuTagPicker,
+	SoldOutToggle,
+} from "@/components/admin/MenuItemExtras";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
@@ -52,6 +56,8 @@ type MobileCategory = {
 		sortOrder: number;
 		isAvailable: boolean;
 		isTodaySpecial: boolean;
+		soldOut: boolean;
+		tags: string[];
 	}>;
 };
 
@@ -324,6 +330,8 @@ export function MobileMenuBuilder({
 									key={item.id}
 									item={item}
 									currency={currency}
+									restaurantId={restaurantId}
+									slug={slug}
 									onEdit={() => setEditingItem(item)}
 								/>
 							))
@@ -375,7 +383,7 @@ export function MobileMenuBuilder({
 								? setActiveTab("categories")
 								: setIsCreatingItem(true)
 						}
-						className="fixed right-5 bottom-28 z-30 grid gap-1 text-center text-xs font-medium text-slate-700"
+						className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 grid gap-1 text-center text-xs font-bold text-slate-700"
 					>
 						<span className="grid size-12 place-items-center rounded-full bg-emerald-700 text-white shadow-lg">
 							<Plus className="size-5" aria-hidden="true" />
@@ -1217,10 +1225,14 @@ function MobileTabButton({
 function MobileItemCard({
 	item,
 	currency,
+	restaurantId,
+	slug,
 	onEdit,
 }: {
 	item: MobileItem;
 	currency: string;
+	restaurantId: string;
+	slug: string;
 	onEdit: () => void;
 }) {
 	return (
@@ -1253,6 +1265,15 @@ function MobileItemCard({
 				<p className="text-sm font-bold leading-none text-emerald-800">
 					{formatMoney(item.price, currency)}
 				</p>
+				{item.isAvailable ? (
+					<SoldOutToggle
+						restaurantId={restaurantId}
+						slug={slug}
+						itemId={item.id}
+						soldOut={item.soldOut}
+						className="mt-2 justify-self-start"
+					/>
+				) : null}
 			</div>
 			<div className="grid min-h-[5.75rem] content-between justify-items-end">
 				<span className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 text-xs font-bold text-emerald-700">
@@ -1398,6 +1419,7 @@ function MobileItemEditModal({
 							/>
 						</label>
 					</div>
+					<MenuTagPicker defaultTags={item.tags} />
 					<label className="grid gap-1 text-xs font-black text-slate-700">
 						Display order
 						<input
@@ -1614,6 +1636,7 @@ function MobileItemCreateModal({
 							/>
 						</label>
 					</div>
+					<MenuTagPicker defaultTags={[]} />
 					<label className="grid gap-2">
 						<span className="text-xs font-black text-slate-700">
 							Photo upload

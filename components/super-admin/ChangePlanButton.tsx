@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { assignRestaurantPlanAction } from "@/actions/super-admin.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { MobileModal } from "@/components/ui/MobileModal";
 
 type PlanOption = { id: string; name: string };
@@ -39,7 +40,10 @@ export function ChangePlanButton({
 				title="Change Plan"
 				description={`Current plan: ${currentPlanName}`}
 			>
-				<form action={assignRestaurantPlanAction} className="grid gap-3 pb-2">
+				<ActionForm
+					action={assignRestaurantPlanAction}
+					className="grid gap-3 pb-2"
+				>
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<select
 						name="planId"
@@ -64,7 +68,7 @@ export function ChangePlanButton({
 					>
 						Confirm Plan Change
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</MobileModal>
 		</>
 	);

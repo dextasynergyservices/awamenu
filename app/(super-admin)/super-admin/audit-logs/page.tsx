@@ -1,26 +1,33 @@
+import type { Prisma } from "@prisma/client";
 import { AuditLogsTable } from "@/components/super-admin/AuditLogsTable";
+import { Pagination } from "@/components/ui/Pagination";
 import { db } from "@/lib/db";
+import { clampPage, pageInfo, parsePage } from "@/lib/pagination";
 
 export default async function SuperAdminAuditLogsPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ q?: string }>;
+	searchParams: Promise<Record<string, string | undefined>>;
 }) {
-	const { q } = await searchParams;
-	const query = q?.trim();
+	const params = await searchParams;
+	const query = params.q?.trim();
+	const where: Prisma.AuditLogWhereInput | undefined = query
+		? {
+				OR: [
+					{ adminName: { contains: query, mode: "insensitive" } },
+					{ action: { contains: query, mode: "insensitive" } },
+					{ target: { contains: query, mode: "insensitive" } },
+				],
+			}
+		: undefined;
 
+	const total = await db.auditLog.count({ where });
+	const page = clampPage(parsePage(params, 50), total);
 	const logs = await db.auditLog.findMany({
-		where: query
-			? {
-					OR: [
-						{ adminName: { contains: query, mode: "insensitive" } },
-						{ action: { contains: query, mode: "insensitive" } },
-						{ target: { contains: query, mode: "insensitive" } },
-					],
-				}
-			: undefined,
+		where,
 		orderBy: { createdAt: "desc" },
-		take: 200,
+		skip: page.skip,
+		take: page.take,
 	});
 
 	return (
@@ -59,6 +66,12 @@ export default async function SuperAdminAuditLogsPage({
 					target: log.target,
 					status: log.status,
 				}))}
+			/>
+			<Pagination
+				info={pageInfo(page, total)}
+				basePath="/super-admin/audit-logs"
+				query={params}
+				noun="entries"
 			/>
 		</div>
 	);

@@ -3,6 +3,7 @@ import {
 	updatePlanAction,
 } from "@/actions/super-admin.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import type { db } from "@/lib/db";
 import { BASE_MENU_TEMPLATE, MENU_TEMPLATES } from "@/lib/menu-templates";
 
@@ -29,7 +30,7 @@ export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 	const action = isEdit ? updatePlanAction : createPlanAction;
 
 	return (
-		<form
+		<ActionForm
 			action={action}
 			className="grid gap-6 rounded-2xl border border-slate-100 bg-white p-6"
 		>
@@ -287,6 +288,6 @@ export function PlanEditor({ plan, onSaved }: PlanEditorProps) {
 			>
 				{isEdit ? "Save Changes" : "Create Plan"}
 			</SubmitButton>
-		</form>
+		</ActionForm>
 	);
 }

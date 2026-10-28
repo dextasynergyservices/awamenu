@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { env } from "@/env";
 import { getPlanIntervalPrice, parseBillingInterval } from "@/lib/billing";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { recordCronRun } from "@/lib/cron-heartbeat";
 import { db } from "@/lib/db";
+import { purgeOldNotifications } from "@/lib/notifications";
 
 type PaystackSubscriptionStatus = {
 	data?: {
@@ -15,8 +17,8 @@ type PaystackSubscriptionStatus = {
  * Renewal charges happen on Paystack's own schedule and are only reflected
  * here via webhook — if that webhook is ever missed (network blip, downtime,
  * a signature mismatch), a subscription can be left ACTIVE with a stale
- * `currentPeriodEnd` forever, since `isSubscriptionActive` trusts `status`
- * unconditionally. This actively asks Paystack for the truth once a period
+ * `currentPeriodEnd`. Access itself is decided by dates (lib/billing-state.ts),
+ * so this is about keeping the record honest. This actively asks Paystack for the truth once a period
  * has already ended without a renewal having come through, instead of
  * silently trusting a webhook that may never arrive.
  */
@@ -100,29 +102,23 @@ function recordStage(subscriptionId: string, stage: NoticeStage) {
 }
 
 /**
- * Grace period has elapsed without payment: take the restaurant offline.
+ * Grace period has elapsed without payment: record it and tell the owner.
  *
- * Suspension reuses the existing `Restaurant.isActive` flag, which the public
- * menu, admin dashboard and staff dashboard already gate on — so nothing is
- * deleted and a later renewal restores everything by flipping it back.
+ * The restaurant itself is NOT switched off. Its subscription's dates already
+ * make it read-only (lib/billing-state.ts) whether or not this job runs;
+ * `Restaurant.isActive` belongs to the Super Admin alone. This just records
+ * the stage (so the email goes once) and sends it.
  */
-async function suspendRestaurant(input: {
+async function markLapsed(input: {
 	subscriptionId: string;
-	restaurantId: string;
 	restaurantName: string;
 	email: string;
 	manageBillingUrl: string;
 }) {
-	await db.$transaction([
-		db.restaurant.update({
-			where: { id: input.restaurantId },
-			data: { isActive: false },
-		}),
-		db.subscription.update({
-			where: { id: input.subscriptionId },
-			data: { status: "PAST_DUE", lastExpiryNoticeStage: "SUSPENDED" },
-		}),
-	]);
+	await db.subscription.update({
+		where: { id: input.subscriptionId },
+		data: { status: "PAST_DUE", lastExpiryNoticeStage: "SUSPENDED" },
+	});
 
 	await import("@/lib/email").then((m) =>
 		m.sendSuspensionEmail({
@@ -200,13 +196,17 @@ export async function POST(request: Request) {
 		const diffCutOffTime = gracePeriodEnd.getTime() - now.getTime();
 		const daysToCutOff = Math.ceil(diffCutOffTime / (1000 * 60 * 60 * 24));
 
-		const manageBillingUrl = `${env.NEXT_PUBLIC_APP_URL}/dashboard/${restaurant.slug}/settings`;
+		const manageBillingUrl = `${env.NEXT_PUBLIC_APP_URL}/dashboard/${restaurant.slug}/renew`;
 		const amount = `₦${getPlanIntervalPrice(
 			sub.plan,
 			parseBillingInterval(sub.billingInterval),
 		).toLocaleString()}`;
 
-		if (sub.status === "ACTIVE") {
+		// Auto-renewing means a Paystack subscription exists. Status alone isn't
+		// enough: every paid checkout sets ACTIVE, including one-off payments with
+		// no card on file, and those owners were told "we'll charge your saved
+		// card" instead of getting their expiry warnings.
+		if (sub.status === "ACTIVE" && sub.paystackSubscriptionCode) {
 			// Auto-renewing plan: warn about the upcoming charge, not expiry.
 			if (daysToExpiry <= 7 && !hasSentStage(sub.lastExpiryNoticeStage, "T7")) {
 				await import("@/lib/email").then((m) =>
@@ -253,9 +253,8 @@ export async function POST(request: Request) {
 				continue;
 			}
 
-			await suspendRestaurant({
+			await markLapsed({
 				subscriptionId: sub.id,
-				restaurantId: restaurant.id,
 				restaurantName: restaurant.name,
 				email: sub.user.email,
 				manageBillingUrl,
@@ -307,7 +306,10 @@ export async function POST(request: Request) {
 		}
 	}
 
-	return NextResponse.json({ ok: true });
+	// Daily housekeeping rides on this daily job.
+	const notificationsPurged = await purgeOldNotifications();
+	await recordCronRun("subscriptions");
+	return NextResponse.json({ ok: true, notificationsPurged });
 }
 
 /**

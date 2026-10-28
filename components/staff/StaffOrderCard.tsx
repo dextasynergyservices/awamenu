@@ -15,7 +15,9 @@ import { useState, useTransition } from "react";
 import { staffUpdateOrderStatusAction } from "@/actions/staff.actions";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import { PinPromptModal } from "@/components/staff/PinPromptModal";
+import { formatClock } from "@/lib/restaurant-time";
 import type { StaffPermissions } from "@/lib/staff-permissions";
 import { cn } from "@/lib/utils";
 import type { StaffOrder } from "./StaffOrderFeed";
@@ -70,6 +72,7 @@ export function StaffOrderCard({
 	restaurantName,
 	permissions,
 }: Props) {
+	const tz = useRestaurantTimeZone();
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
 	const [paymentOpen, setPaymentOpen] = useState(false);
@@ -108,13 +111,14 @@ export function StaffOrderCard({
 		setPromptingPin(true);
 	}
 
-	function submitStatusUpdate(staffId: string) {
+	function submitStatusUpdate(staffId: string, pin: string) {
 		setPromptingPin(false);
 		setError(null);
 
 		const fd = new FormData();
 		fd.set("slug", slug);
 		fd.set("staffId", staffId);
+		fd.set("pin", pin);
 		fd.set("orderId", order.id);
 		fd.set("status", nextStatus);
 
@@ -201,10 +205,7 @@ export function StaffOrderCard({
 
 				{/* Time */}
 				<p className="mt-1 text-xs font-medium text-slate-400">
-					{new Date(order.createdAt).toLocaleTimeString([], {
-						hour: "2-digit",
-						minute: "2-digit",
-					})}
+					{formatClock(order.createdAt, tz)}
 				</p>
 
 				{/* Actions */}

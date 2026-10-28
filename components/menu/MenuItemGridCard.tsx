@@ -3,17 +3,15 @@
 import { Plus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { MenuItemBadges, SoldOutPill } from "@/components/menu/MenuItemBadges";
 import { MenuItemDetailsModal } from "@/components/menu/MenuItemDetailsModal";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { useCart } from "@/hooks/useCart";
+import type { PublicMenuItem } from "@/lib/menu-tags";
+import { cn } from "@/lib/utils";
 
 type MenuItemGridCardProps = {
-	item: {
-		id: string;
-		name: string;
-		description: string | null;
-		price: number;
-		imageUrl: string | null;
-	};
+	item: PublicMenuItem;
 	restaurantSlug: string;
 	currency: string;
 };
@@ -32,6 +30,7 @@ export function MenuItemGridCard({
 	currency,
 }: MenuItemGridCardProps) {
 	const addItem = useCart((state) => state.addItem);
+	const paused = useOrderingPaused();
 	const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 	const cartItem = {
 		id: item.id,
@@ -56,7 +55,10 @@ export function MenuItemGridCard({
 								src={item.imageUrl}
 								alt={item.name}
 								fill
-								className="object-cover"
+								className={cn(
+									"object-cover",
+									item.soldOut && "opacity-60 grayscale",
+								)}
 								sizes="(min-width: 768px) 220px, 45vw"
 								unoptimized
 							/>
@@ -64,14 +66,18 @@ export function MenuItemGridCard({
 							<div className="grid h-full place-items-center text-4xl">🍽️</div>
 						)}
 					</button>
-					<button
-						type="button"
-						onClick={() => addItem(cartItem)}
-						className="absolute right-2 bottom-2 grid size-9 place-items-center rounded-full bg-yellow-300 text-emerald-950 shadow-md transition-colors hover:bg-yellow-200 md:size-10"
-						aria-label={`Add ${item.name} to cart`}
-					>
-						<Plus className="size-4 md:size-5" aria-hidden="true" />
-					</button>
+					{item.soldOut ? (
+						<SoldOutPill className="absolute right-2 bottom-2" />
+					) : paused ? null : (
+						<button
+							type="button"
+							onClick={() => addItem(cartItem)}
+							className="absolute right-2 bottom-2 grid size-9 place-items-center rounded-full bg-yellow-300 text-emerald-950 shadow-md transition-colors hover:bg-yellow-200 md:size-10"
+							aria-label={`Add ${item.name} to cart`}
+						>
+							<Plus className="size-4 md:size-5" aria-hidden="true" />
+						</button>
+					)}
 				</div>
 				<button
 					type="button"
@@ -81,6 +87,7 @@ export function MenuItemGridCard({
 					<h3 className="line-clamp-1 text-sm font-semibold leading-tight text-slate-950 md:text-base">
 						{item.name}
 					</h3>
+					<MenuItemBadges item={item} className="mt-1" maxTags={2} />
 					{item.description ? (
 						<p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
 							{item.description}

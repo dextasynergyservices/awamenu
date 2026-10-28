@@ -7,6 +7,7 @@ import { MobileMenuBuilder } from "@/components/admin/MobileMenuBuilder";
 import { PlanLimitBanner } from "@/components/admin/PlanLimitBanner";
 import { bannerRecordToItem } from "@/lib/banners";
 import { db } from "@/lib/db";
+import { isSoldOut } from "@/lib/menu-tags";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
 
 type MenuBuilderPageProps = {
@@ -48,6 +49,8 @@ export default async function MenuBuilderPage({
 							sortOrder: true,
 							isAvailable: true,
 							isTodaySpecial: true,
+							soldOutUntil: true,
+							tags: true,
 						},
 					},
 				},
@@ -77,9 +80,10 @@ export default async function MenuBuilderPage({
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);
 	const categories = restaurant.categories.map(({ items, ...category }) => ({
 		...category,
-		items: items.map((item) => ({
+		items: items.map(({ soldOutUntil, ...item }) => ({
 			...item,
 			price: Number(item.price),
+			soldOut: isSoldOut(soldOutUntil),
 		})),
 	}));
 

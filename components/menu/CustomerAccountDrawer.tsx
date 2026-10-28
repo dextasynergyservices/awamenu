@@ -16,9 +16,12 @@ import { createPortal } from "react-dom";
 import {
 	getCustomerHubDataAction,
 	requestCustomerOtpAction,
+	signOutCustomerAction,
 	updateCustomerProfileAction,
 	verifyCustomerOtpAction,
 } from "@/actions/customer.actions";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
+import { formatDateTime } from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 const emptySubscribe = () => () => {};
@@ -118,11 +121,8 @@ function orderStatusLabel(
 	return order.status.replaceAll("_", " ");
 }
 
-function formatDate(value: string) {
-	return new Intl.DateTimeFormat("en-NG", {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(new Date(value));
+function formatDate(value: string, tz: string) {
+	return formatDateTime(value, tz);
 }
 
 function normalizeIdentifier(type: IdentityType, identifier: string) {
@@ -160,13 +160,17 @@ export function CustomerAccountDrawer({
 
 				setIdentityType(session.identityType);
 				setIdentifier(session.identifier);
-				getCustomerHubDataAction({
-					restaurantSlug,
-					identityType: session.identityType,
-					identifier: session.identifier,
-				})
+				// Who the customer is comes from the httpOnly session cookie the
+				// server set at sign-in. This stored copy only remembers that they
+				// signed in, for display; if the cookie has gone, so does it.
+				getCustomerHubDataAction({ restaurantSlug })
 					.then((data) => {
-						if (active) setHubData(data as CustomerHubData);
+						if (!active) return;
+						if ("error" in data) {
+							window.localStorage.removeItem(SESSION_KEY);
+							return;
+						}
+						setHubData(data as CustomerHubData);
 					})
 					.catch(() => window.localStorage.removeItem(SESSION_KEY));
 			} catch {
@@ -221,6 +225,7 @@ export function CustomerAccountDrawer({
 				identifier,
 				code,
 			});
+			if ("error" in data) throw new Error(data.error);
 			setHubData(data as CustomerHubData);
 			window.localStorage.setItem(
 				SESSION_KEY,
@@ -240,6 +245,9 @@ export function CustomerAccountDrawer({
 
 	function handleLogout() {
 		window.localStorage.removeItem(SESSION_KEY);
+		// Ends the server session too; clearing local state alone left the
+		// cookie signed in on this device.
+		void signOutCustomerAction();
 		setHubData(null);
 		setCode("");
 		setOtpRequested(false);
@@ -485,11 +493,7 @@ function CustomerHub({
 			{activeTab === "vendors" ? <VendorsPanel data={data} /> : null}
 			{activeTab === "rewards" ? <RewardsPanel data={data} /> : null}
 			{activeTab === "profile" ? (
-				<ProfilePanel
-					identifier={identifier}
-					profile={data.profile}
-					onSaved={onProfileSaved}
-				/>
+				<ProfilePanel profile={data.profile} onSaved={onProfileSaved} />
 			) : null}
 		</div>
 	);
@@ -502,6 +506,7 @@ function OrdersPanel({
 	data: CustomerHubData;
 	onSelectOrder: (order: CustomerOrder) => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const PAGE_SIZE = 5;
 	const [page, setPage] = useState(0);
 	const totalPages = Math.max(1, Math.ceil(data.orders.length / PAGE_SIZE));
@@ -529,7 +534,7 @@ function OrdersPanel({
 										{order.restaurant.name}
 									</p>
 									<p className="mt-1 text-xs font-semibold text-slate-500">
-										{formatDate(order.createdAt)}
+										{formatDate(order.createdAt, tz)}
 									</p>
 								</div>
 								<p className="text-xs md:text-sm font-black text-emerald-700">
@@ -635,11 +640,9 @@ function RewardsPanel({ data }: { data: CustomerHubData }) {
 }
 
 function ProfilePanel({
-	identifier,
 	profile,
 	onSaved,
 }: {
-	identifier: string;
 	profile: CustomerHubData["profile"];
 	onSaved: (profile: CustomerHubData["profile"]) => void;
 }) {
@@ -656,13 +659,13 @@ function ProfilePanel({
 
 		try {
 			const updatedProfile = await updateCustomerProfileAction({
-				identifier,
 				fullName: String(formData.get("fullName") ?? ""),
 				whatsappNumber: String(formData.get("whatsappNumber") ?? ""),
 				alternativePhone: String(formData.get("alternativePhone") ?? ""),
 				email: String(formData.get("email") ?? ""),
 				deliveryAddress: String(formData.get("deliveryAddress") ?? ""),
 			});
+			if ("error" in updatedProfile) throw new Error(updatedProfile.error);
 			onSaved(updatedProfile);
 			setSaved(true);
 		} catch (profileError) {

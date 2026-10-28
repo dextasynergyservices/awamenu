@@ -1,6 +1,6 @@
-import { createHmac } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { signToken, verifyToken } from "@/lib/signed-token";
 
 const COOKIE_NAME = "staff-session";
 
@@ -11,39 +11,17 @@ interface StaffSessionPayload {
 	exp: number;
 }
 
-function getSecret(): string {
-	const secret = process.env.BETTER_AUTH_SECRET;
-	if (!secret)
-		throw new Error("BETTER_AUTH_SECRET is required for staff sessions");
-	return secret;
-}
+// Signed with a key of its own (see lib/signed-token.ts) and checked in
+// constant time. This used to sign with BETTER_AUTH_SECRET directly and
+// compare signatures with `!==`.
+const PURPOSE = "staff-session";
 
 function sign(payload: StaffSessionPayload): string {
-	const data = JSON.stringify(payload);
-	const encoded = Buffer.from(data).toString("base64url");
-	const sig = createHmac("sha256", getSecret())
-		.update(encoded)
-		.digest("base64url");
-	return `${encoded}.${sig}`;
+	return signToken(PURPOSE, payload);
 }
 
 function verify(token: string): StaffSessionPayload | null {
-	const [encoded, sig] = token.split(".");
-	if (!encoded || !sig) return null;
-
-	const expectedSig = createHmac("sha256", getSecret())
-		.update(encoded)
-		.digest("base64url");
-
-	if (sig !== expectedSig) return null;
-
-	try {
-		const data = JSON.parse(Buffer.from(encoded, "base64url").toString());
-		if (data.exp && Date.now() > data.exp) return null;
-		return data as StaffSessionPayload;
-	} catch {
-		return null;
-	}
+	return verifyToken<StaffSessionPayload>(PURPOSE, token);
 }
 
 /**

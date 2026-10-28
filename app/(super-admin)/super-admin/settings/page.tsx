@@ -2,7 +2,12 @@ import { PlatformSettingsForm } from "@/components/super-admin/PlatformSettingsF
 import { db } from "@/lib/db";
 
 export default async function SuperAdminSettingsPage() {
-	const settings = await db.platformSetting.findFirst();
+	const [settings, commissionOverrides] = await Promise.all([
+		db.platformSetting.findFirst(),
+		db.restaurant.count({
+			where: { commissionPercentOverride: { not: null } },
+		}),
+	]);
 
 	return (
 		<div className="grid max-w-2xl gap-6">
@@ -18,6 +23,7 @@ export default async function SuperAdminSettingsPage() {
 			<PlatformSettingsForm
 				platformName={settings?.platformName ?? "AwaMenu"}
 				logoUrl={settings?.logoUrl ?? null}
+				commissionOverrides={commissionOverrides}
 				paystackPublicKey={settings?.paystackPublicKey ?? null}
 				hasSecretKey={Boolean(settings?.paystackSecretKey)}
 				maintenanceMode={settings?.maintenanceMode ?? false}

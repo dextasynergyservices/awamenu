@@ -1,23 +1,45 @@
 import * as Sentry from "@sentry/nextjs";
+import type { ReactElement } from "react";
+import type { EmailBrand } from "@/emails/brand";
+import {
+	type BookingFacts,
+	ReservationAwaitingPaymentEmail,
+	ReservationCancelledEmail,
+	ReservationConfirmedEmail,
+	ReservationDeclinedEmail,
+	ReservationReleasedEmail,
+	ReservationRequestedEmail,
+} from "@/emails/customer";
+import {
+	OwnerBookingRequestEmail,
+	OwnerGuestCancelledEmail,
+} from "@/emails/owner";
 import { env } from "@/env";
 import { db } from "@/lib/db";
-import { getResendClient, getRestaurantFromEmail } from "@/lib/email";
+import { getAccountsFromEmail } from "@/lib/email";
+import {
+	getPlatformBrand,
+	getRestaurantEmailIdentity,
+} from "@/lib/email-brand";
+import { getQueuedMailer } from "@/lib/outbox";
+import { formatInTimeZone } from "@/lib/zoned-time";
 
 /**
  * Every lifecycle email for a table reservation.
  *
- * There were none at all: a guest could book a table, pay a deposit and receive
- * nothing — no confirmation, no time, no address, nothing to show on arrival.
- * The order side already had this; reservations were simply never given it.
+ * Guests hear from the restaurant, in its branding (lib/email-brand.ts). The
+ * owner hears from AwaMenu, and only about what a guest did (a request that
+ * needs approval, a guest cancelling): never a copy of what the owner did
+ * themselves.
  *
- * Modelled on lib/order-emails.ts deliberately, including the claim-before-send
- * discipline, because reservations have the same problem: the customer's return
- * from Paystack and the webhook can both confirm the same booking within
- * milliseconds of each other.
+ * Guest emails claim a slot before sending, like lib/order-emails.ts, because
+ * the customer's return from Paystack and the webhook can both confirm the
+ * same booking within milliseconds of each other.
  */
 
 type EmailSlot =
 	| "requestedEmailSentAt"
+	| "approvedEmailSentAt"
 	| "confirmedEmailSentAt"
 	| "declinedEmailSentAt"
 	| "cancelledEmailSentAt";
@@ -46,20 +68,22 @@ async function load(reservationId: string) {
 			customerEmail: true,
 			partySize: true,
 			startsAt: true,
-			endsAt: true,
 			specialRequests: true,
 			declineReason: true,
-			effectiveTableFee: true,
+			cancellationReason: true,
+			refundRequiredReason: true,
 			reservationAmountPaid: true,
 			reservationPaymentStatus: true,
+			paymentDueAt: true,
 			table: { select: { label: true } },
 			restaurant: {
 				select: {
+					id: true,
 					name: true,
 					slug: true,
-					phone: true,
-					address: true,
 					currency: true,
+					timezone: true,
+					owner: { select: { email: true } },
 				},
 			},
 		},
@@ -76,74 +100,114 @@ const money = (value: number, currency: string) =>
 	}).format(value);
 
 /**
- * Written out in full, with the weekday.
- *
- * "13/08" is ambiguous across regions and easy to misread; a guest reading this
- * on a phone three weeks later needs the day of the week more than anything, so
- * it leads.
+ * Written out in full, with the weekday, in the restaurant's timezone (the
+ * guest is going there). "13/08" is ambiguous; a guest reading this weeks
+ * later needs the day of the week more than anything.
  */
-const when = (date: Date) =>
-	new Intl.DateTimeFormat("en-GB", {
-		weekday: "long",
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		hour12: true,
-		timeZone: "Africa/Lagos",
-	}).format(date);
+const when = (reservation: Reservation, date: Date) =>
+	formatInTimeZone(
+		date,
+		reservation.restaurant.timezone,
+		{
+			weekday: "long",
+			day: "numeric",
+			month: "long",
+			year: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+			hour12: true,
+		},
+		"en-GB",
+	);
 
-/** The details a guest needs on arrival, in the order they'll want them. */
-function detailLines(reservation: Reservation): string[] {
-	const lines = [
-		`When: ${when(reservation.startsAt)}`,
-		`Table: ${reservation.table.label}`,
-		`Party size: ${reservation.partySize} ${reservation.partySize === 1 ? "guest" : "guests"}`,
-	];
+const paidAmount = (reservation: Reservation) =>
+	reservation.reservationPaymentStatus === "PAID"
+		? Number(reservation.reservationAmountPaid ?? 0)
+		: 0;
 
-	if (reservation.restaurant.address) {
-		lines.push(`Address: ${reservation.restaurant.address}`);
-	}
-	if (reservation.restaurant.phone) {
-		lines.push(`Phone: ${reservation.restaurant.phone}`);
-	}
-	if (reservation.specialRequests) {
-		lines.push(`Your note: ${reservation.specialRequests}`);
-	}
-
-	const paid = Number(reservation.reservationAmountPaid ?? 0);
-	if (paid > 0) {
-		lines.push(`Paid: ${money(paid, reservation.restaurant.currency)}`);
-	}
-
-	return lines;
-}
-
-async function send(
-	reservation: Reservation,
-	subject: string,
-	body: string,
-): Promise<void> {
-	if (!reservation.customerEmail) return;
-
-	try {
-		await getResendClient().emails.send({
-			from: getRestaurantFromEmail(reservation.restaurant.name),
-			to: reservation.customerEmail,
-			subject,
-			text: body,
-		});
-	} catch (error) {
-		// Never rethrown. A reservation must not fail because an email provider
-		// is having a bad minute — the booking is the thing that matters.
-		Sentry.captureException(error);
-		console.error("[reservation-email] send failed", reservation.id, error);
-	}
+function facts(reservation: Reservation): BookingFacts {
+	// reservationAmountPaid holds the amount *due* until the guest pays, so it
+	// only reads as "Paid" once the payment has actually landed.
+	const amount = Number(reservation.reservationAmountPaid ?? 0);
+	const currency = reservation.restaurant.currency;
+	return {
+		reference: reservation.id.slice(-6).toUpperCase(),
+		when: when(reservation, reservation.startsAt),
+		table: reservation.table.label,
+		partySize: reservation.partySize,
+		note: reservation.specialRequests,
+		amount:
+			amount > 0
+				? [
+						reservation.reservationPaymentStatus === "PAID"
+							? "Paid"
+							: "Amount due",
+						money(amount, currency),
+					]
+				: null,
+	};
 }
 
 const viewUrl = (reservation: Reservation) =>
 	`${env.NEXT_PUBLIC_APP_URL}/${reservation.restaurant.slug}/reservation/${reservation.id}`;
+
+const bookUrl = (reservation: Reservation) =>
+	`${env.NEXT_PUBLIC_APP_URL}/${reservation.restaurant.slug}/tables`;
+
+const dashboardUrl = (reservation: Reservation) =>
+	`${env.NEXT_PUBLIC_APP_URL}/dashboard/${reservation.restaurant.slug}/reservations?reservationId=${reservation.id}`;
+
+/**
+ * Never rethrows. A reservation must not fail because an email provider is
+ * having a bad minute — the booking is the thing that matters.
+ */
+async function attempt(reservationId: string, run: () => Promise<unknown>) {
+	try {
+		await run();
+	} catch (error) {
+		Sentry.captureException(error, { tags: { email: "reservation" } });
+		console.error("[reservation-email] send failed", reservationId, error);
+	}
+}
+
+/** A guest email, in the restaurant's name and branding. */
+function sendToGuest(
+	reservation: Reservation,
+	subject: string,
+	build: (brand: EmailBrand) => ReactElement,
+) {
+	return attempt(reservation.id, async () => {
+		if (!reservation.customerEmail) return;
+		const identity = await getRestaurantEmailIdentity(
+			reservation.restaurant.id,
+		);
+		await getQueuedMailer().emails.send({
+			from: identity.from,
+			replyTo: identity.replyTo,
+			to: reservation.customerEmail,
+			subject,
+			react: build(identity.brand),
+		});
+	});
+}
+
+/** An owner email, from AwaMenu. */
+function sendToOwner(
+	reservation: Reservation,
+	subject: string,
+	react: ReactElement,
+) {
+	return attempt(reservation.id, () =>
+		getQueuedMailer().emails.send({
+			from: getAccountsFromEmail(),
+			to: reservation.restaurant.owner.email,
+			subject,
+			react,
+		}),
+	);
+}
+
+// ─── Guest ────────────────────────────────────────────
 
 /** Sent when a booking needs the restaurant to approve it. */
 export async function notifyReservationRequested(reservationId: string) {
@@ -151,20 +215,13 @@ export async function notifyReservationRequested(reservationId: string) {
 	if (!reservation?.customerEmail) return;
 	if (!(await claim(reservationId, "requestedEmailSentAt"))) return;
 
-	await send(
-		reservation,
-		`We received your table request — ${reservation.restaurant.name}`,
-		[
-			`Hi ${reservation.customerName},`,
-			"",
-			`Thanks for your request. ${reservation.restaurant.name} will confirm shortly — this is not a confirmed booking yet, and we'll email you the moment it is.`,
-			"",
-			...detailLines(reservation),
-			"",
-			`Track it here: ${viewUrl(reservation)}`,
-			"",
-			reservation.restaurant.name,
-		].join("\n"),
+	await sendToGuest(reservation, "We've received your table request", (brand) =>
+		ReservationRequestedEmail({
+			brand,
+			customerName: reservation.customerName,
+			booking: facts(reservation),
+			viewUrl: viewUrl(reservation),
+		}),
 	);
 }
 
@@ -174,22 +231,16 @@ export async function notifyReservationConfirmed(reservationId: string) {
 	if (!reservation?.customerEmail) return;
 	if (!(await claim(reservationId, "confirmedEmailSentAt"))) return;
 
-	await send(
+	await sendToGuest(
 		reservation,
-		`Table confirmed — ${reservation.restaurant.name}, ${when(reservation.startsAt)}`,
-		[
-			`Hi ${reservation.customerName},`,
-			"",
-			`Your table at ${reservation.restaurant.name} is confirmed. Show this email when you arrive.`,
-			"",
-			...detailLines(reservation),
-			"",
-			`View or cancel: ${viewUrl(reservation)}`,
-			"",
-			"If your plans change, please let us know so the table can go to someone else.",
-			"",
-			reservation.restaurant.name,
-		].join("\n"),
+		`Your table is confirmed: ${when(reservation, reservation.startsAt)}`,
+		(brand) =>
+			ReservationConfirmedEmail({
+				brand,
+				customerName: reservation.customerName,
+				booking: facts(reservation),
+				viewUrl: viewUrl(reservation),
+			}),
 	);
 }
 
@@ -199,32 +250,19 @@ export async function notifyReservationDeclined(reservationId: string) {
 	if (!reservation?.customerEmail) return;
 	if (!(await claim(reservationId, "declinedEmailSentAt"))) return;
 
-	const refunded = Number(reservation.reservationAmountPaid ?? 0) > 0;
-
-	await send(
-		reservation,
-		`Your table request couldn't be confirmed — ${reservation.restaurant.name}`,
-		[
-			`Hi ${reservation.customerName},`,
-			"",
-			`We're sorry — ${reservation.restaurant.name} can't take your booking for ${when(reservation.startsAt)}.`,
-			reservation.declineReason ? `\nReason: ${reservation.declineReason}` : "",
-			refunded
-				? "\nAnything you paid is being returned to you."
-				: "\nYou have not been charged.",
-			"",
-			reservation.restaurant.phone
-				? `Call ${reservation.restaurant.phone} if you'd like to try another time.`
-				: "Please try another time if you'd still like to visit.",
-			"",
-			reservation.restaurant.name,
-		]
-			.filter(Boolean)
-			.join("\n"),
+	await sendToGuest(reservation, "We can't take your table booking", (brand) =>
+		ReservationDeclinedEmail({
+			brand,
+			customerName: reservation.customerName,
+			when: when(reservation, reservation.startsAt),
+			reason: reservation.declineReason,
+			paid: paidAmount(reservation) > 0,
+			bookUrl: bookUrl(reservation),
+		}),
 	);
 }
 
-/** Sent when a booking is cancelled, by either side. */
+/** Sent to the guest when a booking is cancelled, by either side. */
 export async function notifyReservationCancelled(
 	reservationId: string,
 	options?: { byCustomer?: boolean },
@@ -233,25 +271,123 @@ export async function notifyReservationCancelled(
 	if (!reservation?.customerEmail) return;
 	if (!(await claim(reservationId, "cancelledEmailSentAt"))) return;
 
-	await send(
+	// A refund the restaurant now owes (it cancelled a paid booking, or the
+	// guest cancelled within the policy). The restaurant pays it back.
+	const owed = reservation.refundRequiredReason ? paidAmount(reservation) : 0;
+
+	await sendToGuest(
 		reservation,
-		`Reservation cancelled — ${reservation.restaurant.name}`,
-		[
-			`Hi ${reservation.customerName},`,
-			"",
-			options?.byCustomer
-				? `Your table for ${when(reservation.startsAt)} has been cancelled as requested.`
-				: `Your table for ${when(reservation.startsAt)} has been cancelled by ${reservation.restaurant.name}.`,
-			"",
-			...detailLines(reservation),
-			"",
-			reservation.restaurant.phone
-				? `Questions? Call ${reservation.restaurant.phone}.`
-				: "",
-			"",
-			reservation.restaurant.name,
-		]
-			.filter(Boolean)
-			.join("\n"),
+		options?.byCustomer
+			? "Your booking is cancelled"
+			: "Your table booking has been cancelled",
+		(brand) =>
+			ReservationCancelledEmail({
+				brand,
+				customerName: reservation.customerName,
+				booking: facts(reservation),
+				viewUrl: viewUrl(reservation),
+				by: options?.byCustomer ? "guest" : "restaurant",
+				reason: reservation.cancellationReason,
+				refund: owed > 0 ? money(owed, reservation.restaurant.currency) : null,
+			}),
+	);
+}
+
+/**
+ * Sent when a paid booking is approved and the table is now held for them.
+ *
+ * Before this the guest was never told: the "requested" email promised to
+ * follow up, approval sent nothing, and the deposit sat unpaid until someone
+ * happened to reopen the tracking page.
+ */
+export async function notifyReservationAwaitingPayment(reservationId: string) {
+	const reservation = await load(reservationId);
+	if (!reservation?.customerEmail) return;
+	if (!(await claim(reservationId, "approvedEmailSentAt"))) return;
+
+	await sendToGuest(
+		reservation,
+		"Approved: pay now to secure your table",
+		(brand) =>
+			ReservationAwaitingPaymentEmail({
+				brand,
+				customerName: reservation.customerName,
+				booking: facts(reservation),
+				viewUrl: viewUrl(reservation),
+				payBy: reservation.paymentDueAt
+					? when(reservation, reservation.paymentDueAt)
+					: null,
+			}),
+	);
+}
+
+/**
+ * Sent when a booking stops holding its table without the guest cancelling:
+ * the payment window ran out, or the restaurant never answered the request.
+ *
+ * Shares the cancellation slot — either way the guest hears once that the
+ * table is no longer theirs.
+ */
+export async function notifyReservationReleased(
+	reservationId: string,
+	reason: "PAYMENT_WINDOW_ENDED" | "REQUEST_NOT_ANSWERED",
+) {
+	const reservation = await load(reservationId);
+	if (!reservation?.customerEmail) return;
+	if (!(await claim(reservationId, "cancelledEmailSentAt"))) return;
+
+	await sendToGuest(reservation, "Your table is no longer held", (brand) =>
+		ReservationReleasedEmail({
+			brand,
+			customerName: reservation.customerName,
+			when: when(reservation, reservation.startsAt),
+			reason,
+			bookUrl: bookUrl(reservation),
+		}),
+	);
+}
+
+// ─── Owner ────────────────────────────────────────────
+// Called once, from the action that made the change, so no claim slot.
+
+/** A guest asked for a table that needs approval. */
+export async function notifyOwnerBookingRequested(reservationId: string) {
+	const reservation = await load(reservationId);
+	if (!reservation) return;
+	const at = when(reservation, reservation.startsAt);
+	await sendToOwner(
+		reservation,
+		`Booking request: ${reservation.customerName}, ${at}`,
+		OwnerBookingRequestEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: reservation.restaurant.name,
+			customerName: reservation.customerName,
+			when: at,
+			table: reservation.table.label,
+			partySize: reservation.partySize,
+			note: reservation.specialRequests,
+			dashboardUrl: dashboardUrl(reservation),
+		}),
+	);
+}
+
+/** The guest cancelled their own booking. */
+export async function notifyOwnerGuestCancelled(reservationId: string) {
+	const reservation = await load(reservationId);
+	if (!reservation) return;
+	const at = when(reservation, reservation.startsAt);
+	const owed = reservation.refundRequiredReason ? paidAmount(reservation) : 0;
+	await sendToOwner(
+		reservation,
+		`${reservation.customerName} cancelled their booking for ${at}`,
+		OwnerGuestCancelledEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: reservation.restaurant.name,
+			customerName: reservation.customerName,
+			when: at,
+			table: reservation.table.label,
+			refund: owed > 0 ? money(owed, reservation.restaurant.currency) : null,
+			dashboardUrl: dashboardUrl(reservation),
+		}),
 	);
 }

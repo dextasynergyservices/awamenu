@@ -7,7 +7,6 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { env } from "@/env";
 import { recordAuditEvent } from "@/lib/audit";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
@@ -19,11 +18,12 @@ import {
 import {
 	AWAMENU_PAY_PROVIDERS,
 	type AwamenuPayProvider,
-	estimateGatewayFee,
 	getGatewayDescriptor as getGatewayDescriptorCatalog,
 } from "@/lib/payment-gateways/catalog";
+import { getPlatformPaymentConfig } from "@/lib/payment-routing";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
-import { decryptSecret, encryptSecret } from "@/lib/secret-box";
+import { assertRestaurantCanChange } from "@/lib/restaurant-access";
+import { encryptSecret } from "@/lib/secret-box";
 
 /**
  * A gateway that can actually back AwaMenu Pay.
@@ -47,92 +47,6 @@ async function requireOwnedRestaurant(slug: string) {
 	});
 	if (!restaurant) throw new Error("Restaurant not found.");
 	return { user, restaurant };
-}
-
-/**
- * Platform credentials for one provider.
- *
- * Returns null rather than throwing when a provider isn't configured on this
- * deployment: an unconfigured provider should simply not be offered, not break
- * the settings page for everyone.
- */
-function platformCredentialsFor(
-	gateway: PaymentGateway,
-	paystackSecretFromSettings?: string | null,
-): GatewayCredentials | null {
-	if (gateway === "MONNIFY") {
-		const apiKey = env.MONNIFY_API_KEY;
-		const monnifySecret = env.MONNIFY_SECRET_KEY;
-		if (!apiKey || !monnifySecret) return null;
-		return {
-			// The adapter base64-encodes this pair for Monnify's OAuth2 login.
-			secretKey: `${apiKey}:${monnifySecret}`,
-			contractCode: env.MONNIFY_CONTRACT_CODE,
-		};
-	}
-
-	// Falls back to the deployment's own key so AwaMenu Pay works before a
-	// super-admin has saved anything in platform settings.
-	const secretKey = paystackSecretFromSettings || env.PAYSTACK_SECRET_KEY;
-	return secretKey ? { secretKey } : null;
-}
-
-/**
- * Platform-level settings that drive AwaMenu Pay.
- *
- * `allowedChannels` / `allowedPayProviders` / `allowedOwnGateways` are the
- * super-admin's shop window. Every write path below checks them, so hiding an
- * option in the super-admin also refuses it server-side rather than merely
- * removing the button.
- */
-async function getPlatformPaymentConfig() {
-	const settings = await db.platformSetting.findFirst({
-		select: {
-			awamenuPayCommissionPercent: true,
-			paystackSecretKey: true,
-			enabledPaymentChannels: true,
-			awamenuPayProviders: true,
-			ownGatewayProviders: true,
-		},
-	});
-
-	// No platform row yet (a fresh deployment) means nothing has been restricted,
-	// so everything is on — matching the column defaults.
-	const allowedChannels: PaymentChannel[] =
-		settings?.enabledPaymentChannels ?? [
-			"AWAMENU_PAY",
-			"OWN_GATEWAY",
-			"BANK_TRANSFER",
-			"CASH",
-		];
-
-	const allowedPayProviders = settings?.awamenuPayProviders ?? [
-		...AWAMENU_PAY_PROVIDERS,
-	];
-
-	// Used only where a provider hasn't been named — the bank list and account
-	// lookup for the manual Bank transfer channel, which isn't tied to any
-	// provider but still needs one to ask. The first offered provider that has
-	// credentials, so it can't point at something unusable.
-	const defaultProvider: PaymentGateway =
-		allowedPayProviders.find(
-			(gateway) =>
-				platformCredentialsFor(gateway, settings?.paystackSecretKey) !== null,
-		) ?? "PAYSTACK";
-
-	return {
-		defaultProvider,
-		commissionPercent: Number(settings?.awamenuPayCommissionPercent ?? 0),
-		allowedChannels,
-		allowedPayProviders,
-		allowedOwnGateways: settings?.ownGatewayProviders ?? [
-			"PAYSTACK" as const,
-			"FLUTTERWAVE" as const,
-			"MONNIFY" as const,
-		],
-		credentialsFor: (gateway: PaymentGateway) =>
-			platformCredentialsFor(gateway, settings?.paystackSecretKey),
-	};
 }
 
 /**
@@ -270,6 +184,7 @@ export async function togglePaymentChannelAction(input: {
 }): Promise<{ ok: true } | { error: string }> {
 	const parsed = toggleSchema.parse(input);
 	const { restaurant } = await requireOwnedRestaurant(parsed.slug);
+	await assertRestaurantCanChange(restaurant.id);
 
 	const platform = await getPlatformPaymentConfig();
 	if (parsed.isEnabled && !platform.allowedChannels.includes(parsed.channel)) {
@@ -353,6 +268,7 @@ export async function saveBankDetailsAction(input: {
 	if (!parsed.success) return { error: "Please complete the account details." };
 
 	const { restaurant } = await requireOwnedRestaurant(parsed.data.slug);
+	await assertRestaurantCanChange(restaurant.id);
 	const data = parsed.data;
 
 	await db.restaurantPaymentMethod.upsert({
@@ -411,6 +327,7 @@ export async function connectPayoutAccountAction(input: {
 	if (!parsed.success) return { error: "Please complete the account details." };
 
 	const { user, restaurant } = await requireOwnedRestaurant(parsed.data.slug);
+	await assertRestaurantCanChange(restaurant.id);
 	const data = parsed.data;
 
 	const platform = await getPlatformPaymentConfig();
@@ -516,6 +433,7 @@ export async function connectPayoutAccountAction(input: {
 			await sendPayoutAccountChangedEmail({
 				to: user.email,
 				restaurantName: restaurant.name,
+				restaurantSlug: restaurant.slug,
 				previous: previousDescription ?? "—",
 				next: nextDescription,
 			});
@@ -548,6 +466,7 @@ export async function togglePayoutProviderAction(input: {
 	if (!parsed.success) return { error: "Invalid request." };
 
 	const { restaurant } = await requireOwnedRestaurant(parsed.data.slug);
+	await assertRestaurantCanChange(restaurant.id);
 
 	const account = await db.restaurantPayoutAccount.findUnique({
 		where: {
@@ -615,6 +534,7 @@ export async function saveOwnGatewayAction(input: {
 	}
 
 	const { restaurant } = await requireOwnedRestaurant(parsed.data.slug);
+	await assertRestaurantCanChange(restaurant.id);
 	const data = parsed.data;
 
 	const platform = await getPlatformPaymentConfig();
@@ -670,166 +590,4 @@ export async function saveOwnGatewayAction(input: {
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
 	return { ok: true };
-}
-
-/**
- * Credentials that can refund a charge this restaurant took.
- *
- * A refund has to go back through whichever account was actually billed: the
- * restaurant's own keys if they used them, otherwise the platform's. Sending it
- * through the wrong one either fails or refunds from the wrong balance.
- */
-export async function resolveRefundCredentials(
-	restaurantId: string,
-	gateway: PaymentGateway,
-): Promise<GatewayCredentials | null> {
-	const own = await db.restaurantPaymentMethod.findFirst({
-		where: {
-			restaurantId,
-			channel: "OWN_GATEWAY",
-			gateway,
-			NOT: { secretKeyEncrypted: null },
-		},
-		select: { secretKeyEncrypted: true, contractCode: true },
-	});
-
-	if (own?.secretKeyEncrypted) {
-		// An undecryptable key means the encryption secret changed. Falling back
-		// to the platform account would refund from the wrong balance, so this
-		// stops instead.
-		const secretKey = decryptSecret(own.secretKeyEncrypted);
-		if (!secretKey) return null;
-		return { secretKey, contractCode: own.contractCode ?? undefined };
-	}
-
-	const platform = await getPlatformPaymentConfig();
-	return platform.credentialsFor(gateway);
-}
-
-export type CheckoutGatewayOption = {
-	gateway: PaymentGateway;
-	credentials: GatewayCredentials;
-	subaccountCode?: string;
-	platformChargeKobo?: number;
-};
-
-/**
- * Every online option a customer can be offered for this restaurant.
- *
- * Own gateway wins outright when connected — a restaurant that supplied their
- * own keys expects the money in that account, and there's nothing to choose
- * between. Otherwise every enabled AwaMenu Pay provider is returned, and the
- * customer picks one at checkout.
- */
-export async function listCheckoutGateways(
-	restaurantId: string,
-	amountKobo?: number,
-): Promise<CheckoutGatewayOption[]> {
-	const platform = await getPlatformPaymentConfig();
-
-	const own = platform.allowedChannels.includes("OWN_GATEWAY")
-		? await db.restaurantPaymentMethod.findFirst({
-				where: { restaurantId, channel: "OWN_GATEWAY", isEnabled: true },
-			})
-		: null;
-	if (own?.secretKeyEncrypted && own.gateway) {
-		const secretKey = decryptSecret(own.secretKeyEncrypted);
-		if (secretKey) {
-			return [
-				{
-					gateway: own.gateway,
-					credentials: {
-						secretKey,
-						publicKey: own.publicKey ?? undefined,
-						contractCode: own.contractCode ?? undefined,
-					},
-				},
-			];
-		}
-	}
-
-	if (!platform.allowedChannels.includes("AWAMENU_PAY")) return [];
-
-	const channel = await db.restaurantPaymentMethod.findFirst({
-		where: { restaurantId, channel: "AWAMENU_PAY", isEnabled: true },
-		select: { id: true },
-	});
-	if (!channel) return [];
-
-	const accounts = await db.restaurantPayoutAccount.findMany({
-		where: { restaurantId, isEnabled: true },
-		orderBy: { createdAt: "asc" },
-	});
-	if (accounts.length === 0) return [];
-
-	return accounts.flatMap((account) => {
-		const credentials = platform.credentialsFor(account.gateway);
-		// A provider the super-admin has since pulled, or whose platform
-		// credentials were removed, must not be offered — the charge would fail
-		// after the customer had already committed to paying.
-		if (
-			!credentials ||
-			!platform.allowedPayProviders.includes(account.gateway)
-		) {
-			return [];
-		}
-
-		// The platform account is billed by the provider, so the provider's fee
-		// plus any commission is taken back out of this transaction and routed to
-		// the platform. The subaccount keeps the remainder — which is exactly the
-		// "you receive" figure shown in the restaurant's payment settings.
-		let platformChargeKobo: number | undefined;
-		if (amountKobo && amountKobo > 0) {
-			const amountNaira = amountKobo / 100;
-			const fees = getGatewayDescriptorCatalog(account.gateway).fees;
-			const providerFee = estimateGatewayFee(amountNaira, fees);
-			const commission = (amountNaira * platform.commissionPercent) / 100;
-			// Never let the deduction exceed the order itself.
-			platformChargeKobo = Math.min(
-				amountKobo,
-				Math.round((providerFee + commission) * 100),
-			);
-		}
-
-		return [
-			{
-				gateway: account.gateway,
-				credentials,
-				subaccountCode: account.subaccountCode,
-				platformChargeKobo,
-			},
-		];
-	});
-}
-
-/**
- * Picks the one gateway a charge will actually run through.
- *
- * `preferred` is what the customer chose at checkout; it's honoured only if
- * it's genuinely on offer, so a tampered form field can't route a payment
- * through a provider this restaurant never connected.
- */
-export async function resolveCheckoutGateway(
-	restaurantId: string,
-	amountKobo?: number,
-	preferred?: PaymentGateway | null,
-): Promise<CheckoutGatewayOption | null> {
-	const options = await listCheckoutGateways(restaurantId, amountKobo);
-	if (options.length === 0) return null;
-	return (
-		(preferred && options.find((o) => o.gateway === preferred)) ||
-		options[0] ||
-		null
-	);
-}
-
-/** The online options a public checkout page should show. Never returns keys. */
-export async function listPublicCheckoutProviders(restaurantId: string) {
-	const options = await listCheckoutGateways(restaurantId);
-	return options.map((option) => ({
-		gateway: option.gateway,
-		label: getGatewayDescriptorCatalog(option.gateway).label,
-		checkoutMethods: getGatewayDescriptorCatalog(option.gateway)
-			.checkoutMethods,
-	}));
 }

@@ -7,16 +7,11 @@ import { z } from "zod";
 import { ActionError, actionData, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
-import { sendPasswordResetOtpEmail } from "@/lib/email";
-
-function generateAlphanumericOtp(length: number): string {
-	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	let result = "";
-	for (let i = 0; i < length; i++) {
-		result += chars.charAt(Math.floor(Math.random() * chars.length));
-	}
-	return result;
-}
+import {
+	issueOwnerPasswordReset,
+	resetCodeIdentifier,
+} from "@/lib/owner-password-reset";
+import { enforceRateLimit, getClientIp, getRatelimiter } from "@/lib/ratelimit";
 
 const requestOtpSchema = z.object({
 	email: z.string().email(),
@@ -28,36 +23,15 @@ export async function requestPasswordResetOtpAction(formData: FormData) {
 			email: formData.get("email"),
 		});
 
-		const user = await db.user.findUnique({
-			where: { email: input.email },
-		});
+		// This custom flow isn't covered by better-auth's own rate limits, so it
+		// carries its own: unlimited requests would let anyone flood an owner's
+		// inbox, and each send costs an email.
+		const clientIp = await getClientIp();
+		await enforceRateLimit("otpSendIp", `owner-reset:${clientIp}`);
+		await enforceRateLimit("otpSendIdentifier", `owner-reset:${input.email}`);
 
-		if (!user) {
-			// Silently succeed to prevent email enumeration
-			return;
-		}
-
-		const otp = generateAlphanumericOtp(6);
-		const hashedOtp = await bcrypt.hash(otp, 10);
-		const identifier = `reset_otp_${input.email}`;
-
-		// Clear any existing OTPs
-		await db.verification.deleteMany({
-			where: { identifier },
-		});
-
-		await db.verification.create({
-			data: {
-				identifier,
-				value: hashedOtp,
-				expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 mins
-			},
-		});
-
-		await sendPasswordResetOtpEmail({
-			to: input.email,
-			otp,
-		});
+		// Silently succeeds for unknown emails, to prevent email enumeration.
+		await issueOwnerPasswordReset(input.email);
 	});
 }
 
@@ -73,7 +47,24 @@ export async function verifyPasswordResetOtpAction(formData: FormData) {
 			otp: formData.get("otp"),
 		});
 
-		const identifier = `reset_otp_${input.email}`;
+		const identifier = resetCodeIdentifier(input.email);
+
+		// Five tries per code: the counter is consumed on every attempt, and
+		// once it runs out the code is destroyed and a new one must be sent.
+		const attemptLimiter = getRatelimiter("resetVerify");
+		if (attemptLimiter) {
+			const allowed = await attemptLimiter
+				.limit(input.email)
+				.then((result) => result.success)
+				.catch(() => true);
+			if (!allowed) {
+				await db.verification.deleteMany({ where: { identifier } });
+				throw new ActionError(
+					"Too many wrong codes. Please request a new one.",
+				);
+			}
+		}
+
 		const verification = await db.verification.findFirst({
 			where: { identifier },
 			orderBy: { createdAt: "desc" },
@@ -173,6 +164,10 @@ export async function resetPasswordWithTokenAction(formData: FormData) {
 		});
 
 		await db.verification.delete({ where: { id: verification.id } });
+
+		// A reset is often a response to a compromised account: every existing
+		// session — including one an attacker holds — ends here.
+		await db.session.deleteMany({ where: { userId: user.id } });
 	});
 }
 

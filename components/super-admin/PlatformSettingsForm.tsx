@@ -1,5 +1,9 @@
+import Link from "next/link";
 import { updatePlatformSettingsAction } from "@/actions/super-admin.actions";
+import { CommissionRateField } from "@/components/super-admin/CommissionRateField";
+import { PlatformLogoField } from "@/components/super-admin/PlatformLogoField";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { PasswordInput } from "@/components/ui/password-input";
 import {
 	AWAMENU_PAY_PROVIDERS,
@@ -17,6 +21,8 @@ type PlatformSettingsFormProps = {
 	enabledPaymentChannels: string[];
 	awamenuPayProviders: GatewayId[];
 	ownGatewayProviders: GatewayId[];
+	/** Restaurants on a custom or exempt rate. */
+	commissionOverrides: number;
 };
 
 /** The four things a restaurant can offer, in the order they appear to owners. */
@@ -104,9 +110,10 @@ export function PlatformSettingsForm({
 	enabledPaymentChannels,
 	awamenuPayProviders,
 	ownGatewayProviders,
+	commissionOverrides,
 }: PlatformSettingsFormProps) {
 	return (
-		<form action={updatePlatformSettingsAction} className="grid gap-6">
+		<ActionForm action={updatePlatformSettingsAction} className="grid gap-6">
 			<div className={sectionClassName}>
 				<h2 className="text-lg font-black text-slate-950">General</h2>
 				<div className="grid gap-4 sm:grid-cols-2">
@@ -123,18 +130,8 @@ export function PlatformSettingsForm({
 							className={inputClassName}
 						/>
 					</div>
-					<div>
-						<label htmlFor="logoUrl" className={labelClassName}>
-							Logo URL
-						</label>
-						<input
-							id="logoUrl"
-							type="url"
-							name="logoUrl"
-							defaultValue={logoUrl ?? ""}
-							placeholder="https://..."
-							className={inputClassName}
-						/>
+					<div className="sm:col-span-2">
+						<PlatformLogoField initialUrl={logoUrl} />
 					</div>
 				</div>
 			</div>
@@ -175,38 +172,33 @@ export function PlatformSettingsForm({
 			</div>
 
 			<div className={sectionClassName}>
-				<h2 className="text-lg font-black text-slate-950">AwaMenu Pay</h2>
-				<p className="mt-1 text-sm font-medium text-slate-600">
-					The split applied to every AwaMenu Pay order. Which providers are on
-					offer is set below.
-				</p>
-
-				<div className="mt-4 max-w-xs">
-					<label
-						htmlFor="awamenuPayCommissionPercent"
-						className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500"
+				<div className="flex flex-wrap items-start justify-between gap-2">
+					<div>
+						<h2 className="text-lg font-black text-slate-950">
+							AwaMenu Pay commission
+						</h2>
+						<p className="mt-1 text-sm font-medium text-slate-600">
+							AwaMenu&apos;s cut of every AwaMenu Pay payment, on top of the
+							provider&apos;s fee. Taken per payment, so a change applies from
+							the next payment for every restaurant on the platform rate.
+						</p>
+					</div>
+					<Link
+						href="/super-admin/commission"
+						className="inline-flex h-9 shrink-0 items-center rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
 					>
-						Commission (%)
-					</label>
-					<input
-						id="awamenuPayCommissionPercent"
-						type="number"
-						name="awamenuPayCommissionPercent"
-						min={0}
-						max={100}
-						step="0.01"
-						defaultValue={awamenuPayCommissionPercent}
-						className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-					/>
-					<p className="mt-1 text-xs text-slate-400">
-						0 means restaurants keep everything except the provider&apos;s own
-						fee.
-					</p>
+						Rates and audit
+					</Link>
 				</div>
 
-				<p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-					Changing the commission only affects subaccounts created afterwards —
-					existing restaurants keep the split agreed when they connected.
+				<CommissionRateField defaultValue={awamenuPayCommissionPercent} />
+
+				<p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+					{commissionOverrides > 0
+						? `${commissionOverrides} restaurant${commissionOverrides === 1 ? " has" : "s have"} a custom or exempt rate and won't change.`
+						: "Every restaurant is on this rate."}{" "}
+					Set a restaurant&apos;s own rate from its ⋯ menu on the Restaurants
+					page. Past payments keep the rate they were charged at.
 				</p>
 			</div>
 
@@ -308,6 +300,6 @@ export function PlatformSettingsForm({
 			>
 				Save Settings
 			</SubmitButton>
-		</form>
+		</ActionForm>
 	);
 }

@@ -3,17 +3,15 @@
 import { Plus } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { MenuItemBadges, SoldOutPill } from "@/components/menu/MenuItemBadges";
 import { MenuItemDetailsModal } from "@/components/menu/MenuItemDetailsModal";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { useCart } from "@/hooks/useCart";
+import type { PublicMenuItem } from "@/lib/menu-tags";
+import { cn } from "@/lib/utils";
 
 type MenuItemMagazineCardProps = {
-	item: {
-		id: string;
-		name: string;
-		description: string | null;
-		price: number;
-		imageUrl: string | null;
-	};
+	item: PublicMenuItem;
 	restaurantSlug: string;
 	currency: string;
 };
@@ -32,6 +30,7 @@ export function MenuItemMagazineCard({
 	currency,
 }: MenuItemMagazineCardProps) {
 	const addItem = useCart((state) => state.addItem);
+	const paused = useOrderingPaused();
 	const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 	const cartItem = {
 		id: item.id,
@@ -56,7 +55,10 @@ export function MenuItemMagazineCard({
 								src={item.imageUrl}
 								alt={item.name}
 								fill
-								className="object-cover"
+								className={cn(
+									"object-cover",
+									item.soldOut && "opacity-60 grayscale",
+								)}
 								sizes="(min-width: 768px) 600px, 100vw"
 								unoptimized
 							/>
@@ -72,15 +74,20 @@ export function MenuItemMagazineCard({
 							{formatMoney(item.price, currency)}
 						</p>
 					</div>
-					<button
-						type="button"
-						onClick={() => addItem(cartItem)}
-						className="absolute right-3 bottom-3 grid size-10 place-items-center rounded-full bg-yellow-300 text-emerald-950 shadow-md transition-colors hover:bg-yellow-200 md:right-4 md:bottom-4 md:size-12"
-						aria-label={`Add ${item.name} to cart`}
-					>
-						<Plus className="size-5 md:size-6" aria-hidden="true" />
-					</button>
+					{item.soldOut ? (
+						<SoldOutPill className="absolute right-3 bottom-3 md:right-4 md:bottom-4" />
+					) : paused ? null : (
+						<button
+							type="button"
+							onClick={() => addItem(cartItem)}
+							className="absolute right-3 bottom-3 grid size-10 place-items-center rounded-full bg-yellow-300 text-emerald-950 shadow-md transition-colors hover:bg-yellow-200 md:right-4 md:bottom-4 md:size-12"
+							aria-label={`Add ${item.name} to cart`}
+						>
+							<Plus className="size-5 md:size-6" aria-hidden="true" />
+						</button>
+					)}
 				</div>
+				<MenuItemBadges item={item} className="px-4 pt-3 md:px-5" />
 				{item.description ? (
 					<button
 						type="button"

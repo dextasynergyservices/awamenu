@@ -1,178 +1,200 @@
-import { format } from "date-fns";
-import { CheckCircle2, Cpu, UserCircle2 } from "lucide-react";
-import { Dialog, DialogBody, DialogHeader } from "@/components/ui/Dialog";
+"use client";
 
-export type OrderEventDTO = {
-	id: string;
-	description: string;
-	isAutomatic: boolean;
-	createdAt: Date;
-	staff: { name: string; staffId?: string | null } | null;
+import {
+	Ban,
+	Bike,
+	CheckCircle2,
+	ChefHat,
+	CircleDot,
+	PackageCheck,
+	ShoppingBag,
+	ThumbsUp,
+} from "lucide-react";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
+import { Dialog, DialogBody, DialogHeader } from "@/components/ui/Dialog";
+import { formatClock, formatDay } from "@/lib/restaurant-time";
+import { cn } from "@/lib/utils";
+
+type When = Date | string | null | undefined;
+
+/**
+ * The times an order reached each stage, stamped by the database on every
+ * status change (migration 8_order_status_times). Orders from before that
+ * have only the time they were placed, and the timeline says so rather than
+ * inventing times.
+ */
+export type OrderStageTimes = {
+	type: string;
+	status: string;
+	createdAt: When;
+	confirmedAt?: When;
+	acceptedAt?: When;
+	preparingAt?: When;
+	readyAt?: When;
+	deliveredAt?: When;
+	completedAt?: When;
+	cancelledAt?: When;
+	attendingStaff?: { name: string; staffId?: string | null } | null;
 };
 
-interface OrderTimelineProps {
-	events: OrderEventDTO[];
-	showHeader?: boolean;
-	fallback?: {
-		createdAt: string | Date;
-		status: string;
-		paymentStatus: string;
-		paymentMethod?: string | null;
-		attendingStaff?: { name: string; staffId?: string | null } | null;
-	};
+const ms = (v: When) => (v ? new Date(v).getTime() : null);
+
+function duration(from: When, to: When) {
+	const a = ms(from);
+	const b = ms(to);
+	if (a === null || b === null || b < a) return null;
+	const mins = Math.round((b - a) / 60_000);
+	if (mins < 1) return "under a minute";
+	if (mins < 60) return `${mins} min`;
+	return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
 }
 
-export function OrderTimeline({
-	events,
-	showHeader = true,
-	fallback,
-}: OrderTimelineProps) {
-	let displayEvents = events || [];
+function readyLabel(type: string) {
+	if (type === "DELIVERY") return "Out for delivery";
+	if (type === "PICKUP") return "Ready for pickup";
+	if (type === "TABLE_RESERVATION") return "Table ready";
+	return "Ready to serve";
+}
 
-	// Synthesize events for old orders that lack timeline records
-	if (displayEvents.length === 0 && fallback) {
-		const baseDate = new Date(fallback.createdAt);
-		displayEvents = [
-			{
-				id: "fallback-placed",
-				description: "Order placed by customer",
-				isAutomatic: true,
-				createdAt: baseDate,
-				staff: null,
-			},
-		];
+export function OrderTimeline({ order }: { order: OrderStageTimes }) {
+	const tz = useRestaurantTimeZone();
+	const stages = [
+		{
+			key: "placed",
+			label: "Order placed",
+			at: order.createdAt,
+			icon: ShoppingBag,
+		},
+		{
+			key: "accepted",
+			label: order.acceptedAt ? "Accepted" : "Confirmed",
+			at: order.acceptedAt ?? order.confirmedAt,
+			icon: ThumbsUp,
+		},
+		{
+			key: "preparing",
+			label: "Preparing",
+			at: order.preparingAt,
+			icon: ChefHat,
+		},
+		{
+			key: "ready",
+			label: readyLabel(order.type),
+			at: order.readyAt,
+			icon: PackageCheck,
+		},
+		{ key: "delivered", label: "Delivered", at: order.deliveredAt, icon: Bike },
+		{
+			key: "completed",
+			label: "Completed",
+			at: order.completedAt,
+			icon: CheckCircle2,
+		},
+		{ key: "cancelled", label: "Cancelled", at: order.cancelledAt, icon: Ban },
+	].filter((s) => s.at);
 
-		if (fallback.paymentStatus === "PAID") {
-			let paymentDesc = "Payment confirmed";
-			if (fallback.paymentMethod) {
-				const methodStr =
-					fallback.paymentMethod === "CASH"
-						? "Cash"
-						: fallback.paymentMethod === "POS"
-							? "POS"
-							: fallback.paymentMethod === "TRANSFER"
-								? "Transfer"
-								: fallback.paymentMethod;
-				paymentDesc = `Recorded ${methodStr} payment`;
-			}
+	const tracked =
+		stages.length > 1 ||
+		order.status === "PENDING_APPROVAL" ||
+		order.status === "PENDING_PAYMENT";
+	const sameDay = (v: When) =>
+		v && formatDay(v, tz) === formatDay(order.createdAt ?? v, tz);
 
-			displayEvents.push({
-				id: "fallback-paid",
-				description: paymentDesc,
-				isAutomatic: false, // fallback payment is usually manual if staff is present
-				createdAt: new Date(baseDate.getTime() + 1000), // add 1 second for visual ordering
-				staff: fallback.attendingStaff || null,
-			});
-		}
-
-		if (
-			fallback.status !== "PENDING" &&
-			fallback.status !== "PENDING_APPROVAL"
-		) {
-			displayEvents.push({
-				id: "fallback-status",
-				description: `Status changed to ${fallback.status.replace(/_/g, " ")}`,
-				isAutomatic: false,
-				createdAt: new Date(baseDate.getTime() + 2000), // add 2 seconds
-				staff: fallback.attendingStaff || null,
-			});
-		}
-
-		// Sort descending (newest first)
-		displayEvents.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-	}
-
-	if (!displayEvents || displayEvents.length === 0) {
-		return (
-			<div
-				className={
-					showHeader
-						? "rounded-xl border border-slate-100 bg-slate-50/50 p-5 mt-4"
-						: ""
-				}
-			>
-				{showHeader && (
-					<h3 className="mb-4 text-xs md:text-sm font-black text-slate-800">
-						Order Timeline
-					</h3>
-				)}
-				<p className="text-xs font-semibold text-slate-500">
-					No events recorded for this order yet.
-				</p>
-			</div>
-		);
-	}
+	const summary = [
+		order.acceptedAt
+			? ["Response", duration(order.createdAt, order.acceptedAt)]
+			: null,
+		order.readyAt
+			? ["Prep", duration(order.confirmedAt ?? order.createdAt, order.readyAt)]
+			: null,
+		order.deliveredAt
+			? ["Delivery", duration(order.readyAt, order.deliveredAt)]
+			: null,
+		order.type === "PICKUP" && order.completedAt && order.readyAt
+			? ["Waited at counter", duration(order.readyAt, order.completedAt)]
+			: null,
+	].filter((s): s is [string, string] => Boolean(s?.[1]));
 
 	return (
-		<div
-			className={
-				showHeader
-					? "rounded-xl border border-slate-100 bg-slate-50/50 p-5 mt-4"
-					: ""
-			}
-		>
-			{showHeader && (
-				<h3 className="mb-4 text-sm font-black text-slate-800">
-					Order Timeline
-				</h3>
-			)}
-			<div className="relative space-y-6 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-linear-to-b before:from-transparent before:via-slate-200 before:to-transparent">
-				{displayEvents.map((event) => (
-					<div
-						key={event.id}
-						className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active"
-					>
-						<div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-100 text-slate-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-							{event.isAutomatic ? (
-								<Cpu className="size-3.5" />
-							) : event.staff ? (
-								<UserCircle2 className="size-3.5" />
-							) : (
-								<CheckCircle2 className="size-3.5" />
-							)}
+		<div className="grid gap-4">
+			{summary.length ? (
+				<dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+					{summary.map(([label, value]) => (
+						<div key={label} className="rounded-xl bg-slate-50 px-3 py-2">
+							<dt className="text-[11px] font-bold text-slate-500">{label}</dt>
+							<dd className="text-sm font-black text-slate-950">{value}</dd>
 						</div>
+					))}
+				</dl>
+			) : null}
 
-						<div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
-							<div className="mb-1 flex items-center justify-between">
-								<p className="text-xs font-black text-slate-800">
-									{event.isAutomatic
-										? "System"
-										: event.staff
-											? `${event.staff.name} ${event.staff.staffId ? `(#${event.staff.staffId})` : ""}`
-											: "System"}
-								</p>
-								<time className="text-xs font-semibold text-slate-500">
-									{format(new Date(event.createdAt), "MMM d, h:mm a")}
-								</time>
+			<ol className="relative grid gap-0">
+				{stages.map((stage, i) => {
+					const Icon = stage.icon;
+					const prev = stages[i - 1];
+					const gap = prev ? duration(prev.at, stage.at) : null;
+					const last = i === stages.length - 1;
+					return (
+						<li
+							key={stage.key}
+							className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3"
+						>
+							<div className="flex flex-col items-center">
+								<span
+									className={cn(
+										"grid size-8 place-items-center rounded-full",
+										stage.key === "cancelled"
+											? "bg-red-50 text-red-600"
+											: "bg-emerald-50 text-emerald-700",
+									)}
+								>
+									<Icon className="size-4" aria-hidden="true" />
+								</span>
+								{!last ? <span className="w-px flex-1 bg-slate-200" /> : null}
 							</div>
-							<p className="text-xs font-medium text-slate-600">
-								{event.description}
-							</p>
-						</div>
-					</div>
-				))}
-			</div>
+							<div className={cn("min-w-0", !last && "pb-4")}>
+								<div className="flex items-baseline justify-between gap-2">
+									<p className="text-sm font-black text-slate-900">
+										{stage.label}
+									</p>
+									<time className="shrink-0 text-xs font-semibold text-slate-500">
+										{stage.at ? formatClock(stage.at, tz) : ""}
+										{stage.at && !sameDay(stage.at)
+											? ` · ${formatDay(stage.at, tz)}`
+											: ""}
+									</time>
+								</div>
+								{gap ? (
+									<p className="text-xs font-medium text-slate-500">
+										{gap} after the previous step
+									</p>
+								) : stage.key === "placed" && order.attendingStaff ? (
+									<p className="text-xs font-medium text-slate-500">
+										Attended by {order.attendingStaff.name}
+									</p>
+								) : null}
+							</div>
+						</li>
+					);
+				})}
+				{!tracked ? (
+					<li className="flex items-center gap-2 pt-2 text-xs font-medium text-slate-500">
+						<CircleDot className="size-3.5" aria-hidden="true" />
+						Older order: only the time it was placed was recorded.
+					</li>
+				) : null}
+			</ol>
 		</div>
 	);
 }
 
-interface OrderTimelineModalProps {
-	events: OrderEventDTO[];
-	fallback?: {
-		createdAt: string | Date;
-		status: string;
-		paymentStatus: string;
-		paymentMethod?: string | null;
-		attendingStaff?: { name: string; staffId?: string | null } | null;
-	};
-	onClose: () => void;
-}
-
 export function OrderTimelineModal({
-	events,
-	fallback,
+	order,
 	onClose,
-}: OrderTimelineModalProps) {
+}: {
+	order: OrderStageTimes;
+	onClose: () => void;
+}) {
 	return (
 		<Dialog
 			open
@@ -181,9 +203,9 @@ export function OrderTimelineModal({
 			}}
 			size="md"
 		>
-			<DialogHeader title="Order Timeline" bordered className="p-4" />
+			<DialogHeader title="Order timeline" bordered className="p-4" />
 			<DialogBody className="min-h-32 p-4">
-				<OrderTimeline events={events} fallback={fallback} showHeader={false} />
+				<OrderTimeline order={order} />
 			</DialogBody>
 		</Dialog>
 	);

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { env } from "@/env";
 import { db } from "@/lib/db";
+import { getClientIpFromRequest, getRatelimiter } from "@/lib/ratelimit";
 
 type QrRouteProps = {
 	params: Promise<{ slug: string }>;
@@ -15,17 +16,29 @@ export async function GET(request: NextRequest, { params }: QrRouteProps) {
 
 	const redirectUrl = new URL(`/${slug}`, env.NEXT_PUBLIC_APP_URL);
 
+	// 302, not 301: browsers cache a permanent redirect, so every repeat scan
+	// from the same phone skipped this route and went uncounted.
 	if (!restaurant) {
-		return NextResponse.redirect(redirectUrl, 301);
+		return NextResponse.redirect(redirectUrl, 302);
 	}
 
-	await db.scanEvent.create({
-		data: {
-			restaurantId: restaurant.id,
-			userAgent: request.headers.get("user-agent"),
-			country: request.headers.get("cf-ipcountry"),
-		},
-	});
+	const limiter = getRatelimiter("qrScan");
+	const counted = limiter
+		? await limiter
+				.limit(`${getClientIpFromRequest(request)}:${restaurant.id}`)
+				.then((result) => result.success)
+				.catch(() => true)
+		: true;
 
-	return NextResponse.redirect(redirectUrl, 301);
+	if (counted) {
+		await db.scanEvent.create({
+			data: {
+				restaurantId: restaurant.id,
+				userAgent: request.headers.get("user-agent"),
+				country: request.headers.get("cf-ipcountry"),
+			},
+		});
+	}
+
+	return NextResponse.redirect(redirectUrl, 302);
 }

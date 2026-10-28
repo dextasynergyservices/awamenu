@@ -5,24 +5,38 @@ import {
 	PaymentStatus,
 } from "@prisma/client";
 import { Check, Loader2 } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { listPublicCheckoutProviders } from "@/actions/payment-settings.actions";
-import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { DineInPayNowButton } from "@/components/orders/DineInPayNowButton";
 import { OrderCartFinalizer } from "@/components/orders/OrderCartFinalizer";
-import { OrderStatusPoller } from "@/components/orders/OrderStatusPoller";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
+import { LiveStatusPoller } from "@/components/shared/LiveStatusPoller";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
 import { getStatusFlow, getStatusLabel } from "@/lib/order-status-flow";
-import { verifyOrderPaymentReference } from "@/lib/payments";
+import { listPublicCheckoutProviders } from "@/lib/payment-routing";
+import {
+	referenceFromReturnParams,
+	verifyOrderPaymentReference,
+} from "@/lib/payments";
 import { isOrderRatingEligible } from "@/lib/rating";
-import { isSubscriptionActive } from "@/lib/subscription";
+import { privateStorefrontMetadata } from "@/lib/storefront-share";
+import { resolveTrackingCode } from "@/lib/tracking-code";
+
+/** The restaurant's name in the tab and link preview; never indexed. */
+export async function generateMetadata({
+	params,
+}: {
+	params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+	const { slug } = await params;
+	return privateStorefrontMetadata(slug, "Your order");
+}
 
 type OrderStatusPageProps = {
 	params: Promise<{ slug: string; orderId: string }>;
-	searchParams?: Promise<{ reference?: string; trxref?: string }>;
+	searchParams?: Promise<Record<string, string>>;
 };
 
 export const dynamic = "force-dynamic";
@@ -236,8 +250,7 @@ export default async function OrderStatusPage({
 	searchParams,
 }: OrderStatusPageProps) {
 	const { slug, orderId } = await params;
-	const { reference, trxref } = (await searchParams) ?? {};
-	const paystackReference = reference ?? trxref;
+	const paystackReference = referenceFromReturnParams(await searchParams);
 
 	// Normalize input (e.g. remove leading '#' and trim)
 	const cleanOrderId = decodeURIComponent(orderId).replace(/^#/, "").trim();
@@ -256,6 +269,7 @@ export default async function OrderStatusPage({
 		waiterName: true,
 		total: true,
 		createdAt: true,
+		updatedAt: true,
 		restaurant: {
 			select: {
 				id: true,
@@ -264,9 +278,6 @@ export default async function OrderStatusPage({
 				currency: true,
 				phone: true,
 				address: true,
-				subscription: {
-					select: { status: true, currentPeriodEnd: true },
-				},
 				bankAccounts: {
 					where: { isActive: true },
 					select: {
@@ -296,35 +307,27 @@ export default async function OrderStatusPage({
 		rating: { select: { id: true } },
 	} as const;
 
-	const exactOrder = await db.order.findUnique({
-		where: { id: cleanOrderId },
-		select: orderSelect,
-	});
-	const order =
-		exactOrder?.restaurant.slug === slug
-			? exactOrder
-			: await db.order.findFirst({
-					where: {
-						id: {
-							endsWith: cleanOrderId.toLowerCase(),
-						},
-						restaurant: { slug },
-					},
-					select: orderSelect,
-				});
+	// The full id, or exactly the 6-character receipt code — never a shorter
+	// suffix, which used to resolve to someone else's order.
+	const resolvedOrderId = await resolveTrackingCode(
+		"order",
+		slug,
+		cleanOrderId,
+	);
+	const order = resolvedOrderId
+		? await db.order.findUnique({
+				where: { id: resolvedOrderId },
+				select: orderSelect,
+			})
+		: null;
 
 	if (!order) {
-		const reservation = await db.reservation.findFirst({
-			where: {
-				restaurant: { slug, isActive: true },
-				OR: [
-					{ id: cleanOrderId },
-					{ id: cleanOrderId.toLowerCase() },
-					{ id: { endsWith: cleanOrderId.toLowerCase() } },
-				],
-			},
-			select: { id: true },
-		});
+		const reservationId = await resolveTrackingCode(
+			"reservation",
+			slug,
+			cleanOrderId,
+		);
+		const reservation = reservationId ? { id: reservationId } : null;
 
 		if (reservation) {
 			const searchParamsObj = await searchParams;
@@ -344,10 +347,6 @@ export default async function OrderStatusPage({
 		);
 	}
 
-	if (!isSubscriptionActive(order.restaurant.subscription)) {
-		return <SubscriptionInactive restaurantName={order.restaurant.name} />;
-	}
-
 	// If the current orderId in the URL doesn't match the canonical full ID, redirect to the canonical URL
 	if (orderId !== order.id) {
 		const searchParamsObj = await searchParams;
@@ -363,6 +362,8 @@ export default async function OrderStatusPage({
 			orderId: order.id,
 			reference: paystackReference,
 		});
+		// The page polls; a reference left in the URL re-verified on every poll.
+		redirect(`/${slug}/order/${order.id}`);
 	}
 
 	const canAddMore =
@@ -400,13 +401,27 @@ export default async function OrderStatusPage({
 	const showProgress =
 		!isDeclined && order.status !== OrderStatus.PENDING_PAYMENT;
 	const orderCode = `#${order.id.slice(-6).toUpperCase()}`;
+	// Once an order is finished nothing on this page can change, so it stops
+	// asking. Until then it checks a version stamp, not the whole page.
+	const isFinished =
+		order.status === OrderStatus.CANCELLED ||
+		order.status === OrderStatus.COMPLETED ||
+		(order.status === OrderStatus.DELIVERED &&
+			order.paymentStatus === PaymentStatus.PAID);
+	const poller = (
+		<LiveStatusPoller
+			url={`/api/live/order/${order.id}`}
+			version={order.updatedAt.getTime()}
+			active={!isFinished}
+		/>
+	);
 	const isPendingApproval = order.status === OrderStatus.PENDING_APPROVAL;
 	const canRate = !order.rating && isOrderRatingEligible(order);
 
 	if (isPendingApproval) {
 		return (
 			<main className="min-h-screen flex flex-col bg-[#f6faf7] px-4 py-5 text-slate-950">
-				<OrderStatusPoller />
+				{poller}
 				<div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full text-center">
 					<div className="size-20 rounded-full bg-emerald-100 flex items-center justify-center mb-6">
 						<Loader2 className="size-10 text-emerald-600 animate-spin" />
@@ -439,7 +454,7 @@ export default async function OrderStatusPage({
 	if (needsInHousePaymentConfirmation) {
 		return (
 			<main className="min-h-screen flex flex-col bg-[#f6faf7] px-4 py-5 text-slate-950">
-				<OrderStatusPoller />
+				{poller}
 				<div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full text-center">
 					<div className="size-20 rounded-full bg-emerald-100 flex items-center justify-center mb-6">
 						<Loader2 className="size-10 text-emerald-600 animate-spin" />
@@ -479,7 +494,7 @@ export default async function OrderStatusPage({
 
 	return (
 		<main className="min-h-screen bg-[#f6faf7] px-4 py-5 text-slate-950">
-			<OrderStatusPoller />
+			{poller}
 			<OrderCartFinalizer
 				restaurantSlug={order.restaurant.slug}
 				orderId={order.id}
