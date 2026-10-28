@@ -24,7 +24,11 @@ export function getCustomerReservationLabel(status: ReservationStatus) {
 	switch (status) {
 		case ReservationStatus.PENDING_APPROVAL:
 			return "Requested";
+		// APPROVED now only ever means "approved, payment outstanding" — free
+		// bookings go straight to ACTIVE. Calling it "Confirmed" told guests the
+		// table was theirs while the hold was still running out.
 		case ReservationStatus.APPROVED:
+			return "Awaiting payment";
 		case ReservationStatus.ACTIVE:
 			return "Confirmed";
 		case ReservationStatus.CHECKED_IN:
@@ -47,3 +51,29 @@ export const CUSTOMER_RESERVATION_STEPS = [
 	{ status: ReservationStatus.CHECKED_IN, label: "Seated" },
 	{ status: ReservationStatus.COMPLETED, label: "Complete" },
 ] as const;
+
+/**
+ * What a reservation's payment state means, in words a guest or owner reads.
+ *
+ * The raw enum was shown before — "PENDING", "PAID" — and a free booking read
+ * "PAID" for ₦0 because approval records nothing-owed as settled.
+ */
+export function getReservationPaymentLabel(input: {
+	reservationPaymentStatus: string;
+	/** The amount due (or collected). */
+	amount: number;
+	refundRequired?: boolean;
+}) {
+	if (input.refundRequired) return "Refund due";
+	if (input.amount <= 0) return "No payment needed";
+	switch (input.reservationPaymentStatus) {
+		case "PAID":
+			return "Paid";
+		case "REFUNDED":
+			return "Refunded";
+		case "FAILED":
+			return "Payment failed";
+		default:
+			return "Not paid yet";
+	}
+}

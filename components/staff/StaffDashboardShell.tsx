@@ -1,10 +1,10 @@
 "use client";
 
-import { LogOut } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { staffLogoutAction } from "@/actions/staff.actions";
+import { DashboardTopBar } from "@/components/dashboard/DashboardChrome";
 import { InstallPWAPrompt } from "@/components/notifications/InstallPWAPrompt";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer";
@@ -37,14 +37,11 @@ export function StaffDashboardShell({
 	restaurantLogoUrl,
 	slug,
 	staffId,
-	staffName,
-	staffCode,
 	initialNotifications,
 	initialUnreadCount,
 }: StaffDashboardShellProps) {
 	const router = useRouter();
 	const [drawerOpen, setDrawerOpen] = useState(false);
-	const [isLoggingOut, startLogout] = useTransition();
 
 	// Initialize notification store
 	const setNotifications = useNotificationStore((s) => s.setNotifications);
@@ -58,11 +55,17 @@ export function StaffDashboardShell({
 		recipientType: "staff",
 		recipientId: "shared",
 		onNotification(notification) {
+			// The only thing that refreshes these pages: the separate 5-second
+			// full-page pollers on the orders and reservations pages were removed,
+			// so every event that changes what they show must be listed here.
 			if (
 				notification.type === "NEW_ORDER" ||
 				notification.type === "ORDER_STATUS_CHANGED" ||
 				notification.type === "ORDER_CANCELLED" ||
-				notification.type === "PAYMENT_RECEIVED"
+				notification.type === "PAYMENT_RECEIVED" ||
+				notification.type === "NEW_RESERVATION" ||
+				notification.type === "RESERVATION_CANCELLED" ||
+				notification.type === "RESERVATION_EXPIRED"
 			) {
 				router.refresh();
 			}
@@ -73,53 +76,43 @@ export function StaffDashboardShell({
 		<div className="min-h-screen bg-slate-50">
 			<OfflineBanner />
 
-			{/* Header */}
-			<header className="fixed inset-x-0 top-0 z-30 border-b border-emerald-100 bg-white/95 px-3 py-3 backdrop-blur min-[390px]:px-4 sm:px-6">
-				<div className="flex items-center gap-3">
-					{/* Restaurant branding */}
-					<div className="flex min-w-0 flex-1 items-center gap-2.5">
-						{restaurantLogoUrl ? (
-							<Image
-								src={restaurantLogoUrl}
-								alt={restaurantName}
-								width={40}
-								height={40}
-								className="size-10 shrink-0 rounded-xl object-cover"
-								unoptimized
-							/>
-						) : (
-							<span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-700 text-lg font-black text-white">
-								{restaurantName.charAt(0).toUpperCase()}
-							</span>
-						)}
-						<div className="min-w-0">
-							<p className="truncate text-sm font-black text-slate-950">
-								{restaurantName}
-							</p>
-							<p className="truncate text-xs font-medium text-slate-500">
-								{staffName} · {staffCode}
-							</p>
-						</div>
-					</div>
-
-					{/* Actions */}
-					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-						<NotificationBell onClick={() => setDrawerOpen(true)} />
-						<button
-							type="button"
-							onClick={() => startLogout(() => staffLogoutAction(slug))}
-							disabled={isLoggingOut}
-							title="Lock Terminal"
-							className="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50"
-						>
-							<LogOut className="size-5" />
-						</button>
-					</div>
-				</div>
-			</header>
+			<DashboardTopBar
+				title="Orders & bookings"
+				subtitle={restaurantName}
+				brand={
+					restaurantLogoUrl ? (
+						<Image
+							src={restaurantLogoUrl}
+							alt=""
+							width={32}
+							height={32}
+							className="size-8 rounded-lg object-cover"
+							unoptimized
+						/>
+					) : (
+						<span className="grid size-8 place-items-center rounded-lg bg-emerald-700 text-sm font-black text-white">
+							{restaurantName.charAt(0).toUpperCase()}
+						</span>
+					)
+				}
+				actions={
+					<NotificationBell
+						onClick={() => setDrawerOpen(true)}
+						className="border-0 shadow-none md:border md:shadow-sm"
+					/>
+				}
+				account={{
+					name: "Staff terminal",
+					detail: restaurantName,
+					role: "Staff",
+					imageUrl: null,
+					logoutLabel: "Lock terminal",
+					onLogout: () => staffLogoutAction(slug),
+				}}
+			/>
 
 			{/* Main content */}
-			<main className="min-w-0 px-3 pt-[76px] pb-6 min-[390px]:px-4 sm:px-6">
+			<main className="min-w-0 px-3 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] min-[390px]:px-4 sm:px-6">
 				<InstallPWAPrompt />
 				<PushPermissionPrompt
 					restaurantId={restaurantId}

@@ -165,7 +165,7 @@ export function OrderActionForm({
 		}
 	}
 
-	async function handlePinSubmit(staffId: string) {
+	async function handlePinSubmit(staffId: string, pin: string) {
 		if (!pendingForm) return;
 
 		setPending(true);
@@ -174,6 +174,7 @@ export function OrderActionForm({
 
 		const formData = pendingForm;
 		formData.set("staffId", staffId);
+		formData.set("pin", pin);
 
 		try {
 			await runOrderAction(actionKind, formData);

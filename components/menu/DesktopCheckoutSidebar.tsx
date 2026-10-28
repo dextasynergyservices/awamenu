@@ -12,6 +12,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo } from "react";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export function DesktopCheckoutSidebar({
 	appendOrderId,
 }: DesktopCheckoutSidebarProps) {
 	const removeItem = useCart((state) => state.removeItem);
+	const paused = useOrderingPaused();
 	const setQuantity = useCart((state) => state.setQuantity);
 	const storedAppendOrderId = useCart((state) => state.appendOrderId);
 	const setAppendOrderId = useCart((state) => state.setAppendOrderId);
@@ -151,16 +153,22 @@ export function DesktopCheckoutSidebar({
 						{formatMoney(subtotal, currency)}
 					</span>
 				</div>
-				<Link
-					href={checkoutHref}
-					className={cn(
-						"inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-emerald-800 px-5 text-sm font-black text-white",
-						cartItems.length === 0 && "pointer-events-none opacity-50",
-					)}
-				>
-					Checkout
-					<ArrowRight className="size-5" aria-hidden="true" />
-				</Link>
+				{paused ? (
+					<p className="rounded-lg bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900">
+						Online ordering is paused right now.
+					</p>
+				) : (
+					<Link
+						href={checkoutHref}
+						className={cn(
+							"inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-emerald-800 px-5 text-sm font-black text-white",
+							cartItems.length === 0 && "pointer-events-none opacity-50",
+						)}
+					>
+						Checkout
+						<ArrowRight className="size-5" aria-hidden="true" />
+					</Link>
+				)}
 			</div>
 
 			<div className="mt-6 rounded-lg bg-emerald-50 p-5">

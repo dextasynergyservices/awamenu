@@ -11,6 +11,7 @@ import {
 	PaymentMethod,
 	PaymentPolicy,
 	PaymentStatus,
+	Prisma,
 } from "@prisma/client";
 import { verifyPassword } from "better-auth/crypto";
 import { revalidatePath } from "next/cache";
@@ -20,7 +21,10 @@ import { ActionError, actionResult } from "@/lib/action-error";
 import { recordAuditEvent } from "@/lib/audit";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { deliveryFeeFor } from "@/lib/delivery-fee";
+import { isSoldOut } from "@/lib/menu-tags";
 import { dispatchNotification } from "@/lib/notifications";
+import { orderingClosedNotice } from "@/lib/opening-hours";
 import {
 	notifyOrderCancelled,
 	notifyOrderCompleted,
@@ -29,13 +33,22 @@ import {
 } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
 import { notifyNewOrder } from "@/lib/order-notifications";
-import { isStatusAllowedForType } from "@/lib/order-status-flow";
+import {
+	getStatusLabel,
+	isStatusAllowedForType,
+} from "@/lib/order-status-flow";
 import { creditOrder } from "@/lib/payment-ledger";
 import { initiateOrderPaymentForRestaurant } from "@/lib/payments";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import {
+	assertCustomerCanOrder,
+	assertRestaurantCanChange,
+	assertStaffCanChange,
+} from "@/lib/restaurant-access";
 import { getStaffSession } from "@/lib/staff-auth";
+import { verifyStaffAction } from "@/lib/staff-guard";
+import { resolveStaffPermissions } from "@/lib/staff-permissions";
 import { verifyTurnstileToken } from "@/lib/turnstile";
-import { verifyStaffAction } from "./staff.actions";
 
 const checkoutItemSchema = z.object({
 	id: z.string().cuid(),
@@ -179,7 +192,12 @@ export async function createOrderAction(formData: FormData) {
 			items: JSON.parse(String(formData.get("items") ?? "[]")),
 		});
 		const clientIp = await getClientIp();
-		await enforceRateLimit("order", `${clientIp}:${input.slug}`);
+		await enforceRateLimit("orderIp", `${clientIp}:${input.slug}`);
+		await enforceRateLimit(
+			"order",
+			// Appended orders may omit the phone; they then share the IP bucket.
+			`${(input.customerPhone ?? clientIp).replace(/\s+/g, "")}:${input.slug}`,
+		);
 
 		const turnstileOk = await verifyTurnstileToken(
 			formData.get("cf-turnstile-response")?.toString(),
@@ -200,8 +218,26 @@ export async function createOrderAction(formData: FormData) {
 				pickupEnabled: true,
 				deliveryEnabled: true,
 				tableReservationEnabled: true,
+				deliveryFee: true,
+				freeDeliveryMinimum: true,
+				timezone: true,
+				openingHours: {
+					select: { dayOfWeek: true, opensAt: true, closesAt: true },
+				},
 			},
 		});
+
+		// New orders only. Adding items to an order already open at a table is
+		// left to the restaurant: the guests are seated and staff are there.
+		if (!input.existingOrderId) {
+			const closed = orderingClosedNotice(
+				restaurant.openingHours,
+				restaurant.timezone,
+			);
+			if (closed) throw new ActionError(closed);
+		}
+		// Lapsed subscription: the menu is view-only, ordering paused.
+		await assertCustomerCanOrder(restaurant.id);
 
 		const orderTypeEnabled = {
 			[OrderType.DINE_IN]: restaurant.dineInEnabled,
@@ -248,11 +284,17 @@ export async function createOrderAction(formData: FormData) {
 				isAvailable: true,
 				category: { restaurantId: restaurant.id, isActive: true },
 			},
-			select: { id: true, name: true, price: true },
+			select: { id: true, name: true, price: true, soldOutUntil: true },
 		});
 
 		if (menuItems.length !== input.items.length) {
 			throw new ActionError("Some cart items are unavailable.");
+		}
+		const soldOut = menuItems.filter((item) => isSoldOut(item.soldOutUntil));
+		if (soldOut.length > 0) {
+			throw new ActionError(
+				`Sold out: ${soldOut.map((item) => item.name).join(", ")}. Please remove ${soldOut.length === 1 ? "it" : "them"} from your cart.`,
+			);
 		}
 
 		const lines = input.items.map((item) => {
@@ -271,7 +313,17 @@ export async function createOrderAction(formData: FormData) {
 			(total, line) => total + line.unitPrice * line.qty,
 			0,
 		);
-		const deliveryFee = input.type === OrderType.DELIVERY ? 0 : 0;
+		// The restaurant's own fee (and free-delivery threshold), computed here
+		// from its settings — never taken from the client.
+		const deliveryFee = deliveryFeeFor({
+			orderType: input.type,
+			subtotal,
+			deliveryFee: Number(restaurant.deliveryFee),
+			freeDeliveryMinimum:
+				restaurant.freeDeliveryMinimum === null
+					? null
+					: Number(restaurant.freeDeliveryMinimum),
+		});
 		const total = subtotal + deliveryFee;
 		const customerName =
 			input.type === OrderType.DINE_IN
@@ -301,16 +353,36 @@ export async function createOrderAction(formData: FormData) {
 				select: { id: true, subtotal: true, total: true },
 			});
 
-			await db.order.update({
-				where: { id: existingOrder.id },
-				data: {
-					subtotal: Number(existingOrder.subtotal) + subtotal,
-					total: Number(existingOrder.total) + total,
-					items: {
-						create: lines,
+			// Increments, not "read total, write total + x": two additions sent at
+			// once used to overwrite each other and lose one from the bill. The
+			// status is re-checked in the same statement, so items can't land on
+			// an order staff moved on (or that got paid) a moment ago.
+			try {
+				await db.order.update({
+					where: {
+						id: existingOrder.id,
+						status: OrderStatus.CONFIRMED,
+						paymentStatus: PaymentStatus.PENDING,
 					},
-				},
-			});
+					data: {
+						subtotal: { increment: subtotal },
+						total: { increment: total },
+						items: {
+							create: lines,
+						},
+					},
+				});
+			} catch (error) {
+				if (
+					error instanceof Prisma.PrismaClientKnownRequestError &&
+					error.code === "P2025"
+				) {
+					throw new ActionError(
+						"This order can no longer take extra items. Please place a new order.",
+					);
+				}
+				throw error;
+			}
 			revalidatePath(`/${restaurant.slug}/order/${existingOrder.id}`);
 			redirect(`/${restaurant.slug}/order/${existingOrder.id}`);
 		}
@@ -537,9 +609,9 @@ export async function updateOrderStatusAction(formData: FormData) {
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.ORDER_STATUS_CHANGED,
-			audience: NotificationAudience.BOTH,
-			title: "Order status updated",
-			body: `Order #${input.orderId.slice(-6).toUpperCase()} is now ${input.status.replace("_", " ")}`,
+			audience: NotificationAudience.STAFF,
+			title: `Order #${input.orderId.slice(-6).toUpperCase()}: ${getStatusLabel(order.type, input.status)}`,
+			body: "Updated by the manager",
 			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${input.orderId}`,
 			metadata: { orderId: input.orderId, status: input.status },
 		});
@@ -569,7 +641,15 @@ export async function acceptOrderAction(formData: FormData) {
 			where: staffSession
 				? { slug, id: staffSession.restaurantId }
 				: { slug, ownerId: user?.id },
-			select: { id: true, slug: true },
+			select: {
+				id: true,
+				slug: true,
+				staffDefaultDineIn: true,
+				staffDefaultPickup: true,
+				staffDefaultDelivery: true,
+				staffDefaultCashPayment: true,
+				staffDefaultApproveReservations: true,
+			},
 		});
 
 		const order = await db.order.findUniqueOrThrow({
@@ -584,8 +664,36 @@ export async function acceptOrderAction(formData: FormData) {
 			},
 		});
 
+		// Accepting takes on a new order: paused while the plan is lapsed.
+		if (staffSession) await assertStaffCanChange(restaurant.id);
+		else await assertRestaurantCanChange(restaurant.id);
+
 		if (order.status !== OrderStatus.PENDING_APPROVAL) {
 			throw new ActionError("Only pending orders can be accepted.");
+		}
+
+		// The shared staff dashboard follows the restaurant's default staff
+		// permissions, exactly as status changes do — staff who may not handle
+		// delivery orders shouldn't be able to accept one either.
+		if (staffSession) {
+			const permissions = resolveStaffPermissions(restaurant, {
+				canHandleDineIn: null,
+				canHandlePickup: null,
+				canHandleDelivery: null,
+				canRecordCashPayment: null,
+				canApproveReservations: null,
+			});
+			const allowed: Record<OrderType, boolean> = {
+				[OrderType.DINE_IN]: permissions.dineIn,
+				[OrderType.PICKUP]: permissions.pickup,
+				[OrderType.DELIVERY]: permissions.delivery,
+				[OrderType.TABLE_RESERVATION]: permissions.dineIn,
+			};
+			if (!allowed[order.type]) {
+				throw new ActionError(
+					"You do not have permission to manage this type of order.",
+				);
+			}
 		}
 
 		// A restaurant that chose "pay before service" has said the kitchen does
@@ -607,20 +715,30 @@ export async function acceptOrderAction(formData: FormData) {
 		const requiresInHousePaymentConfirmation =
 			order.type === OrderType.DINE_IN && !!order.dineInPaymentMethod;
 
+		// An order already paid (staff can record a payment before accepting)
+		// goes straight to CONFIRMED. Sending it to PENDING_PAYMENT stranded it
+		// there: it was paid, so nothing would ever move it on, and the customer
+		// was never told it was confirmed.
+		const alreadyPaid = order.paymentStatus === PaymentStatus.PAID;
 		const nextStatus =
-			requiresOnlinePayment || requiresInHousePaymentConfirmation
+			!alreadyPaid &&
+			(requiresOnlinePayment || requiresInHousePaymentConfirmation)
 				? OrderStatus.PENDING_PAYMENT
 				: OrderStatus.CONFIRMED;
 
-		await db.order.update({
-			where: { id: order.id },
+		// Conditional, so two people accepting at once can't both act on it.
+		const accepted = await db.order.updateMany({
+			where: { id: order.id, status: OrderStatus.PENDING_APPROVAL },
 			data: { status: nextStatus },
 		});
+		if (accepted.count === 0) {
+			throw new ActionError("This order has already been handled.");
+		}
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.ORDER_STATUS_CHANGED,
-			audience: NotificationAudience.BOTH,
+			audience: NotificationAudience.STAFF,
 			title: "Order accepted",
 			body: `Order #${order.id.slice(-6).toUpperCase()} was accepted`,
 			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
@@ -654,7 +772,7 @@ export async function cancelOrderAction(formData: FormData) {
 
 		const order = await db.order.findFirstOrThrow({
 			where: { id: orderId, restaurantId: restaurant.id },
-			select: { status: true },
+			select: { status: true, paymentStatus: true, total: true },
 		});
 
 		if (order.status === OrderStatus.CANCELLED) {
@@ -675,6 +793,14 @@ export async function cancelOrderAction(formData: FormData) {
 				cancelledById: user.id,
 				cancelledAt: new Date(),
 				cancellationNote,
+				// Cancelling doesn't return the money by itself. Flag it on the
+				// order so the refund isn't forgotten; the owner issues it from
+				// the payment panel.
+				...(order.paymentStatus === PaymentStatus.PAID
+					? {
+							refundRequiredReason: `Cancelled after payment — refund ₦${Number(order.total).toLocaleString("en-NG")} to the customer`,
+						}
+					: {}),
 			},
 		});
 
@@ -684,7 +810,7 @@ export async function cancelOrderAction(formData: FormData) {
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.ORDER_CANCELLED,
-			audience: NotificationAudience.BOTH,
+			audience: NotificationAudience.STAFF,
 			title:
 				order.status === OrderStatus.PENDING_PAYMENT
 					? "Order declined"
@@ -784,9 +910,9 @@ export async function markOrderPaidAction(formData: FormData) {
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.PAYMENT_RECEIVED,
-			audience: NotificationAudience.ADMIN,
+			audience: NotificationAudience.STAFF,
 			title: "Payment recorded",
-			body: `Order #${order.id.slice(-6).toUpperCase()} payment was confirmed`,
+			body: `Order #${order.id.slice(-6).toUpperCase()} is paid`,
 			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
 			metadata: { orderId: order.id },
 		});
@@ -827,6 +953,7 @@ export async function recordSplitPaymentAction(formData: FormData) {
 			const { staff, restaurant: res } = await verifyStaffAction(
 				input.slug,
 				staffIdStr,
+				String(formData.get("pin") ?? ""),
 			);
 			recordedById = staff.id;
 			recordedByName = staff.name;
@@ -942,9 +1069,9 @@ export async function recordSplitPaymentAction(formData: FormData) {
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.PAYMENT_RECEIVED,
-			audience: NotificationAudience.ADMIN,
+			audience: NotificationAudience.STAFF,
 			title: "Payment recorded",
-			body: `Order #${order.id.slice(-6).toUpperCase()} payment was confirmed via split payment`,
+			body: `Order #${order.id.slice(-6).toUpperCase()} is paid (split payment)`,
 			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${order.id}`,
 			metadata: { orderId: order.id },
 		});

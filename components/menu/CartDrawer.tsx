@@ -5,6 +5,7 @@ import { ArrowRight, ShoppingCart, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { CartItem } from "@/components/menu/CartItem";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 
 type CartDrawerProps = {
@@ -34,6 +35,7 @@ export function CartDrawer({
 	const setAppendOrderId = useCart((state) => state.setAppendOrderId);
 	const subtotal = getCartSubtotal(items);
 	const itemCount = items.reduce((total, item) => total + item.quantity, 0);
+	const paused = useOrderingPaused();
 	const checkoutHref = storedAppendOrderId
 		? `/${restaurantSlug}/cart?orderId=${storedAppendOrderId}`
 		: `/${restaurantSlug}/cart`;
@@ -41,6 +43,9 @@ export function CartDrawer({
 	useEffect(() => {
 		setAppendOrderId(appendOrderId ?? null);
 	}, [appendOrderId, setAppendOrderId]);
+
+	// Ordering paused (lapsed subscription): there is nothing to check out.
+	if (paused) return null;
 
 	return (
 		<>

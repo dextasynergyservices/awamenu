@@ -145,7 +145,9 @@ function findNextOpening(
 	periods: OpeningPeriod[],
 	clock: { dayOfWeek: number; minutes: number },
 ): string | null {
-	for (let offset = 0; offset < 7; offset++) {
+	// Up to 7 days ahead inclusive: with one opening day a week, the next
+	// opening after today's has passed is the same weekday next week.
+	for (let offset = 0; offset <= 7; offset++) {
 		const day = (clock.dayOfWeek + offset) % 7;
 		const candidates = periods
 			.filter((p) => p.dayOfWeek === day)
@@ -290,4 +292,23 @@ function formatSlot(minutes: number) {
 	const wrapped = minutes % 1440;
 	const hours = Math.floor(wrapped / 60);
 	return `${String(hours).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Why new orders can't be placed right now, or null when they can.
+ *
+ * Opening hours only: a restaurant with no hours set is always open (as in
+ * `getOpenState`). One-off closures are a reservations setting and don't stop
+ * ordering.
+ */
+export function orderingClosedNotice(
+	periods: OpeningPeriod[],
+	timezone: string,
+	now: Date = new Date(),
+): string | null {
+	const state = getOpenState(periods, timezone, now);
+	if (state.isOpen) return null;
+	return state.label === "Closed"
+		? "We're closed and not taking orders right now."
+		: `We're closed right now. ${state.label}.`;
 }

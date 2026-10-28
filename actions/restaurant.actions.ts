@@ -8,8 +8,12 @@ import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
+import { revalidatePublicMenu } from "@/lib/public-menu";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import { assertOwnerCanChange } from "@/lib/restaurant-access";
 import { decryptSecret, encryptSecret } from "@/lib/secret-box";
+import { isReservedSlug } from "@/lib/slug";
+import { clearSlugAliasCache, isSlugAvailable } from "@/lib/slug-aliases";
 
 const updateSettingsSchema = z.object({
 	customerUpdateChannel: z.enum(["WHATSAPP", "SMS", "NONE"]),
@@ -48,6 +52,7 @@ const updateBrandingSchema = z.object({
 
 export async function updateRestaurantSettingsAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = updateSettingsSchema.parse({
 		slug: formData.get("slug"),
 		dineInPaymentPolicy: formData.get("dineInPaymentPolicy"),
@@ -85,12 +90,13 @@ export async function updateRestaurantSettingsAction(formData: FormData) {
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 }
 
 export async function updateRestaurantInfoAction(formData: FormData) {
 	return actionResult(async () => {
 		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
 		const input = updateInfoSchema.parse({
 			restaurantId: formData.get("restaurantId"),
 			slug: formData.get("slug"),
@@ -104,15 +110,19 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 
 		const restaurant = await db.restaurant.findFirstOrThrow({
 			where: { id: input.restaurantId, ownerId: user.id },
-			select: { id: true, slug: true },
+			select: { id: true, slug: true, previousSlugs: true },
 		});
 
-		if (input.slug !== restaurant.slug) {
-			const slugTaken = await db.restaurant.findUnique({
-				where: { slug: input.slug },
-				select: { id: true },
-			});
-			if (slugTaken) {
+		const slugChanged = input.slug !== restaurant.slug;
+		if (slugChanged) {
+			if (isReservedSlug(input.slug)) {
+				throw new ActionError(
+					"That web address is reserved. Please choose another.",
+				);
+			}
+			// Free means: nobody's current slug and nobody else's old one — an old
+			// slug still has QR codes printed on tables pointing at it.
+			if (!(await isSlugAvailable(input.slug, restaurant.id))) {
 				throw new ActionError("That web address is already taken.");
 			}
 		}
@@ -121,6 +131,16 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 			where: { id: restaurant.id },
 			data: {
 				slug: input.slug,
+				// Remember the old address so its QR codes and links redirect here.
+				// Moving back to an old slug takes it off the list.
+				...(slugChanged
+					? {
+							previousSlugs: [
+								...restaurant.previousSlugs.filter((s) => s !== input.slug),
+								restaurant.slug,
+							],
+						}
+					: {}),
 				name: input.name,
 				description: input.description,
 				phone: input.phone,
@@ -131,7 +151,8 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 		});
 
 		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-		revalidatePath(`/${restaurant.slug}`);
+		revalidatePublicMenu(restaurant.slug);
+		if (slugChanged) clearSlugAliasCache();
 
 		if (input.slug !== restaurant.slug) {
 			// The dashboard URL itself is slug-based — without this, the page the
@@ -143,6 +164,7 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 
 export async function updateRestaurantBrandingAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = updateBrandingSchema.parse({
 		slug: formData.get("slug"),
 		logoUrl: formData.get("logoUrl") || undefined,
@@ -185,7 +207,7 @@ export async function updateRestaurantBrandingAction(formData: FormData) {
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 }
 
 const revealStaffPasswordSchema = z.object({
@@ -287,6 +309,7 @@ export async function saveOpeningHoursAction(input: {
 	if (!parsed.success) return { error: "Please check the times you entered." };
 
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, { slug: parsed.data.slug });
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug: parsed.data.slug, ownerId: user.id },
 		select: { id: true, slug: true },
@@ -316,7 +339,7 @@ export async function saveOpeningHoursAction(input: {
 	]);
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 	return { ok: true };
 }
 
@@ -347,4 +370,69 @@ export async function dismissSetupChecklistAction(input: {
 
 	revalidatePath(`/dashboard/${restaurant.slug}`);
 	return { ok: true };
+}
+
+const orderingSettingsSchema = z.object({
+	slug: z.string().min(1),
+	dineInEnabled: z.boolean(),
+	pickupEnabled: z.boolean(),
+	deliveryEnabled: z.boolean(),
+	deliveryFee: z.coerce.number().min(0).max(1_000_000),
+	freeDeliveryMinimum: z.preprocess(
+		(value) => (value === "" || value === null ? null : value),
+		z.coerce.number().min(0).max(100_000_000).nullable(),
+	),
+});
+
+/**
+ * Which order types the restaurant takes, and what delivery costs.
+ *
+ * Every restaurant had dine-in, pickup and delivery switched on with no way to
+ * turn any off, and delivery was always free — a restaurant that doesn't
+ * deliver still received delivery orders.
+ */
+export async function updateOrderingSettingsAction(formData: FormData) {
+	return actionResult(async () => {
+		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
+		const input = orderingSettingsSchema.parse({
+			slug: formData.get("slug"),
+			dineInEnabled: formData.get("dineInEnabled") === "on",
+			pickupEnabled: formData.get("pickupEnabled") === "on",
+			deliveryEnabled: formData.get("deliveryEnabled") === "on",
+			deliveryFee: formData.get("deliveryFee") || 0,
+			freeDeliveryMinimum: formData.get("freeDeliveryMinimum"),
+		});
+
+		if (
+			!input.dineInEnabled &&
+			!input.pickupEnabled &&
+			!input.deliveryEnabled
+		) {
+			throw new ActionError(
+				"Keep at least one way to order switched on, or customers can't order from your menu.",
+			);
+		}
+
+		const restaurant = await db.restaurant.findFirst({
+			where: { slug: input.slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+		if (!restaurant) throw new ActionError("Restaurant not found.");
+
+		await db.restaurant.update({
+			where: { id: restaurant.id },
+			data: {
+				dineInEnabled: input.dineInEnabled,
+				pickupEnabled: input.pickupEnabled,
+				deliveryEnabled: input.deliveryEnabled,
+				deliveryFee: input.deliveryFee,
+				freeDeliveryMinimum: input.freeDeliveryMinimum,
+			},
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePath(`/${restaurant.slug}/cart`);
+		revalidatePublicMenu(restaurant.slug);
+	});
 }

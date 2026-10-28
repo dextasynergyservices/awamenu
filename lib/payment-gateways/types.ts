@@ -47,6 +47,12 @@ export type ChargeVerification = {
 	paid: boolean;
 	reference: string;
 	amountKobo: number;
+	/** ISO code as the provider reported it. Checked before anything is credited. */
+	currency: string;
+	/** The provider's own fee in kobo, when it reports one. */
+	feeKobo?: number | null;
+	/** Settlement subaccount, when the provider reports one. */
+	subaccountCode?: string | null;
 	raw: unknown;
 };
 

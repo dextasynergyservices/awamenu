@@ -5,6 +5,11 @@ import { z } from "zod";
 import { ActionError, actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { normalizeMenuTags } from "@/lib/menu-tags";
+import { getRestaurantPlanFeatures } from "@/lib/plan-features";
+import { revalidatePublicMenu } from "@/lib/public-menu";
+import { assertRestaurantCanChange } from "@/lib/restaurant-access";
+import { startOfNextDayIn } from "@/lib/restaurant-day";
 
 const restaurantSchema = z.object({
 	restaurantId: z.string().cuid(),
@@ -53,6 +58,16 @@ const itemSchema = restaurantSchema.extend({
 	isTodaySpecial: z.coerce.boolean().default(false),
 });
 
+/**
+ * Tags only when the form actually has the tag picker (it sends a "tagsField"
+ * marker). Quick-edit forms that post the other fields must not wipe them.
+ */
+function tagsFromForm(formData: FormData) {
+	return formData.has("tagsField")
+		? { tags: normalizeMenuTags(formData.getAll("tags")) }
+		: {};
+}
+
 const updateItemSchema = itemSchema.extend({
 	itemId: z.string().cuid(),
 });
@@ -82,26 +97,27 @@ async function requireOwnedRestaurant(restaurantId: string) {
 		throw new ActionError("Restaurant not found.");
 	}
 
+	// Every menu change goes through here: a lapsed or suspended restaurant's
+	// menu is read-only until the owner renews.
+	await assertRestaurantCanChange(restaurant.id);
+
 	return restaurant;
 }
 
+/**
+ * Ownership check plus the limits the restaurant is entitled to *now*.
+ *
+ * Resolved through the shared plan resolver, which treats a lapsed paid plan as
+ * Free — reading `subscription.plan` directly let a restaurant whose Pro plan
+ * had expired keep creating categories and items without limit.
+ */
 async function getPlanLimits(restaurantId: string) {
 	const restaurant = await requireOwnedRestaurant(restaurantId);
-	const freePlan = restaurant.subscription
-		? null
-		: await db.plan.findUnique({
-				where: { tier: "FREE" },
-				select: { maxCategories: true, maxMenuItems: true },
-			});
-
+	const features = await getRestaurantPlanFeatures(restaurant.id);
 	return {
 		restaurant,
-		maxCategories:
-			restaurant.subscription?.plan.maxCategories ??
-			freePlan?.maxCategories ??
-			2,
-		maxMenuItems:
-			restaurant.subscription?.plan.maxMenuItems ?? freePlan?.maxMenuItems ?? 8,
+		maxCategories: features.maxCategories,
+		maxMenuItems: features.maxMenuItems,
 	};
 }
 
@@ -136,7 +152,7 @@ export async function createCategoryAction(formData: FormData) {
 			},
 		});
 		revalidatePath(`/dashboard/${input.slug}/menu`);
-		revalidatePath(`/${input.slug}`);
+		revalidatePublicMenu(input.slug);
 	});
 }
 
@@ -162,7 +178,7 @@ export async function createBannerAction(formData: FormData) {
 		},
 	});
 	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
+	revalidatePublicMenu(input.slug);
 }
 
 export async function updateBannerAction(formData: FormData) {
@@ -188,7 +204,7 @@ export async function updateBannerAction(formData: FormData) {
 		},
 	});
 	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
+	revalidatePublicMenu(input.slug);
 }
 
 export async function removeBannerAction(formData: FormData) {
@@ -202,7 +218,7 @@ export async function removeBannerAction(formData: FormData) {
 		where: { id: input.bannerId, restaurantId: input.restaurantId },
 	});
 	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
+	revalidatePublicMenu(input.slug);
 }
 
 export async function updateCategoryAction(formData: FormData) {
@@ -227,7 +243,7 @@ export async function updateCategoryAction(formData: FormData) {
 			},
 		});
 		revalidatePath(`/dashboard/${input.slug}/menu`);
-		revalidatePath(`/${input.slug}`);
+		revalidatePublicMenu(input.slug);
 	});
 }
 
@@ -242,7 +258,7 @@ export async function deleteCategoryAction(formData: FormData) {
 		where: { id: input.categoryId, restaurantId: input.restaurantId },
 	});
 	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePath(`/${input.slug}`);
+	revalidatePublicMenu(input.slug);
 }
 
 export async function createMenuItemAction(formData: FormData) {
@@ -287,10 +303,11 @@ export async function createMenuItemAction(formData: FormData) {
 				sortOrder: input.sortOrder,
 				isAvailable: input.isAvailable,
 				isTodaySpecial: input.isTodaySpecial,
+				...tagsFromForm(formData),
 			},
 		});
 		revalidatePath(`/dashboard/${input.slug}/menu`);
-		revalidatePath(`/${input.slug}`);
+		revalidatePublicMenu(input.slug);
 	});
 }
 
@@ -322,6 +339,17 @@ export async function updateMenuItemAction(formData: FormData) {
 			throw new ActionError("Menu item not found.");
 		}
 
+		// The destination category must be this restaurant's too. Only the item
+		// was checked before, so an owner could move their own item into another
+		// restaurant's category — publishing it on that restaurant's menu.
+		const category = await db.menuCategory.findFirst({
+			where: { id: input.categoryId, restaurantId: input.restaurantId },
+			select: { id: true },
+		});
+		if (!category) {
+			throw new ActionError("Category not found.");
+		}
+
 		await db.menuItem.update({
 			where: { id: input.itemId },
 			data: {
@@ -333,10 +361,53 @@ export async function updateMenuItemAction(formData: FormData) {
 				sortOrder: input.sortOrder,
 				isAvailable: input.isAvailable,
 				isTodaySpecial: input.isTodaySpecial,
+				...tagsFromForm(formData),
 			},
 		});
 		revalidatePath(`/dashboard/${input.slug}/menu`);
-		revalidatePath(`/${input.slug}`);
+		revalidatePublicMenu(input.slug);
+	});
+}
+
+const soldOutSchema = itemIdSchema.extend({
+	soldOut: z.enum(["today", "off"]),
+});
+
+/**
+ * "Sold out today": the dish stays on the menu, greyed out and unorderable,
+ * until the restaurant's next day starts. Clears itself; no cron involved.
+ */
+export async function setMenuItemSoldOutAction(formData: FormData) {
+	return actionResult(async () => {
+		const input = soldOutSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			itemId: formData.get("itemId"),
+			soldOut: formData.get("soldOut"),
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		const item = await db.menuItem.findFirst({
+			where: {
+				id: input.itemId,
+				category: { restaurantId: input.restaurantId },
+			},
+			select: {
+				id: true,
+				category: { select: { restaurant: { select: { timezone: true } } } },
+			},
+		});
+		if (!item) throw new ActionError("Menu item not found.");
+
+		const timeZone = item.category.restaurant.timezone;
+		await db.menuItem.update({
+			where: { id: item.id },
+			data: {
+				soldOutUntil:
+					input.soldOut === "today" ? startOfNextDayIn(timeZone) : null,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePublicMenu(input.slug);
 	});
 }
 
@@ -362,6 +433,6 @@ export async function deleteMenuItemAction(formData: FormData) {
 
 		await db.menuItem.delete({ where: { id: input.itemId } });
 		revalidatePath(`/dashboard/${input.slug}/menu`);
-		revalidatePath(`/${input.slug}`);
+		revalidatePublicMenu(input.slug);
 	});
 }

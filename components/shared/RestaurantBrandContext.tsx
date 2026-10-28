@@ -11,6 +11,8 @@ export type RestaurantBrand = {
 	 * screen — which can't run a query — can render the badge on its first
 	 * paint instead of popping it in later. */
 	showAwamenuBranding: boolean;
+	/** IANA timezone for showing dates and times (lib/restaurant-time.ts). */
+	timeZone?: string;
 };
 
 const RestaurantBrandContext = createContext<RestaurantBrand | null>(null);
@@ -44,4 +46,9 @@ export function RestaurantBrandProvider({
 
 export function useRestaurantBrand(): RestaurantBrand | null {
 	return useContext(RestaurantBrandContext);
+}
+
+/** The restaurant's timezone for formatting; Lagos when unknown. */
+export function useRestaurantTimeZone(): string {
+	return useContext(RestaurantBrandContext)?.timeZone ?? "Africa/Lagos";
 }

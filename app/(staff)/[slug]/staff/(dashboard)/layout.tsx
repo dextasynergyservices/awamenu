@@ -4,9 +4,9 @@ import {
 	getUnreadCountAction,
 } from "@/actions/notification.actions";
 import { StaffDashboardShell } from "@/components/staff/StaffDashboardShell";
+import { billingStateOf, canTrade } from "@/lib/billing-state";
 import { db } from "@/lib/db";
 import { requireStaffSession } from "@/lib/staff-auth";
-import { isSubscriptionActive } from "@/lib/subscription";
 
 export default async function StaffDashboardLayout({
 	children,
@@ -32,8 +32,19 @@ export default async function StaffDashboardLayout({
 			staffDefaultDelivery: true,
 			staffDefaultCashPayment: true,
 			staffDefaultApproveReservations: true,
+			isActive: true,
 			subscription: {
-				select: { status: true, currentPeriodEnd: true },
+				select: {
+					currentPeriodEnd: true,
+					billingInterval: true,
+					plan: {
+						select: {
+							monthlyPrice: true,
+							quarterlyPrice: true,
+							yearlyPrice: true,
+						},
+					},
+				},
 			},
 		},
 	});
@@ -42,7 +53,9 @@ export default async function StaffDashboardLayout({
 		redirect(`/`);
 	}
 
-	if (!isSubscriptionActive(restaurant.subscription)) {
+	// Suspended by the Super Admin: the terminal is closed. (An unpaid plan
+	// isn't this: staff can still finish orders and bookings in progress.)
+	if (!restaurant.isActive) {
 		return (
 			<main className="grid min-h-screen place-items-center bg-[#f6faf7] px-4 py-8">
 				<section className="mx-auto max-w-lg rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
@@ -50,17 +63,17 @@ export default async function StaffDashboardLayout({
 						Temporarily Unavailable
 					</p>
 					<h1 className="mt-3 text-2xl font-black text-slate-950">
-						{restaurant.name}&apos;s staff dashboard is locked
+						{restaurant.name}&apos;s staff dashboard is unavailable
 					</h1>
 					<p className="mt-3 text-sm font-bold leading-6 text-slate-600">
-						This restaurant&apos;s subscription has lapsed. Please ask your
-						restaurant admin to renew or update the plan before using the staff
-						dashboard again.
+						This restaurant is suspended. Please speak to the restaurant owner.
 					</p>
 				</section>
 			</main>
 		);
 	}
+
+	const tradingPaused = !canTrade(billingStateOf(restaurant.subscription));
 
 	const permissions = {
 		dineIn: restaurant.staffDefaultDineIn,
@@ -101,6 +114,16 @@ export default async function StaffDashboardLayout({
 			}))}
 			initialUnreadCount={unreadCount}
 		>
+			{tradingPaused ? (
+				<p
+					role="status"
+					className="mx-auto mb-3 max-w-7xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900"
+				>
+					New orders and bookings are paused because the restaurant&apos;s
+					subscription has lapsed. You can still finish orders and bookings
+					already in progress. Ask the owner to renew.
+				</p>
+			) : null}
 			{children}
 		</StaffDashboardShell>
 	);

@@ -244,18 +244,21 @@ export function BannerManager({
 											className="min-h-16 resize-none rounded-lg border border-slate-200 px-2 py-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
 										/>
 									</label>
-									<div className="grid grid-cols-[1fr_auto] gap-2">
-										<input
-											name="sortOrder"
-											type="number"
-											min="0"
-											defaultValue={index + 1}
-											className="min-h-9 rounded-lg border border-slate-200 px-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
-										/>
+									<div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+										<label className="grid min-w-0 gap-1 text-xs font-medium text-slate-500 md:font-black">
+											Position
+											<input
+												name="sortOrder"
+												type="number"
+												min="0"
+												defaultValue={index + 1}
+												className="min-h-9 w-full min-w-0 rounded-lg border border-slate-200 px-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
+											/>
+										</label>
 										<SubmitButton
 											loadingText={banner.id ? "Saving..." : "Creating..."}
 											successText={banner.id ? "Saved" : "Created"}
-											className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-xs font-medium text-white md:text-sm md:font-black"
+											className="inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white"
 										>
 											<Check className="size-4" aria-hidden="true" />
 											Save

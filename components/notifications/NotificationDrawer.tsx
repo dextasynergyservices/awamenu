@@ -2,7 +2,6 @@
 
 import { BellOff, CheckCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 import { NotificationItem } from "@/components/notifications/NotificationItem";
 import { cn } from "@/lib/utils";
@@ -27,8 +26,6 @@ export function NotificationDrawer({
 	recipientId,
 }: NotificationDrawerProps) {
 	const router = useRouter();
-	const [selectedNotification, setSelectedNotification] =
-		useState<Notification | null>(null);
 
 	const notifications = useNotificationStore((s) => s.notifications);
 	const unreadCount = useNotificationStore((s) => s.unreadCount);
@@ -54,9 +51,19 @@ export function NotificationDrawer({
 		}).catch(() => {});
 	}
 
+	/**
+	 * Straight to the order or booking: the old confirm step ("Attend Task")
+	 * added a tap and said nothing the list item didn't.
+	 */
 	function handleNotificationClick(notification: Notification) {
-		handleMarkRead(notification.id);
-		setSelectedNotification(notification);
+		if (!notification.actionUrl) return;
+		const query = notification.actionUrl.split("?")[1];
+		router.push(
+			recipientType === "staff"
+				? `/${slug}/staff${query ? `?${query}` : ""}`
+				: notification.actionUrl,
+		);
+		onClose();
 	}
 
 	return (
@@ -77,10 +84,13 @@ export function NotificationDrawer({
 			)}
 
 			{/* Drawer */}
+			{/* Hidden once slid out: otherwise its shadow showed along the screen
+			    edge and screen readers could still reach it. */}
 			<div
+				aria-hidden={!open}
 				className={cn(
-					"fixed top-0 right-0 flex h-full w-full max-w-[420px] flex-col bg-white shadow-2xl transition-transform duration-300 ease-out",
-					open ? "translate-x-0" : "translate-x-full",
+					"fixed top-0 right-0 flex h-full w-full max-w-[420px] flex-col bg-white shadow-2xl transition-[transform,visibility] duration-300 ease-out",
+					open ? "visible translate-x-0" : "invisible translate-x-full",
 				)}
 				style={{ zIndex: 100 }}
 			>
@@ -143,69 +153,6 @@ export function NotificationDrawer({
 					)}
 				</div>
 			</div>
-
-			{/* Notification Detail Modal */}
-			{selectedNotification && (
-				<div
-					className="fixed inset-0 flex items-end sm:items-center justify-center p-4 sm:p-0"
-					style={{ zIndex: 110 }}
-				>
-					{/* biome-ignore lint/a11y/useKeyWithClickEvents: Backdrop does not need keyboard interactions */}
-					{/* biome-ignore lint/a11y/noStaticElementInteractions: Backdrop should not be focusable */}
-					<div
-						className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm cursor-pointer"
-						onClick={() => setSelectedNotification(null)}
-					/>
-					<div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] bg-white p-6 shadow-2xl animate-in fade-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0 sm:zoom-in-95">
-						<button
-							type="button"
-							onClick={() => setSelectedNotification(null)}
-							className="absolute top-4 right-4 grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
-						>
-							<X className="size-4" />
-						</button>
-						<div className="mt-2 text-center">
-							<h3 className="text-xl font-black text-slate-950">
-								{selectedNotification.title}
-							</h3>
-							<p className="mt-3 text-sm font-medium text-slate-600 leading-relaxed">
-								{selectedNotification.body}
-							</p>
-						</div>
-						<div className="mt-8 grid gap-3">
-							{selectedNotification.actionUrl && (
-								<button
-									type="button"
-									onClick={() => {
-										if (
-											recipientType === "staff" &&
-											selectedNotification.actionUrl
-										) {
-											const query =
-												selectedNotification.actionUrl.split("?")[1];
-											router.push(`/${slug}/staff?${query || ""}`);
-										} else if (selectedNotification.actionUrl) {
-											router.push(selectedNotification.actionUrl);
-										}
-										setSelectedNotification(null);
-										onClose();
-									}}
-									className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-black text-white"
-								>
-									Attend Task
-								</button>
-							)}
-							<button
-								type="button"
-								onClick={() => setSelectedNotification(null)}
-								className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-slate-100 px-4 text-sm font-bold text-slate-700"
-							>
-								Dismiss
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
 		</>
 	);
 }

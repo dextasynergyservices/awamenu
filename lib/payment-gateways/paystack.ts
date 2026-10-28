@@ -145,11 +145,17 @@ export const paystackAdapter: PaymentGatewayAdapter = {
 			status?: string;
 			reference?: string;
 			amount?: number;
+			currency?: string;
+			fees?: number;
+			subaccount?: { subaccount_code?: string };
 		}>(credentials, `/transaction/verify/${encodeURIComponent(reference)}`);
 		return {
 			paid: data.status === "success",
 			reference: data.reference ?? reference,
 			amountKobo: data.amount ?? 0,
+			currency: data.currency ?? "NGN",
+			feeKobo: data.fees ?? null,
+			subaccountCode: data.subaccount?.subaccount_code ?? null,
 			raw: data,
 		} satisfies ChargeVerification;
 	},

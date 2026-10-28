@@ -26,7 +26,6 @@ import { ReservationStatusBanner } from "@/components/admin/ReservationStatusBan
 import { ReservationTabs } from "@/components/admin/ReservationTabs";
 import { TableCreateModal } from "@/components/admin/TableCreateModal";
 import { TableEditModal } from "@/components/admin/TableEditModal";
-import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
@@ -320,6 +319,7 @@ export default async function TablesPage({
 		advanceBookingHours: 0,
 		slotIntervalMinutes: 30,
 		graceMinutes: 15,
+		paymentWindowMinutes: 120,
 		autoConfirmFreeBookings: false,
 		bookingDescription: "",
 		cancellationPolicy: "",
@@ -371,7 +371,6 @@ export default async function TablesPage({
 				enabled={restaurant.tableReservationEnabled}
 				tableCount={restaurant.tables.length}
 			/>
-			<ReservationStatusPoller />
 			<MobileTablesView
 				currency={restaurant.currency}
 				restaurantId={restaurant.id}
@@ -1000,6 +999,7 @@ function SettingsPanel({
 		advanceBookingHours: number;
 		slotIntervalMinutes: number;
 		graceMinutes: number;
+		paymentWindowMinutes: number;
 		autoConfirmFreeBookings: boolean;
 		bookingDescription: string | null;
 		cancellationPolicy: string | null;
@@ -1041,7 +1041,7 @@ function SettingsPanel({
 				{/* Booking rules moved onto each table — a window seat for two and a
 				    private room for twelve never shared a hold time or a minimum
 				    spend. What is left here is genuinely one-per-restaurant. */}
-				<div className="grid gap-3 md:grid-cols-3">
+				<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
 					<label className={labelClass}>
 						<FieldLabel help={helpText.advanceHours}>
 							Advance booking notice (hours)
@@ -1085,6 +1085,27 @@ function SettingsPanel({
 						/>
 						<span className="text-xs font-medium text-slate-400">
 							Minutes past the booking time before the table is released.
+						</span>
+					</label>
+					<label className={labelClass}>
+						<span className="text-xs font-black text-slate-700">
+							Time to pay after approval
+						</span>
+						<select
+							name="paymentWindowMinutes"
+							defaultValue={String(setting.paymentWindowMinutes)}
+							className={inputClass}
+						>
+							<option value="30">30 minutes</option>
+							<option value="60">1 hour</option>
+							<option value="120">2 hours</option>
+							<option value="360">6 hours</option>
+							<option value="1440">24 hours</option>
+						</select>
+						<span className="text-xs font-medium text-slate-400">
+							For paid bookings. The table is held while the guest pays, then
+							released if they haven&apos;t — never later than the booking
+							itself.
 						</span>
 					</label>
 				</div>

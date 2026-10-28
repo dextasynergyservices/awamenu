@@ -125,6 +125,8 @@ export const flutterwaveAdapter: PaymentGatewayAdapter = {
 		const data = await call<{
 			status?: string;
 			amount?: number;
+			currency?: string;
+			app_fee?: number;
 			tx_ref?: string;
 		}>(
 			credentials,
@@ -134,6 +136,8 @@ export const flutterwaveAdapter: PaymentGatewayAdapter = {
 			paid: data.status === "successful",
 			reference: data.tx_ref ?? reference,
 			amountKobo: Math.round((data.amount ?? 0) * 100),
+			currency: data.currency ?? "NGN",
+			feeKobo: data.app_fee != null ? Math.round(data.app_fee * 100) : null,
 			raw: data,
 		} satisfies ChargeVerification;
 	},

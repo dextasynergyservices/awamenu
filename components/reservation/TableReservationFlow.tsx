@@ -44,6 +44,7 @@ import {
 	type OpeningPeriod,
 } from "@/lib/opening-hours";
 import { cn } from "@/lib/utils";
+import { zonedWallClockToUtc } from "@/lib/zoned-time";
 
 type TablePolicy = {
 	bookingMode: string;
@@ -91,6 +92,14 @@ type ReservationSetting = {
 	slotIntervalMinutes: number;
 	cancellationPolicy: string | null;
 	refundPolicy: string | null;
+	/** How long past the booking time a table stays held for a late guest. */
+	graceMinutes: number;
+};
+
+/** What availability needs beyond the table: the clock it is measured on. */
+type AvailabilityContext = {
+	timeZone: string;
+	graceMinutes: number;
 };
 
 type SelectedFoodItem = {
@@ -106,6 +115,8 @@ type TableReservationFlowProps = {
 	phone: string | null;
 	whatsappNumber: string | null;
 	currency: string;
+	/** The restaurant's timezone. Slots are wall-clock times there. */
+	timeZone: string;
 	openingHours?: OpeningPeriod[];
 	blackoutDates?: string[];
 	setting: ReservationSetting;
@@ -171,15 +182,37 @@ function clampPartySize(value: number, table?: ReservationTable) {
 	return Math.min(Math.max(value, min), max);
 }
 
-function isTableAvailable(table: ReservationTable, date: string, time: string) {
+/**
+ * Whether a new booking at this slot would fit, by the same rule the server and
+ * database enforce: the new booking's whole window — sitting plus grace — must
+ * not overlap any booking that holds the table.
+ *
+ * This used to test only whether the start time fell inside an existing
+ * booking, so 18:30 looked free before a 19:00 booking and was then refused on
+ * submit. It also read the slot in the browser's timezone rather than the
+ * restaurant's.
+ */
+function isTableAvailable(
+	table: ReservationTable,
+	date: string,
+	time: string,
+	availability: AvailabilityContext,
+) {
 	if (!date || !time) return true;
-	const requested = new Date(`${date}T${time}:00`).getTime();
-	if (Number.isNaN(requested)) return true;
+	const requestedStart = zonedWallClockToUtc(
+		date,
+		time,
+		availability.timeZone,
+	).getTime();
+	if (Number.isNaN(requestedStart)) return true;
+	const requestedEnd =
+		requestedStart +
+		(table.policy.holdMinutes + availability.graceMinutes) * 60_000;
 
 	return !table.reservations.some((reservation) => {
 		const startsAt = new Date(reservation.startsAt).getTime();
 		const expiresAt = new Date(reservation.expiresAt).getTime();
-		return startsAt <= requested && requested < expiresAt;
+		return startsAt < requestedEnd && requestedStart < expiresAt;
 	});
 }
 
@@ -286,6 +319,7 @@ export function TableReservationFlow({
 	phone,
 	whatsappNumber,
 	currency,
+	timeZone,
 	openingHours = [],
 	blackoutDates = [],
 	setting,
@@ -297,6 +331,10 @@ export function TableReservationFlow({
 
 	// is shut only after filling in the whole form is a wasted journey.
 
+	const availability: AvailabilityContext = {
+		timeZone,
+		graceMinutes: setting.graceMinutes,
+	};
 	const [date, setDate] = useState(initialReservationDateTime.date);
 	const [time, setTime] = useState(initialReservationDateTime.time);
 
@@ -377,7 +415,7 @@ export function TableReservationFlow({
 	// Same predicate the cards use, so the summary can't disagree with them.
 
 	const availableCount = filteredTables.filter((table) =>
-		isTableAvailable(table, date, time),
+		isTableAvailable(table, date, time, availability),
 	).length;
 
 	const bookedCount = filteredTables.length - availableCount;
@@ -401,7 +439,7 @@ export function TableReservationFlow({
 	// with an image, so an unselected page showed a table nobody had picked.
 	const featuredImageUrl = selectedTable?.imageUrl ?? null;
 	const selectedTableIsAvailable = selectedTable
-		? isTableAvailable(selectedTable, date, time) &&
+		? isTableAvailable(selectedTable, date, time, availability) &&
 			partySize <= selectedTable.capacity
 		: false;
 
@@ -786,7 +824,12 @@ export function TableReservationFlow({
 							<div className="mt-4 grid gap-3">
 								{paginatedTables.map((table) => {
 									const zone = getTableZone(table);
-									const available = isTableAvailable(table, date, time);
+									const available = isTableAvailable(
+										table,
+										date,
+										time,
+										availability,
+									);
 									const fitsParty = partySize <= table.capacity;
 									const selectable = available && fitsParty;
 									const unavailableLabel = !fitsParty
@@ -1056,10 +1099,11 @@ export function TableReservationFlow({
 						date={date}
 						time={time}
 						partySize={partySize}
+						availability={availability}
 						holdDurationMinutes={selectedTable?.policy.holdMinutes ?? 60}
 						selected={
 							selectedTableId === previewTable.id &&
-							isTableAvailable(previewTable, date, time) &&
+							isTableAvailable(previewTable, date, time, availability) &&
 							partySize <= previewTable.capacity
 						}
 						onClose={() => setPreviewTableId(null)}
@@ -1830,6 +1874,7 @@ function TableDetailsModal({
 	date,
 	time,
 	partySize,
+	availability,
 	holdDurationMinutes,
 	selected,
 	onClose,
@@ -1841,12 +1886,13 @@ function TableDetailsModal({
 	date: string;
 	time: string;
 	partySize: number;
+	availability: AvailabilityContext;
 	holdDurationMinutes: number;
 	selected: boolean;
 	onClose: () => void;
 	onSelect: () => void;
 }) {
-	const available = isTableAvailable(table, date, time);
+	const available = isTableAvailable(table, date, time, availability);
 	const fitsParty = partySize <= table.capacity;
 	const selectable = available && fitsParty;
 	const unavailableText = !available

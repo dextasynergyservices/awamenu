@@ -4,6 +4,7 @@ import {
 	ArrowRight,
 	Banknote,
 	Check,
+	Clock,
 	CreditCard,
 	Flame,
 	Landmark,
@@ -35,6 +36,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { env } from "@/env";
 import { getCartSubtotal, useCart } from "@/hooks/useCart";
 import type { BannerItem } from "@/lib/banners";
+import { deliveryFeeFor } from "@/lib/delivery-fee";
 import { cn } from "@/lib/utils";
 
 type CheckoutOrderType =
@@ -53,6 +55,13 @@ type CheckoutFlowProps = {
 	enabledOrderTypes: Record<CheckoutOrderType, boolean>;
 	existingOrderId?: string;
 	manualPayments: ManualPaymentOptionsProps;
+	/** The restaurant's delivery fee and free-delivery threshold. */
+	deliveryFee: number;
+	freeDeliveryMinimum: number | null;
+	/** Set while the restaurant is closed: new orders are refused. */
+	closedNotice: string | null;
+	/** Subscription lapsed: no orders at all, not even adding to an open one. */
+	orderingPaused?: boolean;
 };
 
 const orderTypes: Array<{
@@ -123,6 +132,10 @@ export function CheckoutFlow({
 	existingOrderId,
 	manualPayments,
 	dineInPaymentPolicy,
+	deliveryFee,
+	freeDeliveryMinimum,
+	closedNotice,
+	orderingPaused = false,
 }: CheckoutFlowProps) {
 	const allItems = useCart((state) => state.items);
 	const appendOrderId = useCart((state) => state.appendOrderId);
@@ -226,7 +239,14 @@ export function CheckoutFlow({
 		[allItems, slug],
 	);
 	const subtotal = getCartSubtotal(items);
-	const total = subtotal;
+	// Same calculation the server charges, so the total shown is the total paid.
+	const deliveryCharge = deliveryFeeFor({
+		orderType: type,
+		subtotal,
+		deliveryFee,
+		freeDeliveryMinimum,
+	});
+	const total = subtotal + deliveryCharge;
 	const orderIdToAppend = existingOrderId ?? appendOrderId ?? "";
 	const selectedType = orderIdToAppend
 		? "DINE_IN"
@@ -270,6 +290,9 @@ export function CheckoutFlow({
 		};
 	}, []);
 
+	// Adding to an open table order still works after hours (the server agrees).
+	const closedForOrders =
+		orderingPaused || (closedNotice !== null && !orderIdToAppend);
 	const submitLabel = orderIdToAppend
 		? "Add items to order"
 		: selectedType === "DINE_IN"
@@ -377,6 +400,24 @@ export function CheckoutFlow({
 								Review your order and provide your details.
 							</p>
 						</div>
+
+						{closedForOrders ? (
+							<div
+								role="status"
+								className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 sm:p-4"
+							>
+								<Clock
+									className="mt-0.5 size-4 shrink-0 text-amber-700 sm:size-5"
+									aria-hidden="true"
+								/>
+								<p className="text-xs font-bold text-amber-900 sm:text-sm">
+									{closedNotice}
+									{orderingPaused
+										? ""
+										: " Your cart is saved, so you can place the order once we open."}
+								</p>
+							</div>
+						) : null}
 
 						{/* Steps indicator */}
 						<div className="my-5 sm:my-7 grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4 text-xs sm:text-sm font-black text-slate-500">
@@ -802,14 +843,50 @@ export function CheckoutFlow({
 						/>
 
 						<SubmitButton
-							disabled={items.length === 0 || !turnstileReady}
+							disabled={
+								items.length === 0 || !turnstileReady || closedForOrders
+							}
 							loadingText="Processing..."
 							successText="Order created"
 							className="mt-5 sm:mt-6 inline-flex min-h-[52px] sm:min-h-14 w-full items-center justify-center gap-3 rounded-xl bg-emerald-700 px-4 sm:px-5 text-xs sm:text-base font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.18)] disabled:opacity-50"
 						>
-							{turnstileReady ? submitLabel : "Verifying..."}
+							{closedForOrders
+								? orderingPaused
+									? "Ordering paused"
+									: "Closed right now"
+								: turnstileReady
+									? submitLabel
+									: "Verifying..."}
 							<ArrowRight className="size-3.5 sm:size-5" aria-hidden="true" />
 						</SubmitButton>
+
+						<p className="mt-3 text-center text-xs font-medium leading-5 text-slate-500">
+							By placing this order you agree to AwaMenu&apos;s{" "}
+							<Link
+								href="/terms"
+								target="_blank"
+								className="font-bold text-emerald-700 underline"
+							>
+								Terms
+							</Link>
+							,{" "}
+							<Link
+								href="/privacy"
+								target="_blank"
+								className="font-bold text-emerald-700 underline"
+							>
+								Privacy Policy
+							</Link>{" "}
+							and{" "}
+							<Link
+								href="/refunds"
+								target="_blank"
+								className="font-bold text-emerald-700 underline"
+							>
+								Refund Policy
+							</Link>
+							.
+						</p>
 
 						<p className="mt-3 sm:mt-4 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium text-slate-500">
 							<Lock className="size-3.5 sm:size-4" aria-hidden="true" />
@@ -913,6 +990,25 @@ export function CheckoutFlow({
 									{formatMoney(subtotal, currency)}
 								</span>
 							</div>
+							{type === "DELIVERY" ? (
+								<div className="flex justify-between">
+									<span className="text-slate-600">Delivery</span>
+									<span className="font-black">
+										{deliveryCharge > 0
+											? formatMoney(deliveryCharge, currency)
+											: "Free"}
+									</span>
+								</div>
+							) : null}
+							{type === "DELIVERY" &&
+							deliveryCharge > 0 &&
+							freeDeliveryMinimum !== null &&
+							freeDeliveryMinimum > 0 ? (
+								<p className="text-xs font-semibold text-emerald-700">
+									Free delivery on orders over{" "}
+									{formatMoney(freeDeliveryMinimum, currency)}.
+								</p>
+							) : null}
 							<div className="flex justify-between border-slate-200 border-t pt-4 sm:pt-5 text-base sm:text-xl font-black">
 								<span>Total</span>
 								<span className="text-emerald-800">

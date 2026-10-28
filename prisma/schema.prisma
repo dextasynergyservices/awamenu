@@ -8,8 +8,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  /// Pooled — what the app uses at runtime.
+  url       = env("DATABASE_URL")
+  /// Direct — what prisma migrate uses (see prisma.config.ts).
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────
@@ -191,6 +194,8 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
 }
 
 model Session {
@@ -248,6 +253,15 @@ model StaffMember {
   name     String
   staffId  String  @unique
   isActive Boolean @default(true)
+
+  // Private 4-digit PIN that proves which staff member is acting (the Staff ID
+  // is visible to colleagues). Stored only as a keyed hash; null = not set yet,
+  // and staff actions are refused until the owner sets one.
+  pinHash           String?
+  pinSetAt          DateTime?
+  // Wrong PINs since the last success; reaching the limit locks the PIN.
+  pinFailedAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
 
   // Per-staff permission overrides (null = inherit restaurant default)
   canHandleDineIn        Boolean?
@@ -347,21 +361,146 @@ model Subscription {
 
   @@index([userId])
   @@index([restaurantId])
+  @@index([currentPeriodEnd])
+}
+
+/// One row per subscription charge, append-only — the subscription ledger.
+///
+/// The unique (gateway, reference) is what makes applying a charge idempotent:
+/// the webhook, its retries (Paystack retries for up to 72 hours), and the
+/// owner returning from checkout — or reopening that return link a month later —
+/// all race to insert the same row, and only the winner extends the billing
+/// period. Without it every replay restarted the period from "now".
+///
+/// Ids are kept as plain columns rather than relations so the financial record
+/// survives a deleted user, plan or restaurant.
+model SubscriptionPayment {
+  id        String         @id @default(cuid())
+  gateway   PaymentGateway @default(PAYSTACK)
+  reference String
+
+  userId          String
+  planId          String
+  restaurantId    String?
+  subscriptionId  String?
+  billingInterval BillingInterval
+  /// "INITIAL" for a checkout, "RENEWAL" for Paystack's recurring charge.
+  kind            String
+
+  /// Naira, as the provider reported it.
+  amount         Decimal           @db.Decimal(10, 2)
+  /// The plan price for the interval at the moment the charge landed.
+  expectedAmount Decimal           @db.Decimal(10, 2)
+  currency       String            @default("NGN")
+  /// SUCCESS was applied. MISMATCH was paid but refused (short or wrong
+  /// currency) and needs a human.
+  status         LedgerEntryStatus
+  note           String?
+  rawPayload     Json?
+
+  /// How it was paid when not through a gateway checkout: "BANK_TRANSFER",
+  /// "CASH" or "COMPLIMENTARY" (recorded by a super admin). Null = online.
+  method       String?
+  /// The super admin who recorded an offline payment.
+  recordedById String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([gateway, reference])
+  @@index([userId])
+  @@index([restaurantId, createdAt])
+  @@index([createdAt])
+}
+
+enum PaymentAttemptKind {
+  ORDER
+  RESERVATION
+  SUBSCRIPTION
+}
+
+enum PaymentAttemptStatus {
+  /// Checkout started; the provider has not confirmed payment yet.
+  PENDING
+  /// Confirmed paid and applied (or refused for review) by the settlement path.
+  SETTLED
+  /// Never paid within the verification window.
+  EXPIRED
+}
+
+/// One row per checkout we start, created before the customer is redirected.
+///
+/// This is what lets AwaMenu confirm payments without depending on webhooks.
+/// The Paystack account is shared with another project and has a single webhook
+/// URL, which does not point here — and restaurants on their own gateway keys
+/// send webhooks to their own accounts. So every checkout gets a reference we
+/// generate ("AWM-…"), recorded here with what it pays for and which gateway and
+/// keys it used; the payments cron then verifies each pending attempt by
+/// reference. The return page and (if forwarded) the webhook settle the same
+/// attempt; settlement is idempotent, so whichever arrives first wins.
+///
+/// It is also the trust anchor: what a charge is *for* comes from this row,
+/// never from metadata, which anyone with the public key can set.
+model PaymentAttempt {
+  id                String               @id @default(cuid())
+  /// Ours, sent to the provider. Unique across every app sharing the account.
+  reference         String               @unique
+  /// The provider's own id when it differs (Monnify's transactionReference).
+  providerReference String?
+  gateway           PaymentGateway
+  /// True when the restaurant's own keys were used — verification and refunds
+  /// must go through the same account the charge was made on.
+  ownGateway        Boolean              @default(false)
+  kind              PaymentAttemptKind
+  status            PaymentAttemptStatus @default(PENDING)
+
+  /// Minor units (kobo) we asked the provider to collect.
+  amountKobo Int
+
+  orderId         String?
+  reservationId   String?
+  restaurantId    String?
+  /// SUBSCRIPTION only: who is buying which plan for how long.
+  userId          String?
+  planId          String?
+  billingInterval BillingInterval?
+
+  checkCount    Int       @default(0)
+  lastCheckedAt DateTime?
+  settledAt     DateTime?
+  /// Outcome of settlement, e.g. CONFIRMED, AMOUNT_MISMATCH, REFUND_REQUIRED.
+  outcome       String?
+
+  /// The AwaMenu Pay commission rate and total platform charge (provider
+  /// fee + commission) sent with this charge, so the ledger records what was
+  /// actually charged even if the rate changes before the payment lands.
+  commissionPercent  Decimal? @db.Decimal(5, 2)
+  platformChargeKobo Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@index([reservationId])
 }
 
 // ─── Restaurant (Tenant) ──────────────────────────────
 
 model Restaurant {
-  id          String  @id @default(cuid())
-  slug        String  @unique
-  name        String
-  description String?
-  logoUrl     String?
-  coverUrl    String?
-  phone       String?
-  address     String?
-  currency    String  @default("NGN")
-  timezone    String  @default("Africa/Lagos")
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  /// Slugs this restaurant used before. Printed QR codes and links in old
+  /// emails keep working — proxy.ts redirects them to the current slug — and
+  /// no other restaurant can claim one (which would hijack those QR codes).
+  previousSlugs String[] @default([])
+  name          String
+  description   String?
+  logoUrl       String?
+  coverUrl      String?
+  phone         String?
+  address       String?
+  currency      String   @default("NGN")
+  timezone      String   @default("Africa/Lagos")
 
   whatsappNumber String?
 
@@ -383,6 +522,11 @@ model Restaurant {
 
   dineInPaymentPolicy PaymentPolicy @default(PAY_BEFORE_SERVICE)
 
+  /// Charged on delivery orders, set by the restaurant. 0 = free delivery.
+  deliveryFee         Decimal  @default(0) @db.Decimal(10, 2)
+  /// Orders whose items total at least this get free delivery. Null = never.
+  freeDeliveryMinimum Decimal? @db.Decimal(10, 2)
+
   // ─── Staff Permission Defaults ──────────────────────
   // Global defaults for all staff. Individual staff can override.
   staffDefaultDineIn              Boolean @default(true)
@@ -394,7 +538,13 @@ model Restaurant {
   staffDashboardPassword      String? // Master password for the shared staff dashboard
   staffDashboardAutoLockHours Int     @default(24) // Hours before session auto-locks
 
-  isActive Boolean @default(true)
+  /// Suspended by the Super Admin (false). Only the Super Admin sets this:
+  /// an unpaid subscription is worked out from the subscription itself
+  /// (lib/billing-state.ts), never by switching the restaurant off.
+  isActive         Boolean   @default(true)
+  /// Why, and when, the Super Admin suspended it (shown to the owner).
+  suspensionReason String?
+  suspendedAt      DateTime?
 
   primaryColor   String?
   fontFamily     String?
@@ -422,11 +572,19 @@ model Restaurant {
   payments           OrderPayment[]
   auditEvents        RestaurantAuditEvent[]
 
+  /// AwaMenu Pay commission for this restaurant. Null = the platform rate;
+  /// 0 = exempt; anything else = a custom rate (lib/commission.ts).
+  commissionPercentOverride Decimal?  @db.Decimal(5, 2)
+  /// Why it differs from the platform rate (shown to super admins only).
+  commissionNote            String?
+  commissionUpdatedAt       DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([ownerId])
+  @@index([createdAt])
 }
 
 // ─── Payments ─────────────────────────────────────────
@@ -630,6 +788,12 @@ model MenuItem {
   imageUrl       String?
   isAvailable    Boolean      @default(true)
   isTodaySpecial Boolean      @default(false)
+  /// Shown as "Sold out" and can't be ordered until this instant. "Sold out
+  /// today" sets it to the start of the restaurant's next day, so it clears
+  /// itself overnight. Separate from isAvailable, which is Published/Draft.
+  soldOutUntil   DateTime?
+  /// Dietary and allergen labels, from the fixed list in lib/menu-tags.ts.
+  tags           String[]     @default([])
   sortOrder      Int          @default(0)
   orderItems     OrderItem[]
   createdAt      DateTime     @default(now())
@@ -717,10 +881,30 @@ model Order {
   cancelledAt      DateTime?
   cancellationNote String?
 
+  /// Set when an online payment landed on an order that had already been
+  /// cancelled: the money is on the ledger, and the restaurant must return it.
+  refundRequiredReason String?
+
+  /// When the order first reached each stage. Written by a database trigger
+  /// (migration 8_order_status_times) on every status change, whichever code
+  /// path made it, and never overwritten: the first time counts. Never set by
+  /// application code.
+  /// First in an active status (accepted, or confirmed by payment/auto).
+  confirmedAt DateTime?
+  /// A person accepted it: moved out of PENDING_APPROVAL. Null for orders
+  /// that never needed approval, so "response time" measures people only.
+  acceptedAt  DateTime?
+  preparingAt DateTime?
+  readyAt     DateTime?
+  deliveredAt DateTime?
+  completedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([restaurantId])
+  @@index([restaurantId, createdAt])
+  @@index([createdAt])
   @@index([customerPhone])
   @@index([paymentRef])
   @@index([attendingStaffId])
@@ -838,6 +1022,7 @@ model OrderPayment {
   @@index([orderId])
   @@index([restaurantId, createdAt])
   @@index([settlementStatus])
+  @@index([createdAt])
 }
 
 enum AuditActorType {
@@ -908,6 +1093,11 @@ model ReservationSetting {
   /// How long a table is held past the booking time before it is released to
   /// walk-ins. Distinct from the booking length: this is the no-show window.
   graceMinutes Int @default(15)
+
+  /// How long a guest has to pay once a paid booking is approved. The table is
+  /// held for them meanwhile; when it runs out the hold is released so the slot
+  /// can be sold again. Never extends past the booking itself.
+  paymentWindowMinutes Int @default(120)
 
   /// Confirm free bookings without anyone pressing accept. Only ever applied
   /// once the table is verified free for the slot — an auto-confirmed double
@@ -998,7 +1188,17 @@ model Reservation {
 
   reservationPaymentStatus PaymentStatus @default(PENDING)
   reservationPaymentRef    String?
+  /// The amount due for this booking (and, once paid, the amount collected).
   reservationAmountPaid    Decimal?      @db.Decimal(10, 2)
+
+  /// When an approved-but-unpaid booking stops holding its table. Null for
+  /// bookings that owe nothing. See lib/reservation-booking.ts.
+  paymentDueAt DateTime?
+
+  /// Set when money arrived that cannot be honoured — paid after the hold was
+  /// released and the table resold, paid twice, or paid on a declined request.
+  /// The payment is kept on record and the restaurant is told to refund it.
+  refundRequiredReason String?
 
   preOrderId String? @unique
   preOrder   Order?  @relation("ReservationPreOrder", fields: [preOrderId], references: [id])
@@ -1009,19 +1209,38 @@ model Reservation {
   /// emails. Several paths can confirm one reservation — the customer returning
   /// from Paystack, the webhook, an owner approving it by hand — and a guest
   /// receiving "your table is confirmed" three times reads as a broken system.
-  requestedEmailSentAt DateTime?
-  confirmedEmailSentAt DateTime?
-  declinedEmailSentAt  DateTime?
-  cancelledEmailSentAt DateTime?
-  reminderEmailSentAt  DateTime?
+  requestedEmailSentAt   DateTime?
+  /// "Approved — please pay by …". Only for bookings that owe money.
+  approvedEmailSentAt    DateTime?
+  confirmedEmailSentAt   DateTime?
+  declinedEmailSentAt    DateTime?
+  cancelledEmailSentAt   DateTime?
+  cancelledMessageSentAt DateTime?
+
+  /// Who cancelled ("RESTAURANT" or "GUEST"), when, and why (shown to the
+  /// guest on their booking page and in the cancellation messages).
+  cancelledBy         String?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  /// When the restaurant marked the refund as paid (refundRequiredReason is
+  /// cleared at the same time), so the guest can see it was refunded.
+  refundedAt          DateTime?
+  reminderEmailSentAt DateTime?
 
   rating Rating?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Double booking is prevented in the database itself, not only here: an
+  // exclusion constraint on (tableId, [startsAt, expiresAt)) for holding
+  // statuses lives in prisma/migrations/0_init/migration.sql, because Prisma
+  // cannot express exclusion constraints.
   @@index([restaurantId])
-  @@index([tableId])
+  @@index([restaurantId, startsAt])
+  @@index([tableId, status, startsAt])
+  @@index([status, paymentDueAt])
+  @@index([status, expiresAt])
   @@index([startsAt])
   @@index([customerPhone])
 }
@@ -1047,7 +1266,12 @@ model CustomerOtp {
   id         String    @id @default(cuid())
   identifier String
   channel    String
+  /// A keyed hash of the code (lib/customer-otp.ts), never the code itself —
+  /// a database read must not hand out working sign-in codes.
   code       String
+  /// Wrong guesses against this code. It is burned after five, so a 6-digit
+  /// code can't be brute-forced inside its ten-minute life.
+  attempts   Int       @default(0)
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -1173,6 +1397,8 @@ model Rating {
   createdAt DateTime @default(now())
 
   @@index([restaurantId])
+  @@index([restaurantId, createdAt])
+  @@index([createdAt])
 }
 
 // ─── Analytics ────────────────────────────────────────
@@ -1202,6 +1428,56 @@ model OrderEvent {
 
   @@index([orderId])
   @@index([staffId])
+}
+
+// ─── Outbox ───────────────────────────────────────────
+
+enum OutboxJobKind {
+  EMAIL
+  /// WhatsApp or SMS through Twilio.
+  MESSAGE
+  WEB_PUSH
+}
+
+enum OutboxJobStatus {
+  PENDING
+  SENDING
+  SENT
+  /// Failed; will retry at runAfter.
+  FAILED
+  /// Gave up after maxAttempts — reported to Sentry, kept for inspection.
+  DEAD
+}
+
+/// Side effects waiting to be delivered: emails, WhatsApp/SMS, Web Push.
+///
+/// Written alongside the change that caused them and sent right after the
+/// response (lib/outbox.ts), so a slow or failing provider can neither delay
+/// the customer nor lose the message: failures retry with backoff from the
+/// payments cron. Sent rows are deleted after 14 days — payloads carry contact
+/// details, which shouldn't be kept longer than the delivery needs.
+model OutboxJob {
+  id          String          @id @default(cuid())
+  kind        OutboxJobKind
+  /// Everything needed to send, fully rendered — retries never re-read
+  /// application state that may have changed since.
+  payload     Json
+  status      OutboxJobStatus @default(PENDING)
+  attempts    Int             @default(0)
+  maxAttempts Int             @default(6)
+  /// Not before this time (backoff).
+  runAfter    DateTime        @default(now())
+  /// A sender holds the job until this time; a crashed sender's job is picked
+  /// up again once it passes.
+  lockedUntil DateTime?
+  lastError   String?
+  sentAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, runAfter])
+  @@index([sentAt])
 }
 
 // ─── Super Admin ──────────────────────────────────────
@@ -1249,7 +1525,35 @@ model PlatformSetting {
   /// Providers a restaurant may connect with their own keys.
   ownGatewayProviders PaymentGateway[] @default([PAYSTACK, FLUTTERWAVE, MONNIFY])
 
+  // ─── Company details shown on the legal pages ───
+  // Null falls back to a visible placeholder (lib/legal.ts).
+  legalCompanyName  String?
+  legalRcNumber     String?
+  legalAddress      String?
+  legalContactEmail String?
+  legalPrivacyEmail String?
+
   updatedAt DateTime @updatedAt
+}
+
+enum LegalDocumentKind {
+  PRIVACY
+  TERMS
+  REFUNDS
+}
+
+/// A legal page as edited by the super admin. No row = the built-in default
+/// text in lib/legal-defaults.ts.
+model LegalDocument {
+  kind          LegalDocumentKind @id
+  intro         String
+  /// Limited Markdown: ## / ### headings, "- " lists, **bold**, [links](url),
+  /// and {{companyName}}-style placeholders. Rendered by lib/legal-markdown.tsx.
+  body          String
+  effectiveDate DateTime          @db.Date
+  updatedById   String?
+  updatedByName String?
+  updatedAt     DateTime          @updatedAt
 }
 
 model RateLimit {

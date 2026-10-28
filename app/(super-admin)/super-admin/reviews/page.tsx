@@ -1,22 +1,33 @@
+import type { Prisma } from "@prisma/client";
 import { ReviewsTable } from "@/components/super-admin/ReviewsTable";
+import { Pagination } from "@/components/ui/Pagination";
 import { db } from "@/lib/db";
+import { clampPage, pageInfo, parsePage } from "@/lib/pagination";
 
 export default async function SuperAdminReviewsPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ q?: string }>;
+	searchParams: Promise<Record<string, string | undefined>>;
 }) {
-	const { q } = await searchParams;
-	const query = q?.trim();
+	const params = await searchParams;
+	const query = params.q?.trim();
+	const where: Prisma.RatingWhereInput | undefined = query
+		? { restaurant: { name: { contains: query, mode: "insensitive" } } }
+		: undefined;
+	const matching = await db.rating.count({ where });
+	const page = clampPage(parsePage(params), matching);
 
 	const [totalReviews, ratingAgg, reviews] = await Promise.all([
 		db.rating.count(),
-		db.rating.aggregate({ _avg: { overallRating: true } }),
+		// The platform average excludes hidden reviews, like restaurant figures do.
+		db.rating.aggregate({
+			where: { isHidden: false },
+			_avg: { overallRating: true },
+		}),
 		db.rating.findMany({
-			where: query
-				? { restaurant: { name: { contains: query, mode: "insensitive" } } }
-				: undefined,
+			where,
 			orderBy: { createdAt: "desc" },
+			skip: page.skip,
 			select: {
 				id: true,
 				overallRating: true,
@@ -26,7 +37,7 @@ export default async function SuperAdminReviewsPage({
 				createdAt: true,
 				restaurant: { select: { name: true } },
 			},
-			take: 100,
+			take: page.take,
 		}),
 	]);
 
@@ -90,6 +101,12 @@ export default async function SuperAdminReviewsPage({
 					isHidden: review.isHidden,
 					createdAt: review.createdAt.toISOString(),
 				}))}
+			/>
+			<Pagination
+				info={pageInfo(page, matching)}
+				basePath="/super-admin/reviews"
+				query={params}
+				noun="reviews"
 			/>
 		</div>
 	);

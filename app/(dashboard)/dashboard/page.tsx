@@ -1,3 +1,4 @@
+import { UserRole } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
@@ -13,11 +14,17 @@ import { db } from "@/lib/db";
 export default async function DashboardIndexPage() {
 	const user = await requireUser();
 
-	const restaurant = await db.restaurant.findFirst({
-		where: { ownerId: user.id },
-		orderBy: { createdAt: "asc" },
-		select: { slug: true },
-	});
+	const [record, restaurant] = await Promise.all([
+		db.user.findUnique({ where: { id: user.id }, select: { role: true } }),
+		db.restaurant.findFirst({
+			where: { ownerId: user.id },
+			orderBy: { createdAt: "asc" },
+			select: { slug: true },
+		}),
+	]);
+
+	// Super admins have no restaurant; without this they'd land on plan selection.
+	if (record?.role === UserRole.SUPER_ADMIN) redirect("/super-admin");
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
 

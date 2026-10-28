@@ -1,22 +1,33 @@
 import { NotificationAudience } from "@prisma/client";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { AdminSuspendedScreen } from "@/components/admin/AdminSuspendedScreen";
 import { AdminDashboardShell } from "@/components/admin/admin-dashboard-shell";
-import { SubscriptionExpiredGate } from "@/components/admin/SubscriptionExpiredGate";
+import { BillingLapsedBanner } from "@/components/admin/BillingLapsedBanner";
 import { SubscriptionExpiryBanner } from "@/components/admin/SubscriptionExpiryBanner";
 import { RestaurantBrandProvider } from "@/components/shared/RestaurantBrandContext";
 import { requireUser } from "@/lib/auth-guards";
+import { BILLING_INTERVAL_DETAILS, parseBillingInterval } from "@/lib/billing";
+import {
+	billingStateOf,
+	canTrade,
+	GRACE_DAYS,
+	isAutoRenewing,
+	subscriptionPrice,
+} from "@/lib/billing-state";
 import { db } from "@/lib/db";
 import { LOGO_ICON_URL } from "@/lib/logo";
 import { getRestaurantBrand } from "@/lib/restaurant-brand";
-import { isSubscriptionActive } from "@/lib/subscription";
 import { getThemeStyle } from "@/lib/theme-style";
 
-const DAY_MS = 1000 * 60 * 60 * 24;
-/** Matches the first rung of the cron's email ladder (see api/cron/subscriptions). */
-const EXPIRY_NOTICE_DAYS = 7;
-/** Matches `isSubscriptionActive`'s grace window and the cron's suspension point. */
-const GRACE_DAYS = 3;
+function formatDay(date: Date) {
+	return new Intl.DateTimeFormat("en-GB", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "Africa/Lagos",
+	}).format(date);
+}
 
 export async function generateMetadata({
 	params,
@@ -59,115 +70,58 @@ export default async function DashboardLayout({
 			slug: true,
 			logoUrl: true,
 			primaryColor: true,
+			timezone: true,
 			isActive: true,
+			suspensionReason: true,
+			suspendedAt: true,
+			// This restaurant's own subscription: an owner with two restaurants
+			// has two, and "the owner's newest" was the wrong one for the other.
+			subscription: {
+				select: {
+					status: true,
+					currentPeriodEnd: true,
+					billingInterval: true,
+					paystackSubscriptionCode: true,
+					plan: {
+						select: {
+							id: true,
+							name: true,
+							monthlyPrice: true,
+							quarterlyPrice: true,
+							yearlyPrice: true,
+						},
+					},
+				},
+			},
 		},
 	});
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
 
+	// Suspended by the Super Admin: the only case that closes the dashboard.
+	// An unpaid plan never lands here; it's read-only instead (below).
 	if (!restaurant.isActive) {
-		return (
-			<main className="grid min-h-screen place-items-center bg-[#f6faf7] px-4 py-8">
-				<section className="mx-auto max-w-lg rounded-3xl border border-red-100 bg-white p-5 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-					<p className="text-sm font-black uppercase tracking-wide text-red-700">
-						Restaurant Suspended
-					</p>
-					<h1 className="mt-3 text-2xl font-black text-slate-950">
-						{restaurant.name} is currently suspended
-					</h1>
-					<p className="mt-3 text-sm font-bold leading-6 text-slate-600">
-						Access to this dashboard has been paused by AwaMenu. Contact support
-						for more information.
-					</p>
-				</section>
-			</main>
-		);
-	}
-
-	const subscription = await db.subscription.findFirst({
-		where: { userId: user.id },
-		orderBy: { createdAt: "desc" },
-		include: { plan: true },
-	});
-
-	if (!isSubscriptionActive(subscription)) {
-		const [freePlan, categories] = await Promise.all([
-			db.plan.findUniqueOrThrow({ where: { tier: "FREE" } }),
-			db.menuCategory.findMany({
-				where: { restaurantId: restaurant.id },
-				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-				select: { id: true, name: true, emoji: true },
-			}),
-		]);
-		const currentPlan = subscription?.plan ?? freePlan;
-
-		// Only true upgrades (strictly pricier than the plan that just lapsed)
-		// belong under "Upgrade" — anything cheaper is a downgrade and would be
-		// mislabeled here; a lower-priced paid plan is still reachable via the
-		// Free-plan flow's own upsell path once they're back in the dashboard.
-		const upgradePlans = await db.plan.findMany({
-			where: {
-				isActive: true,
-				tier: { not: "FREE" },
-				id: { not: subscription?.planId },
-				monthlyPrice: { gt: currentPlan.monthlyPrice },
-			},
-			orderBy: { monthlyPrice: "asc" },
-			select: {
-				id: true,
-				name: true,
-				monthlyPrice: true,
-				quarterlyPrice: true,
-				yearlyPrice: true,
-			},
+		const settings = await db.platformSetting.findFirst({
+			select: { legalContactEmail: true },
 		});
-
 		return (
-			<SubscriptionExpiredGate
-				restaurantId={restaurant.id}
+			<AdminSuspendedScreen
 				restaurantName={restaurant.name}
-				slug={restaurant.slug}
-				currentPlan={{
-					id: currentPlan.id,
-					name: currentPlan.name,
-					monthlyPrice: Number(currentPlan.monthlyPrice),
-					quarterlyPrice: Number(currentPlan.quarterlyPrice),
-					yearlyPrice: Number(currentPlan.yearlyPrice),
-				}}
-				upgradePlans={upgradePlans.map((plan) => ({
-					id: plan.id,
-					name: plan.name,
-					monthlyPrice: Number(plan.monthlyPrice),
-					quarterlyPrice: Number(plan.quarterlyPrice),
-					yearlyPrice: Number(plan.yearlyPrice),
-				}))}
-				categories={categories}
-				freePlanMaxCategories={freePlan.maxCategories}
+				reason={restaurant.suspensionReason}
+				since={
+					restaurant.suspendedAt ? formatDay(restaurant.suspendedAt) : null
+				}
+				supportEmail={settings?.legalContactEmail || "hello@awamenu.com"}
 			/>
 		);
 	}
 
-	const isPaid = subscription?.plan
-		? Number(subscription.plan.monthlyPrice) > 0
-		: false;
-
-	// Surface the renewal countdown once a paid plan is within a week of
-	// expiring, and keep it up through the grace period. Gated here (server
-	// side) rather than in the banner so the window can't be manipulated from
-	// the client; the banner only owns the ticking clock.
-	const expiryWindow = (() => {
-		if (!isPaid || !subscription) return null;
-		const msLeft = subscription.currentPeriodEnd.getTime() - Date.now();
-		const withinNotice = msLeft <= EXPIRY_NOTICE_DAYS * DAY_MS;
-		const beforeSuspension = msLeft > -GRACE_DAYS * DAY_MS;
-		if (!withinNotice || !beforeSuspension) return null;
-
-		return {
-			planName: subscription.plan.name,
-			currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
-			autoRenew: Boolean(subscription.paystackSubscriptionCode),
-		};
-	})();
+	const subscription = restaurant.subscription;
+	const billingState = billingStateOf(subscription);
+	const isPaid = subscription ? subscriptionPrice(subscription) > 0 : false;
+	const interval = subscription
+		? parseBillingInterval(subscription.billingInterval)
+		: null;
 
 	// Get initial unread count for the notification bell
 	const unreadCount = await db.notification.count({
@@ -230,6 +184,7 @@ export default async function DashboardLayout({
 		// The owner's own dashboard isn't a customer-facing surface, so it
 		// never carries the attribution badge regardless of plan.
 		showAwamenuBranding: false,
+		timeZone: restaurant.timezone,
 	};
 
 	return (
@@ -240,18 +195,44 @@ export default async function DashboardLayout({
 				restaurantLogoUrl={restaurant.logoUrl}
 				slug={restaurant.slug}
 				userId={user.id}
+				userName={user.name || user.email}
+				userEmail={user.email}
 				isPaid={isPaid}
 				initialNotifications={notifications}
 				initialUnreadCount={unreadCount}
 			>
 				<RestaurantBrandProvider brand={brand}>
-					{expiryWindow ? (
+					{subscription &&
+					isPaid &&
+					(billingState === "EXPIRING_SOON" || billingState === "GRACE") ? (
 						<SubscriptionExpiryBanner
 							slug={restaurant.slug}
-							planName={expiryWindow.planName}
-							currentPeriodEnd={expiryWindow.currentPeriodEnd}
+							planName={subscription.plan.name}
+							currentPeriodEnd={subscription.currentPeriodEnd.toISOString()}
 							graceDays={GRACE_DAYS}
-							autoRenew={expiryWindow.autoRenew}
+							autoRenew={isAutoRenewing(subscription)}
+						/>
+					) : null}
+					{!canTrade(billingState) ? (
+						<BillingLapsedBanner
+							restaurantId={restaurant.id}
+							slug={restaurant.slug}
+							plan={
+								subscription && interval
+									? {
+											id: subscription.plan.id,
+											name: subscription.plan.name,
+											price: subscriptionPrice(subscription),
+											interval,
+										}
+									: null
+							}
+							intervalLabel={
+								interval ? BILLING_INTERVAL_DETAILS[interval].label : null
+							}
+							expiredOn={
+								subscription ? formatDay(subscription.currentPeriodEnd) : null
+							}
 						/>
 					) : null}
 					{children}

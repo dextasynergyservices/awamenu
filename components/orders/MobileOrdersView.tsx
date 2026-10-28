@@ -19,12 +19,14 @@ import { useMemo, useState } from "react";
 import { AdminOrderControls } from "@/components/orders/AdminOrderControls";
 import { OrderActionForm } from "@/components/orders/OrderActionForm";
 import {
-	type OrderEventDTO,
+	type OrderStageTimes,
 	OrderTimelineModal,
 } from "@/components/orders/OrderTimeline";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import { SubmitButton } from "@/components/ui/action-button";
 import { getStatusFlow } from "@/lib/order-status-flow";
+import { formatDateTime } from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────
@@ -45,6 +47,7 @@ type Order = {
 	type: string;
 	status: string;
 	cancellationNote: string | null;
+	refundRequiredReason?: string | null;
 	paymentStatus: string;
 	tableNumber: string | null;
 	tableLabel: string | null;
@@ -65,7 +68,13 @@ type Order = {
 		amount: string | number;
 		method: string;
 	}>;
-	events: OrderEventDTO[];
+	confirmedAt?: Date | string | null;
+	acceptedAt?: Date | string | null;
+	preparingAt?: Date | string | null;
+	readyAt?: Date | string | null;
+	deliveredAt?: Date | string | null;
+	completedAt?: Date | string | null;
+	cancelledAt?: Date | string | null;
 	attendingStaff: { name: string; staffId: string | null } | null;
 };
 
@@ -567,6 +576,11 @@ function OrderCard({
 							{order.cancellationNote}
 						</p>
 					) : null}
+					{order.refundRequiredReason ? (
+						<p className="mt-2 whitespace-pre-line rounded-lg bg-amber-50 p-2 text-xs font-bold text-amber-900">
+							Refund needed: {order.refundRequiredReason}
+						</p>
+					) : null}
 				</div>
 			) : (
 				<div className="mt-3 rounded-xl bg-yellow-50 p-3">
@@ -639,6 +653,7 @@ function OrderDetailModal({
 	whatsappEnabled: boolean;
 	onClose: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const [showTimeline, setShowTimeline] = useState(false);
 	const steps = getStatusSteps(order.type);
 	const currentStep = getStepIndex(order.status, order.type);
@@ -676,10 +691,7 @@ function OrderDetailModal({
 								</span>
 							</div>
 							<p className="mt-1 text-xs font-medium text-slate-400">
-								{new Date(order.createdAt).toLocaleString("en-NG", {
-									dateStyle: "medium",
-									timeStyle: "short",
-								})}
+								{formatDateTime(order.createdAt, tz)}
 							</p>
 						</div>
 						<button
@@ -961,7 +973,7 @@ function OrderDetailModal({
 							currency={currency}
 							variant="mobile"
 						/>
-						{order.events ? (
+						{order.createdAt ? (
 							<div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
 								<button
 									type="button"
@@ -1002,14 +1014,7 @@ function OrderDetailModal({
 
 				{showTimeline && (
 					<OrderTimelineModal
-						events={order.events || []}
-						fallback={{
-							createdAt: order.createdAt,
-							status: order.status,
-							paymentStatus: order.paymentStatus,
-							paymentMethod: order.dineInPaymentMethod,
-							attendingStaff: order.attendingStaff,
-						}}
+						order={order as OrderStageTimes}
 						onClose={() => setShowTimeline(false)}
 					/>
 				)}

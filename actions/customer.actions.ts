@@ -3,9 +3,16 @@
 import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { ActionError, actionData } from "@/lib/action-error";
+import {
+	createCustomerSession,
+	destroyCustomerSession,
+	getCustomerSession,
+} from "@/lib/customer-session";
 import { db } from "@/lib/db";
 import { sendCustomerOtpEmail } from "@/lib/email";
 import { availableOtpChannels, sendOtpOverTwilio } from "@/lib/otp-delivery";
+import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import { hashesMatch, keyedHash } from "@/lib/signed-token";
 
 const identityTypeSchema = z.enum(["phone", "email"]);
 const otpChannelSchema = z.enum(["whatsapp", "sms", "email"]);
@@ -106,6 +113,20 @@ async function ensureCustomerProfile(
 	});
 }
 
+/** Codes live ten minutes and allow five wrong guesses before they burn. */
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+/** Also enforced from the database, so the cap holds even without Redis. */
+const OTP_MAX_SENDS_PER_15_MIN = 3;
+
+const SIGNED_OUT = "Please sign in again to see your account.";
+
+/** Bound to the identifier, so a code issued for one number can't be used
+ *  for another even if stored hashes were ever swapped. */
+function hashOtp(identifier: string, code: string) {
+	return keyedHash("customer-otp", `${identifier}:${code}`);
+}
+
 export async function requestCustomerOtpAction(input: unknown) {
 	return actionData(async () => {
 		const parsed = requestOtpSchema.parse(input);
@@ -113,6 +134,23 @@ export async function requestCustomerOtpAction(input: unknown) {
 			parsed.identityType,
 			parsed.identifier,
 		);
+
+		// Every send costs money (WhatsApp/SMS via Twilio) and can be aimed at a
+		// stranger's phone, so it is capped per recipient and per sender.
+		const clientIp = await getClientIp();
+		await enforceRateLimit("otpSendIp", clientIp);
+		await enforceRateLimit("otpSendIdentifier", identifier);
+		const recentSends = await db.customerOtp.count({
+			where: {
+				identifier,
+				createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) },
+			},
+		});
+		if (recentSends >= OTP_MAX_SENDS_PER_15_MIN) {
+			throw new ActionError(
+				"We've sent several codes already. Please wait a few minutes before asking for another.",
+			);
+		}
 
 		const restaurant = await db.restaurant.findFirstOrThrow({
 			where: { slug: parsed.restaurantSlug, isActive: true },
@@ -131,17 +169,22 @@ export async function requestCustomerOtpAction(input: unknown) {
 			);
 		}
 
-		await ensureCustomerProfile(parsed.identityType, identifier);
-
 		// `crypto.randomInt` rather than `Math.random`, which is not a
 		// cryptographically secure source and makes codes predictable.
 		const code = String(randomInt(100000, 1000000));
+
+		// Only the newest code works: older unused ones are retired, so a guesser
+		// can't spread attempts across several live codes.
+		await db.customerOtp.updateMany({
+			where: { identifier, consumedAt: null },
+			data: { consumedAt: new Date() },
+		});
 		await db.customerOtp.create({
 			data: {
 				identifier,
 				channel: parsed.channel,
-				code,
-				expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+				code: hashOtp(identifier, code),
+				expiresAt: new Date(Date.now() + OTP_TTL_MS),
 			},
 		});
 
@@ -149,7 +192,7 @@ export async function requestCustomerOtpAction(input: unknown) {
 			await sendCustomerOtpEmail({
 				to: identifier,
 				code,
-				restaurantName: restaurant.name,
+				restaurantId: restaurant.id,
 			});
 		} else {
 			const sent = await sendOtpOverTwilio({
@@ -174,46 +217,95 @@ export async function verifyCustomerOtpAction(input: unknown) {
 			parsed.identityType,
 			parsed.identifier,
 		);
+
+		const clientIp = await getClientIp();
+		await enforceRateLimit("otpVerify", `${clientIp}:${identifier}`);
+
+		// The live code for this identifier, compared by hash below — not looked
+		// up by code, which would let a guess land without counting as an attempt.
 		const otp = await db.customerOtp.findFirst({
 			where: {
 				identifier,
-				code: parsed.code,
 				consumedAt: null,
 				expiresAt: { gt: new Date() },
 			},
 			orderBy: { createdAt: "desc" },
 		});
 
-		if (!otp) {
-			throw new ActionError("Invalid or expired verification code.");
+		const invalid = "Invalid or expired verification code.";
+		if (!otp) throw new ActionError(invalid);
+
+		if (!hashesMatch(otp.code, hashOtp(identifier, parsed.code))) {
+			// Counted atomically; the fifth wrong guess burns the code.
+			const updated = await db.customerOtp.update({
+				where: { id: otp.id },
+				data: { attempts: { increment: 1 } },
+				select: { attempts: true },
+			});
+			if (updated.attempts >= OTP_MAX_ATTEMPTS) {
+				await db.customerOtp.update({
+					where: { id: otp.id },
+					data: { consumedAt: new Date() },
+				});
+				throw new ActionError(
+					"Too many wrong codes. Please request a new one.",
+				);
+			}
+			throw new ActionError(invalid);
 		}
 
-		await db.customerOtp.update({
-			where: { id: otp.id },
+		// Claimed conditionally, so one code can't sign in twice in a race.
+		const claimed = await db.customerOtp.updateMany({
+			where: { id: otp.id, consumedAt: null },
 			data: { consumedAt: new Date() },
 		});
-		await ensureCustomerProfile(parsed.identityType, identifier);
+		if (claimed.count === 0) throw new ActionError(invalid);
 
-		return getCustomerHubDataAction({
-			restaurantSlug: parsed.restaurantSlug,
-			identityType: parsed.identityType,
+		await ensureCustomerProfile(parsed.identityType, identifier);
+		await createCustomerSession(parsed.identityType, identifier);
+
+		return loadCustomerHub(
+			parsed.restaurantSlug,
+			parsed.identityType,
 			identifier,
-		});
+		);
 	});
 }
 
+/** Ends the customer's session on this device. */
+export async function signOutCustomerAction() {
+	await destroyCustomerSession();
+	return { ok: true as const };
+}
+
+/**
+ * The signed-in customer's orders, reservations and profile.
+ *
+ * Identity comes from the session cookie only. This used to accept the phone
+ * number or email as an argument, which returned anyone's order history to
+ * anyone who asked.
+ */
 export async function getCustomerHubDataAction(input: unknown) {
-	const parsed = z
-		.object({
-			restaurantSlug: z.string().min(1),
-			identityType: identityTypeSchema,
-			identifier: z.string().trim().min(3).max(120),
-		})
-		.parse(input);
-	const identifier = normalizeIdentifier(
-		parsed.identityType,
-		parsed.identifier,
-	);
+	return actionData(async () => {
+		const { restaurantSlug } = z
+			.object({ restaurantSlug: z.string().min(1) })
+			.parse(input);
+		const session = await getCustomerSession();
+		if (!session) throw new ActionError(SIGNED_OUT);
+		return loadCustomerHub(
+			restaurantSlug,
+			session.identityType,
+			session.identifier,
+		);
+	});
+}
+
+async function loadCustomerHub(
+	restaurantSlug: string,
+	identityType: "phone" | "email",
+	identifier: string,
+) {
+	const parsed = { restaurantSlug, identityType };
 	const profile = await ensureCustomerProfile(parsed.identityType, identifier);
 	const orderWhere =
 		parsed.identityType === "email"
@@ -319,26 +411,42 @@ export async function getCustomerHubDataAction(input: unknown) {
 	};
 }
 
+/**
+ * Updates the signed-in customer's own profile.
+ *
+ * Whose profile comes from the session; it used to come from the request, so
+ * anyone could rewrite anyone's name and delivery address. The sign-in
+ * identifier itself is pinned to the session's value — it is what the session
+ * proves, and changing it here would quietly hand the profile to another number.
+ */
 export async function updateCustomerProfileAction(input: unknown) {
-	const parsed = profileSchema.parse(input);
-	const identifier = parsed.identifier.trim();
-	const existingProfile = await findCustomerProfile(identifier);
-	const data = {
-		fullName: normalizeOptional(parsed.fullName),
-		whatsappNumber: normalizeOptional(parsed.whatsappNumber),
-		alternativePhone: normalizeOptional(parsed.alternativePhone),
-		email: normalizeOptional(parsed.email || undefined),
-		deliveryAddress: normalizeOptional(parsed.deliveryAddress),
-	};
+	return actionData(async () => {
+		const session = await getCustomerSession();
+		if (!session) throw new ActionError(SIGNED_OUT);
 
-	if (existingProfile) {
+		const parsed = profileSchema.omit({ identifier: true }).parse(input);
+		const profile = await ensureCustomerProfile(
+			session.identityType,
+			session.identifier,
+		);
+
 		return db.customerProfile.update({
-			where: { id: existingProfile.id },
-			data,
+			where: { id: profile.id },
+			data: {
+				fullName: normalizeOptional(parsed.fullName),
+				whatsappNumber:
+					session.identityType === "phone"
+						? session.identifier
+						: normalizeOptional(parsed.whatsappNumber),
+				alternativePhone: normalizeOptional(parsed.alternativePhone),
+				email:
+					session.identityType === "email"
+						? session.identifier
+						: normalizeOptional(parsed.email || undefined),
+				deliveryAddress: normalizeOptional(parsed.deliveryAddress),
+			},
 		});
-	}
-
-	return db.customerProfile.create({ data });
+	});
 }
 
 const lookupByPhoneSchema = z.object({
@@ -346,9 +454,25 @@ const lookupByPhoneSchema = z.object({
 	phone: z.string().trim().min(7).max(40),
 });
 
+/**
+ * Checkout prefill for a returning customer.
+ *
+ * Only for the signed-in customer, and only for a phone number that is theirs.
+ * It used to return the name, email and home address on file for *any* number
+ * typed in — a lookup service for strangers' addresses.
+ */
 export async function lookupCustomerByPhoneAction(input: unknown) {
 	const parsed = lookupByPhoneSchema.parse(input);
 	const phone = parsed.phone.replace(/\s+/g, "").trim();
+
+	const session = await getCustomerSession();
+	if (!session) return null;
+	const sessionProfile = await findCustomerProfile(session.identifier);
+	const ownsPhone =
+		(session.identityType === "phone" && session.identifier === phone) ||
+		sessionProfile?.whatsappNumber === phone ||
+		sessionProfile?.alternativePhone === phone;
+	if (!ownsPhone) return null;
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug: parsed.restaurantSlug, isActive: true },
 		select: { id: true },

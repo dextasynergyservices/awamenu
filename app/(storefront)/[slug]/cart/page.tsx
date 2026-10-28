@@ -1,7 +1,21 @@
-import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
 import { CheckoutFlow } from "@/components/checkout/CheckoutFlow";
 import { bannerRecordToItem } from "@/lib/banners";
+import { billingStateOf, canTrade } from "@/lib/billing-state";
 import { db } from "@/lib/db";
+import { orderingClosedNotice } from "@/lib/opening-hours";
+import { privateStorefrontMetadata } from "@/lib/storefront-share";
+
+/** The restaurant's name in the tab and link preview; never indexed. */
+export async function generateMetadata({
+	params,
+}: {
+	params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+	const { slug } = await params;
+	return privateStorefrontMetadata(slug, "Your cart");
+}
 
 type CartPageProps = {
 	params: Promise<{ slug: string }>;
@@ -15,8 +29,22 @@ export default async function CartPage({
 	const { slug } = await params;
 	const { orderId } = (await searchParams) ?? {};
 	const restaurant = await db.restaurant.findFirst({
-		where: { slug, isActive: true },
+		where: { slug },
 		select: {
+			isActive: true,
+			subscription: {
+				select: {
+					currentPeriodEnd: true,
+					billingInterval: true,
+					plan: {
+						select: {
+							monthlyPrice: true,
+							quarterlyPrice: true,
+							yearlyPrice: true,
+						},
+					},
+				},
+			},
 			name: true,
 			logoUrl: true,
 			slug: true,
@@ -25,7 +53,13 @@ export default async function CartPage({
 			dineInEnabled: true,
 			pickupEnabled: true,
 			deliveryEnabled: true,
+			deliveryFee: true,
+			freeDeliveryMinimum: true,
 			tableReservationEnabled: true,
+			timezone: true,
+			openingHours: {
+				select: { dayOfWeek: true, opensAt: true, closesAt: true },
+			},
 			banners: {
 				where: { isActive: true },
 				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -42,6 +76,9 @@ export default async function CartPage({
 	});
 
 	if (!restaurant) notFound();
+	// Suspended: the menu page explains. Lapsed: checkout shows why it's paused.
+	if (!restaurant.isActive) redirect(`/${slug}`);
+	const orderingPaused = !canTrade(billingStateOf(restaurant.subscription));
 	const bannerItems = restaurant.banners.map(bannerRecordToItem);
 
 	// Only the manual channels are surfaced here — they're the ones the customer
@@ -89,6 +126,18 @@ export default async function CartPage({
 				TABLE_RESERVATION: restaurant.tableReservationEnabled,
 			}}
 			existingOrderId={orderId}
+			orderingPaused={orderingPaused}
+			closedNotice={
+				orderingPaused
+					? "Online ordering is paused right now. Please order at the restaurant."
+					: orderingClosedNotice(restaurant.openingHours, restaurant.timezone)
+			}
+			deliveryFee={Number(restaurant.deliveryFee)}
+			freeDeliveryMinimum={
+				restaurant.freeDeliveryMinimum === null
+					? null
+					: Number(restaurant.freeDeliveryMinimum)
+			}
 		/>
 	);
 }

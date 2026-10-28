@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { env } from "@/env";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { recordCronRun } from "@/lib/cron-heartbeat";
 import { db } from "@/lib/db";
+import { isAwamenuReference } from "@/lib/payment-attempts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -47,27 +49,62 @@ export async function GET(request: Request) {
 	end.setUTCHours(0, 0, 0, 0);
 	const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
-	const url = new URL("https://api.paystack.co/transaction");
-	url.searchParams.set("from", start.toISOString());
-	url.searchParams.set("to", end.toISOString());
-	url.searchParams.set("status", "success");
-	url.searchParams.set("perPage", "200");
+	// Paged: the account is shared with another project, so a day can hold far
+	// more than one page of transactions, most of them not ours. Bounded so a
+	// very busy day cannot outlive the function.
+	const transactions: PaystackTransaction[] = [];
+	for (let page = 1; page <= 10; page += 1) {
+		const url = new URL("https://api.paystack.co/transaction");
+		url.searchParams.set("from", start.toISOString());
+		url.searchParams.set("to", end.toISOString());
+		url.searchParams.set("status", "success");
+		url.searchParams.set("perPage", "100");
+		url.searchParams.set("page", String(page));
 
-	const res = await fetch(url, {
-		headers: { Authorization: `Bearer ${paystackKey}` },
-		cache: "no-store",
-		signal: AbortSignal.timeout(30_000),
-	});
+		const res = await fetch(url, {
+			headers: { Authorization: `Bearer ${paystackKey}` },
+			cache: "no-store",
+			signal: AbortSignal.timeout(20_000),
+		});
 
-	if (!res.ok) {
-		return NextResponse.json(
-			{ error: `Paystack returned ${res.status}` },
-			{ status: 502 },
+		if (!res.ok) {
+			return NextResponse.json(
+				{ error: `Paystack returned ${res.status}` },
+				{ status: 502 },
+			);
+		}
+
+		const payload = (await res.json()) as { data?: PaystackTransaction[] };
+		const batch = payload.data ?? [];
+		// Only this app's charges. The other project's are not ours to judge.
+		transactions.push(
+			...batch.filter((transaction) =>
+				isAwamenuReference(transaction.reference),
+			),
 		);
+		if (batch.length < 100) break;
 	}
 
-	const payload = (await res.json()) as { data?: PaystackTransaction[] };
-	const transactions = payload.data ?? [];
+	// Reservation deposits without food and subscription charges have no order
+	// ledger row; a settled attempt or a subscription ledger row accounts for
+	// them, so they are not reported as missing.
+	const references = transactions
+		.map((transaction) => transaction.reference)
+		.filter((reference): reference is string => Boolean(reference));
+	const [settledAttempts, subscriptionRows] = await Promise.all([
+		db.paymentAttempt.findMany({
+			where: { reference: { in: references }, status: "SETTLED" },
+			select: { reference: true },
+		}),
+		db.subscriptionPayment.findMany({
+			where: { gateway: "PAYSTACK", reference: { in: references } },
+			select: { reference: true },
+		}),
+	]);
+	const accountedFor = new Set([
+		...settledAttempts.map((row) => row.reference),
+		...subscriptionRows.map((row) => row.reference),
+	]);
 
 	const ours = await db.orderPayment.findMany({
 		where: {
@@ -95,9 +132,9 @@ export async function GET(request: Request) {
 		const mine = byReference.get(transaction.reference);
 
 		if (!mine) {
-			// Subscription charges and reservation deposits do not create order
-			// payments, so an unmatched reference is a lead rather than a fault.
-			missingLocally.push(transaction.reference);
+			if (!accountedFor.has(transaction.reference)) {
+				missingLocally.push(transaction.reference);
+			}
 			continue;
 		}
 
@@ -163,5 +200,6 @@ export async function GET(request: Request) {
 		console.error("[reconcile] disagreement found", JSON.stringify(report));
 	}
 
+	await recordCronRun("reconcile-payments");
 	return NextResponse.json(report);
 }

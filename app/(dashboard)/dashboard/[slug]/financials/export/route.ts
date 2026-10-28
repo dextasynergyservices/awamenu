@@ -18,7 +18,7 @@ export async function GET(
 
 	const restaurant = await db.restaurant.findFirst({
 		where: { slug, ownerId: user.id },
-		select: { id: true, name: true },
+		select: { id: true, name: true, timezone: true },
 	});
 
 	if (!restaurant) {
@@ -29,11 +29,11 @@ export async function GET(
 	const range = parseDateRange(
 		url.searchParams.get("from"),
 		url.searchParams.get("to"),
+		restaurant.timezone,
 	);
 
 	const rows = await getLedgerRows(restaurant.id, range);
-	const stamp = (date: Date) => date.toISOString().slice(0, 10);
-	const filename = `${slug}-payments-${stamp(range.start)}-to-${stamp(range.end)}.csv`;
+	const filename = `${slug}-payments-${range.fromKey}-to-${range.toKey}.csv`;
 
 	return new Response(toCsv(rows), {
 		headers: {

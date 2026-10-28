@@ -2,17 +2,14 @@
 
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { MenuItemBadges, SoldOutPill } from "@/components/menu/MenuItemBadges";
 import { MenuItemDetailsModal } from "@/components/menu/MenuItemDetailsModal";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { useCart } from "@/hooks/useCart";
+import type { PublicMenuItem } from "@/lib/menu-tags";
 
 type MenuItemCompactRowProps = {
-	item: {
-		id: string;
-		name: string;
-		description: string | null;
-		price: number;
-		imageUrl: string | null;
-	};
+	item: PublicMenuItem;
 	restaurantSlug: string;
 	currency: string;
 };
@@ -31,6 +28,7 @@ export function MenuItemCompactRow({
 	currency,
 }: MenuItemCompactRowProps) {
 	const addItem = useCart((state) => state.addItem);
+	const paused = useOrderingPaused();
 	const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 	const cartItem = {
 		id: item.id,
@@ -51,6 +49,7 @@ export function MenuItemCompactRow({
 					<h3 className="line-clamp-1 text-sm font-semibold leading-tight text-slate-950">
 						{item.name}
 					</h3>
+					<MenuItemBadges item={item} className="mt-0.5" maxTags={2} />
 					{item.description ? (
 						<p className="mt-0.5 line-clamp-1 text-xs font-medium leading-5 text-slate-500">
 							{item.description}
@@ -60,14 +59,18 @@ export function MenuItemCompactRow({
 				<p className="shrink-0 text-xs font-semibold text-emerald-700 md:text-sm">
 					{formatMoney(item.price, currency)}
 				</p>
-				<button
-					type="button"
-					onClick={() => addItem(cartItem)}
-					className="grid size-8 shrink-0 place-items-center rounded-full bg-yellow-300 text-emerald-950 transition-colors hover:bg-yellow-200 md:size-9"
-					aria-label={`Add ${item.name} to cart`}
-				>
-					<Plus className="size-3.5 md:size-4" aria-hidden="true" />
-				</button>
+				{item.soldOut ? (
+					<SoldOutPill />
+				) : paused ? null : (
+					<button
+						type="button"
+						onClick={() => addItem(cartItem)}
+						className="grid size-8 shrink-0 place-items-center rounded-full bg-yellow-300 text-emerald-950 transition-colors hover:bg-yellow-200 md:size-9"
+						aria-label={`Add ${item.name} to cart`}
+					>
+						<Plus className="size-3.5 md:size-4" aria-hidden="true" />
+					</button>
+				)}
 			</div>
 
 			{isDetailsOpen ? (

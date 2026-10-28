@@ -1,12 +1,7 @@
 import Link from "next/link";
-import {
-	deletePlanAction,
-	togglePlanActiveAction,
-} from "@/actions/super-admin.actions";
 import { CreatePlanButton } from "@/components/super-admin/CreatePlanButton";
 import { PlanEditor } from "@/components/super-admin/PlanEditor";
-import { SubmitButton } from "@/components/ui/action-button";
-import { ConfirmForm } from "@/components/ui/confirm-form";
+import { PlanRowActions } from "@/components/super-admin/PlanRowActions";
 import { db } from "@/lib/db";
 
 export default async function SuperAdminPlansPage() {
@@ -32,19 +27,27 @@ export default async function SuperAdminPlansPage() {
 						key={plan.id}
 						className="rounded-2xl border border-slate-100 bg-white p-4 sm:p-5"
 					>
-						<div className="mb-2 flex items-center justify-between">
+						<div className="mb-2 flex items-center justify-between gap-2">
 							<h2 className="text-base font-black text-slate-950 sm:text-lg">
 								{plan.name}
 							</h2>
-							<span
-								className={`rounded-full px-2 py-0.5 text-[11px] font-black sm:text-xs ${
-									plan.isActive
-										? "bg-emerald-100 text-emerald-700"
-										: "bg-slate-100 text-slate-500"
-								}`}
-							>
-								{plan.isActive ? "Active" : "Hidden"}
-							</span>
+							<div className="flex items-center gap-1">
+								<span
+									className={`rounded-full px-2 py-0.5 text-[11px] font-black sm:text-xs ${
+										plan.isActive
+											? "bg-emerald-100 text-emerald-700"
+											: "bg-slate-100 text-slate-500"
+									}`}
+								>
+									{plan.isActive ? "Active" : "Hidden"}
+								</span>
+								<PlanRowActions
+									planId={plan.id}
+									planName={plan.name}
+									isActive={plan.isActive}
+									subscriptionCount={plan._count.subscriptions}
+								/>
+							</div>
 						</div>
 						<p className="text-xl font-black text-slate-950 sm:text-2xl">
 							₦{Number(plan.monthlyPrice).toLocaleString()}
@@ -59,46 +62,10 @@ export default async function SuperAdminPlansPage() {
 						</p>
 						<Link
 							href={`/super-admin/plans/${plan.id}`}
-							className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-lg border border-slate-200 text-xs font-black text-slate-700 hover:bg-slate-50 md:h-9"
+							className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 md:h-9"
 						>
-							Edit Plan
+							Edit plan
 						</Link>
-						<div className="mt-2 grid grid-cols-2 gap-2">
-							<form action={togglePlanActiveAction}>
-								<input type="hidden" name="planId" value={plan.id} />
-								<input
-									type="hidden"
-									name="isActive"
-									value={(!plan.isActive).toString()}
-								/>
-								<SubmitButton
-									loadingText="Updating..."
-									successText="Updated"
-									className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-slate-200 text-xs font-black text-slate-700 hover:bg-slate-50 md:h-9"
-								>
-									{plan.isActive ? "Disable" : "Enable"}
-								</SubmitButton>
-							</form>
-							<ConfirmForm
-								action={deletePlanAction}
-								hiddenFields={{ planId: plan.id }}
-								confirmMessage={`Delete the "${plan.name}" plan? This cannot be undone.`}
-							>
-								<SubmitButton
-									loadingText="Deleting..."
-									successText="Deleted"
-									disabled={plan._count.subscriptions > 0}
-									title={
-										plan._count.subscriptions > 0
-											? "Cannot delete a plan with active subscriptions"
-											: undefined
-									}
-									className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-red-100 text-xs font-black text-red-600 hover:bg-red-50 disabled:opacity-40 md:h-9"
-								>
-									Delete
-								</SubmitButton>
-							</ConfirmForm>
-						</div>
 					</div>
 				))}
 			</div>

@@ -35,6 +35,8 @@ export default async function StaffPage({
 					canRecordCashPayment: true,
 					canApproveReservations: true,
 					createdAt: true,
+					pinHash: true,
+					pinLockedUntil: true,
 					_count: { select: { orders: true } },
 				},
 			},
@@ -43,6 +45,7 @@ export default async function StaffPage({
 
 	if (!restaurant) redirect("/onboarding/choose-plan");
 
+	const now = new Date();
 	const staffList = restaurant.staff.map((s) => ({
 		id: s.id,
 		name: s.name,
@@ -55,6 +58,9 @@ export default async function StaffPage({
 		canApproveReservations: s.canApproveReservations,
 		createdAt: s.createdAt.toISOString(),
 		orderCount: s._count.orders,
+		// Only whether a PIN exists leaves the server, never the hash.
+		hasPin: s.pinHash !== null,
+		pinLocked: s.pinLockedUntil !== null && s.pinLockedUntil > now,
 	}));
 
 	return (

@@ -10,6 +10,6 @@ import { db } from "@/lib/db";
 export const getRestaurantBrand = cache(async (slug: string) => {
 	return db.restaurant.findFirst({
 		where: { slug },
-		select: { name: true, logoUrl: true, primaryColor: true },
+		select: { name: true, logoUrl: true, primaryColor: true, timezone: true },
 	});
 });

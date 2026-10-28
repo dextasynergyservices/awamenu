@@ -72,22 +72,22 @@ export function SubscriptionExpiredGate({
 	const canConfirmFree = categories.length === 0 || keptCategoryIds.length > 0;
 
 	return (
-		<main className="min-h-screen bg-[#f6faf7] px-4 py-10">
+		<div className="py-2">
 			<section className="mx-auto w-full max-w-2xl">
 				<div className="rounded-[2rem] border border-red-100 bg-white p-6 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)] sm:p-8">
 					<div className="mx-auto mb-5 grid size-14 place-items-center rounded-2xl bg-red-50 text-red-600">
 						<AlertTriangle className="size-7" aria-hidden="true" />
 					</div>
 					<p className="text-xs font-black uppercase tracking-widest text-red-600">
-						Subscription Expired
+						Renew your plan
 					</p>
 					<h1 className="mt-2 text-2xl font-black text-slate-950">
-						{restaurantName}'s plan has lapsed
+						Reactivate {restaurantName}
 					</h1>
 					<p className="mt-2 text-sm font-medium text-slate-600">
-						Your public menu is offline until you renew, upgrade, or continue on
-						the Free plan. Choose an option below to unlock your dashboard
-						again.
+						Pay to renew, upgrade, or continue on the Free plan. Your new period
+						starts the day you pay, and orders, bookings and editing come back
+						immediately.
 					</p>
 				</div>
 
@@ -346,6 +346,6 @@ export function SubscriptionExpiredGate({
 					</form>
 				)}
 			</section>
-		</main>
+		</div>
 	);
 }

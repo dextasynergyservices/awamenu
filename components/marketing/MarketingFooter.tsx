@@ -12,13 +12,35 @@ const footerLinks: Record<string, { label: string; href: string }[]> = {
 		{ label: "Home", href: "/" },
 		{ label: "About", href: "/about" },
 	],
+	Legal: [
+		{ label: "Privacy Policy", href: "/privacy" },
+		{ label: "Terms of Service", href: "/terms" },
+		{ label: "Refund Policy", href: "/refunds" },
+	],
 };
+
+const legalLinks = footerLinks.Legal;
 
 export function MarketingFooter() {
 	return (
-		<footer className="hidden bg-[#02170d] text-white md:block">
-			<div className="mx-auto max-w-6xl px-6 py-12 lg:px-8">
-				<div className="grid gap-10 md:grid-cols-[1.2fr_1fr_1fr]">
+		<footer className="bg-[#02170d] text-white">
+			{/* Mobile: the bottom nav covers navigation, so only the legal links show. */}
+			<div className="flex flex-wrap justify-center gap-x-4 gap-y-2 px-4 pt-6 pb-28 text-xs font-bold text-white/70 md:hidden">
+				{legalLinks.map((link) => (
+					<Link
+						key={link.href}
+						href={link.href}
+						className="hover:text-yellow-300"
+					>
+						{link.label}
+					</Link>
+				))}
+				<span className="w-full text-center font-medium text-white/50">
+					© {new Date().getFullYear()} AwaMenu
+				</span>
+			</div>
+			<div className="mx-auto hidden max-w-6xl px-6 py-12 md:block lg:px-8">
+				<div className="grid gap-10 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
 					<div>
 						<Link href="/" className="inline-block">
 							<Image

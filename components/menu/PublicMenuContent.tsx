@@ -7,18 +7,14 @@ import { MenuItemCard } from "@/components/menu/MenuItemCard";
 import { MenuItemCompactRow } from "@/components/menu/MenuItemCompactRow";
 import { MenuItemGridCard } from "@/components/menu/MenuItemGridCard";
 import { MenuItemMagazineCard } from "@/components/menu/MenuItemMagazineCard";
+import { MenuSearchInput } from "@/components/menu/MenuSearchInput";
+import { matchesMenuSearch, type PublicMenuItem } from "@/lib/menu-tags";
 
 type PublicMenuCategory = {
 	id: string;
 	name: string;
 	emoji: string | null;
-	items: Array<{
-		id: string;
-		name: string;
-		description: string | null;
-		price: number;
-		imageUrl: string | null;
-	}>;
+	items: PublicMenuItem[];
 };
 
 export type MenuGridTemplate = "classic" | "grid" | "compact" | "magazine";
@@ -60,13 +56,31 @@ export function PublicMenuContent({
 	const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ITEMS);
 	const [mobilePage, setMobilePage] = useState(0);
 	const loadMoreRef = useRef<HTMLDivElement | null>(null);
+	const [query, setQuery] = useState("");
+	const searching = query.trim().length > 0;
+	// A search looks across the whole menu, whichever category is selected.
 	const visibleCategories = useMemo(
 		() =>
-			activeCategoryId === "all"
+			searching
 				? categories
-				: categories.filter((category) => category.id === activeCategoryId),
-		[activeCategoryId, categories],
+						.map((category) => ({
+							...category,
+							items: category.items.filter((item) =>
+								matchesMenuSearch(item, query),
+							),
+						}))
+						.filter((category) => category.items.length > 0)
+				: activeCategoryId === "all"
+					? categories
+					: categories.filter((category) => category.id === activeCategoryId),
+		[activeCategoryId, categories, query, searching],
 	);
+
+	function handleSearch(value: string) {
+		setQuery(value);
+		setVisibleCount(INITIAL_VISIBLE_ITEMS);
+		setMobilePage(0);
+	}
 	const totalVisibleItems = visibleCategories.reduce(
 		(total, category) => total + category.items.length,
 		0,
@@ -153,11 +167,28 @@ export function PublicMenuContent({
 
 	return (
 		<>
-			<CategoryNav
-				activeCategoryId={activeCategoryId}
-				onSelectCategory={handleSelectCategory}
-				categories={categories}
-			/>
+			{categories.length > 0 ? (
+				<div className="mx-auto max-w-5xl px-4 pt-3 md:px-6">
+					<MenuSearchInput value={query} onChange={handleSearch} />
+					{searching ? (
+						<p
+							className="mt-2 text-xs font-semibold text-slate-500"
+							aria-live="polite"
+						>
+							{totalVisibleItems} dish{totalVisibleItems === 1 ? "" : "es"}{" "}
+							match
+							{totalVisibleItems === 1 ? "es" : ""} &ldquo;{query.trim()}&rdquo;
+						</p>
+					) : null}
+				</div>
+			) : null}
+			{searching ? null : (
+				<CategoryNav
+					activeCategoryId={activeCategoryId}
+					onSelectCategory={handleSelectCategory}
+					categories={categories}
+				/>
+			)}
 
 			{/* Desktop: infinite scroll */}
 			<div
@@ -195,8 +226,14 @@ export function PublicMenuContent({
 								className="mx-auto mb-3 size-10 text-slate-300"
 								aria-hidden="true"
 							/>
-							<p>No available items in this category.</p>
-							<p className="mt-2 font-medium">Check back soon!</p>
+							<p>
+								{searching
+									? `No dishes match “${query.trim()}”.`
+									: "No available items in this category."}
+							</p>
+							<p className="mt-2 font-medium">
+								{searching ? "Try a different word." : "Check back soon!"}
+							</p>
 						</div>
 					)
 				) : (
@@ -278,8 +315,14 @@ export function PublicMenuContent({
 								className="mx-auto mb-3 size-10 text-slate-300"
 								aria-hidden="true"
 							/>
-							<p>No available items in this category.</p>
-							<p className="mt-2 font-medium">Check back soon!</p>
+							<p>
+								{searching
+									? `No dishes match “${query.trim()}”.`
+									: "No available items in this category."}
+							</p>
+							<p className="mt-2 font-medium">
+								{searching ? "Try a different word." : "Check back soon!"}
+							</p>
 						</div>
 					)
 				) : (
