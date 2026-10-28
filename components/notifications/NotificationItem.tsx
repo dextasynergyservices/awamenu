@@ -5,6 +5,7 @@ import {
 	CalendarDays,
 	ClipboardList,
 	CreditCard,
+	RotateCcw,
 	ShoppingBag,
 	X as XIcon,
 } from "lucide-react";
@@ -53,9 +54,13 @@ export function NotificationItem({
 	onRead,
 	onClick,
 }: NotificationItemProps) {
-	const Icon = typeIcons[notification.type] ?? Bell;
-	const iconColor =
-		typeColors[notification.type] ?? "bg-slate-100 text-slate-600";
+	// Refund alerts share a type with payments but mean the opposite: money
+	// going back out. They get their own look so they aren't skimmed past.
+	const refund = notification.metadata?.refund === true;
+	const Icon = refund ? RotateCcw : (typeIcons[notification.type] ?? Bell);
+	const iconColor = refund
+		? "bg-amber-100 text-amber-700"
+		: (typeColors[notification.type] ?? "bg-slate-100 text-slate-600");
 
 	function handleClick() {
 		if (!notification.isRead && onRead) {
@@ -102,7 +107,10 @@ export function NotificationItem({
 				<p className="mt-0.5 text-sm leading-snug text-slate-500 line-clamp-2">
 					{notification.body}
 				</p>
-				<p className="mt-1 text-xs font-medium text-slate-400">
+				<p
+					className="mt-1 text-xs font-medium text-slate-400"
+					suppressHydrationWarning
+				>
 					{getRelativeTime(notification.createdAt)}
 				</p>
 			</div>

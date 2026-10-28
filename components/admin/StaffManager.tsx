@@ -1,7 +1,6 @@
 "use client";
 
 import {
-	ArrowLeft,
 	Banknote,
 	Bike,
 	Calendar,
@@ -9,9 +8,9 @@ import {
 	Check,
 	ChevronDown,
 	ClipboardCopy,
+	KeyRound,
 	Lock,
 	MoreHorizontal,
-	MoreVertical,
 	Plus,
 	RefreshCw,
 	Search,
@@ -25,7 +24,6 @@ import {
 	UtensilsCrossed,
 	X,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
@@ -51,6 +49,8 @@ type StaffItem = {
 	canApproveReservations: boolean | null;
 	createdAt: string;
 	orderCount: number;
+	hasPin: boolean;
+	pinLocked: boolean;
 };
 
 type GlobalPermissions = {
@@ -75,7 +75,10 @@ export function StaffManager({
 	globalPermissions,
 }: StaffManagerProps) {
 	const [createOpen, setCreateOpen] = useState(false);
-	const [createdStaffId, setCreatedStaffId] = useState<string | null>(null);
+	const [created, setCreated] = useState<{
+		staffId: string;
+		pin: string;
+	} | null>(null);
 	const [resetPinStaff, setResetPinStaff] = useState<StaffItem | null>(null);
 	const [globalOpen, setGlobalOpen] = useState(false);
 	const [permModalStaff, setPermModalStaff] = useState<StaffItem | null>(null);
@@ -118,32 +121,6 @@ export function StaffManager({
 
 	return (
 		<section className="flex w-full min-w-0 flex-col gap-6 pb-32 sm:pb-6">
-			{/* Header */}
-			<div className="flex items-center justify-between md:hidden">
-				<div className="flex items-center gap-4">
-					<Link
-						href={`/dashboard/${slug}`}
-						className="rounded-full p-2 transition-colors hover:bg-slate-100 -ml-2"
-					>
-						<ArrowLeft className="size-6 text-slate-900" />
-					</Link>
-					<div>
-						<h2 className="text-lg sm:text-2xl font-black tracking-tight text-slate-950">
-							Staff
-						</h2>
-						<p className="text-xs sm:text-sm font-medium text-slate-500">
-							Manage your restaurant employees
-						</p>
-					</div>
-				</div>
-				<button
-					type="button"
-					className="rounded-full p-2 transition-colors hover:bg-slate-100 -mr-2"
-				>
-					<MoreVertical className="size-6 text-slate-700" />
-				</button>
-			</div>
-
 			{/* Search & Filters */}
 			<div className="flex flex-col gap-5 md:hidden">
 				<div className="flex items-center gap-2 sm:gap-3">
@@ -201,7 +178,7 @@ export function StaffManager({
 				<button
 					type="button"
 					onClick={() => {
-						setCreatedStaffId(null);
+						setCreated(null);
 						setCreateOpen(true);
 					}}
 					className="flex h-8 sm:h-12 w-full items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-emerald-700 text-xs sm:text-sm font-black text-white shadow-sm transition-colors hover:bg-emerald-800"
@@ -263,7 +240,7 @@ export function StaffManager({
 					<button
 						type="button"
 						onClick={() => {
-							setCreatedStaffId(null);
+							setCreated(null);
 							setCreateOpen(true);
 						}}
 						className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 text-xs font-black text-white shadow-sm transition-colors hover:bg-emerald-800 sm:min-h-11 sm:flex-none sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm"
@@ -289,7 +266,7 @@ export function StaffManager({
 					<button
 						type="button"
 						onClick={() => {
-							setCreatedStaffId(null);
+							setCreated(null);
 							setCreateOpen(true);
 						}}
 						className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-2xl bg-emerald-700 px-5 text-sm font-black text-white"
@@ -318,10 +295,8 @@ export function StaffManager({
 			{createOpen ? (
 				<CreateStaffModal
 					slug={slug}
-					createdStaffId={createdStaffId}
-					onCreated={(id) => {
-						setCreatedStaffId(id);
-					}}
+					created={created}
+					onCreated={setCreated}
 					onClose={() => setCreateOpen(false)}
 				/>
 			) : null}
@@ -471,6 +446,7 @@ function MobileStaffCard({
 								>
 									{role}
 								</span>
+								<PinStatusBadge staff={staff} />
 							</div>
 							<div className="mt-1 sm:mt-2 flex items-center gap-1 sm:gap-1.5 text-xs font-medium text-slate-500">
 								<span>ID: {staff.staffId}</span>
@@ -605,8 +581,8 @@ function MobileStaffCard({
 						}}
 						className="flex items-center gap-3 px-4 py-3.5 text-sm font-bold text-slate-700 hover:bg-slate-100"
 					>
-						<RefreshCw className="size-4" />
-						New Staff ID
+						<KeyRound className="size-4" />
+						{staff.hasPin ? "Reset PIN" : "Set PIN"}
 					</button>
 					{staff.isActive ? (
 						<button
@@ -674,20 +650,19 @@ function PermBadge({
 
 function CreateStaffModal({
 	slug,
-	createdStaffId,
+	created,
 	onCreated,
 	onClose,
 }: {
 	slug: string;
-	createdStaffId: string | null;
-	onCreated: (id: string) => void;
+	created: { staffId: string; pin: string } | null;
+	onCreated: (created: { staffId: string; pin: string }) => void;
 	onClose: () => void;
 }) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
 	const [name, setName] = useState("");
 	const [error, setError] = useState<string | null>(null);
-	const [copied, setCopied] = useState(false);
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -700,8 +675,7 @@ function CreateStaffModal({
 		startTransition(async () => {
 			try {
 				const result = await createStaffAction(fd);
-				onCreated(result.staffId);
-				setName("");
+				onCreated(result);
 				router.refresh();
 			} catch (err) {
 				setError(
@@ -711,20 +685,12 @@ function CreateStaffModal({
 		});
 	}
 
-	function handleCopyId() {
-		if (createdStaffId) {
-			navigator.clipboard.writeText(createdStaffId);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
-		}
-	}
-
 	return (
 		<ModalOverlay onClose={onClose}>
 			<div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
 				<div className="flex items-center justify-between">
 					<h3 className="text-xl font-black text-slate-950">
-						{createdStaffId ? "Staff Created!" : "Add Staff Member"}
+						{created ? "Staff Created!" : "Add Staff Member"}
 					</h3>
 					<button
 						type="button"
@@ -735,40 +701,23 @@ function CreateStaffModal({
 					</button>
 				</div>
 
-				{createdStaffId ? (
+				{created ? (
 					<div className="mt-5">
 						<p className="text-sm font-medium text-slate-600">
-							Give this Staff ID to{" "}
+							Give these to{" "}
 							<span className="font-black text-slate-900">
 								{name || "them"}
 							</span>
-							. They enter it when taking or updating an order, so their work is
-							recorded against their name.
+							. They enter both when taking or updating an order, so their work
+							is recorded against their name.
 						</p>
-						<p className="mt-2 text-sm font-medium text-slate-600">
+						<CodeBox label="Staff ID" value={created.staffId} />
+						<CodeBox label="PIN" value={created.pin} />
+						<PinShownOnceNote />
+						<p className="mt-2 text-xs font-medium text-slate-500">
 							They sign in to the staff dashboard with the restaurant&apos;s
-							shared staff password — not this ID.
+							shared staff password, not these.
 						</p>
-						<div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-							<code className="flex-1 text-lg font-black text-emerald-800">
-								{createdStaffId}
-							</code>
-							<button
-								type="button"
-								onClick={handleCopyId}
-								className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white"
-							>
-								{copied ? (
-									<>
-										<Check className="size-3.5" /> Copied
-									</>
-								) : (
-									<>
-										<ClipboardCopy className="size-3.5" /> Copy
-									</>
-								)}
-							</button>
-						</div>
 
 						<button
 							type="button"
@@ -815,9 +764,9 @@ function CreateStaffModal({
 	);
 }
 
-// ─── Rotate Staff ID Modal ────────────────────────────
+// ─── Reset PIN Modal ──────────────────────────────────
 
-import { rotateStaffIdAction } from "@/actions/staff.actions";
+import { resetStaffPinAction } from "@/actions/staff.actions";
 import { PasswordInput } from "@/components/ui/password-input";
 
 function ResetPinModal({
@@ -831,8 +780,8 @@ function ResetPinModal({
 }) {
 	const router = useRouter();
 	const [isPending, startTransition] = useTransition();
-	const [newStaffId, setNewStaffId] = useState<string | null>(null);
-	const [copied, setCopied] = useState(false);
+	const [newPin, setNewPin] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
 
 	function handleReset() {
 		const fd = new FormData();
@@ -841,11 +790,13 @@ function ResetPinModal({
 
 		startTransition(async () => {
 			try {
-				const result = await rotateStaffIdAction(fd);
-				setNewStaffId(result.staffId);
+				const result = await resetStaffPinAction(fd);
+				setNewPin(result.pin);
 				router.refresh();
 			} catch (err) {
-				console.error(err);
+				setError(
+					err instanceof Error ? err.message : "Could not reset the PIN.",
+				);
 			}
 		});
 	}
@@ -855,7 +806,11 @@ function ResetPinModal({
 			<div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
 				<div className="flex items-center justify-between">
 					<h3 className="text-xl font-black text-slate-950">
-						{newStaffId ? "New Staff ID issued" : "Issue a new Staff ID"}
+						{newPin
+							? "New PIN issued"
+							: staff.hasPin
+								? "Reset PIN"
+								: "Set a PIN"}
 					</h3>
 					<button
 						type="button"
@@ -866,35 +821,15 @@ function ResetPinModal({
 					</button>
 				</div>
 
-				{newStaffId ? (
+				{newPin ? (
 					<div className="mt-5">
 						<p className="text-sm font-medium text-slate-600">
-							{staff.name}&apos;s new Staff ID is:
+							{staff.name}&apos;s new PIN. Their Staff ID stays{" "}
+							<span className="font-black text-slate-900">{staff.staffId}</span>
+							.
 						</p>
-						<div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-							<code className="flex-1 text-2xl font-black tracking-widest text-emerald-800">
-								{newStaffId}
-							</code>
-							<button
-								type="button"
-								onClick={() => {
-									navigator.clipboard.writeText(newStaffId);
-									setCopied(true);
-									setTimeout(() => setCopied(false), 2000);
-								}}
-								className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white"
-							>
-								{copied ? (
-									<>
-										<Check className="size-3.5" /> Copied
-									</>
-								) : (
-									<>
-										<ClipboardCopy className="size-3.5" /> Copy
-									</>
-								)}
-							</button>
-						</div>
+						<CodeBox label="PIN" value={newPin} />
+						<PinShownOnceNote />
 						<button
 							type="button"
 							onClick={onClose}
@@ -906,22 +841,76 @@ function ResetPinModal({
 				) : (
 					<div className="mt-5">
 						<p className="mb-5 text-sm font-medium text-slate-600">
-							Issue a new Staff ID for {staff.name}? Their old ID stops working
-							immediately, so give them the new one. Orders they&apos;ve already
-							handled stay credited to them.
+							{staff.hasPin
+								? `Issue a new PIN for ${staff.name}? Their old PIN stops working immediately and any lockout is cleared. Their Staff ID doesn't change.`
+								: `${staff.name} has no PIN yet, so they can't take or update orders. Issue one and give it to them.`}
 						</p>
+						{error ? (
+							<p className="mb-3 text-sm font-medium text-red-600">{error}</p>
+						) : null}
 						<button
 							type="button"
 							onClick={handleReset}
 							disabled={isPending}
 							className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-emerald-700 text-sm font-black text-white disabled:opacity-50"
 						>
-							{isPending ? "Issuing new ID…" : "Yes, issue a new Staff ID"}
+							{isPending ? "Issuing PIN…" : "Issue a new PIN"}
 						</button>
 					</div>
 				)}
 			</div>
 		</ModalOverlay>
+	);
+}
+
+function CodeBox({ label, value }: { label: string; value: string }) {
+	const [copied, setCopied] = useState(false);
+	return (
+		<div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+			<div className="flex-1">
+				<p className="text-xs font-bold text-emerald-700">{label}</p>
+				<code className="text-2xl font-black tracking-widest text-emerald-800">
+					{value}
+				</code>
+			</div>
+			<button
+				type="button"
+				onClick={() => {
+					navigator.clipboard.writeText(value);
+					setCopied(true);
+					setTimeout(() => setCopied(false), 2000);
+				}}
+				className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white"
+			>
+				{copied ? (
+					<>
+						<Check className="size-3.5" /> Copied
+					</>
+				) : (
+					<>
+						<ClipboardCopy className="size-3.5" /> Copy
+					</>
+				)}
+			</button>
+		</div>
+	);
+}
+
+function PinShownOnceNote() {
+	return (
+		<p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+			This PIN is shown only once. Give it to them privately; if it&apos;s lost,
+			reset it.
+		</p>
+	);
+}
+
+function PinStatusBadge({ staff }: { staff: StaffItem }) {
+	if (!staff.isActive || (staff.hasPin && !staff.pinLocked)) return null;
+	return (
+		<span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-800 sm:rounded-lg sm:px-2 sm:text-xs">
+			{staff.hasPin ? "PIN locked" : "No PIN"}
+		</span>
 	);
 }
 
@@ -1401,6 +1390,7 @@ function DesktopStaffCard({
 							Inactive
 						</span>
 					) : null}
+					<PinStatusBadge staff={staff} />
 				</div>
 				<div className="flex shrink-0 gap-1 sm:gap-1.5">
 					<button
@@ -1415,9 +1405,9 @@ function DesktopStaffCard({
 						type="button"
 						onClick={onResetPin}
 						className="grid size-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 sm:size-9 sm:rounded-xl"
-						title="Issue a new Staff ID"
+						title={staff.hasPin ? "Reset PIN" : "Set PIN"}
 					>
-						<RefreshCw className="size-3.5 sm:size-4" />
+						<KeyRound className="size-3.5 sm:size-4" />
 					</button>
 					{staff.isActive ? (
 						<button

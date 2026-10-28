@@ -146,10 +146,9 @@ export const monnifyAdapter: PaymentGatewayAdapter = {
 						bankCode: input.bankCode,
 						accountNumber: input.accountNumber,
 						email: input.email,
-						defaultSplitPercentage: Math.max(
-							0,
-							100 - input.platformCommissionPercent,
-						),
+						// The split is set per transaction (initializeCharge), so a
+						// commission change or exemption applies to the next payment.
+						defaultSplitPercentage: 100,
 					},
 				]),
 			},
@@ -185,6 +184,18 @@ export const monnifyAdapter: PaymentGatewayAdapter = {
 								{
 									subAccountCode: input.subaccountCode,
 									feeBearer: input.feeBearer !== "platform",
+									// What the restaurant receives: the charge minus AwaMenu's
+									// share (provider fee + commission), as with Paystack's
+									// transaction_charge. Major units, like the amount.
+									...(input.platformChargeKobo
+										? {
+												splitAmount:
+													Math.max(
+														0,
+														input.amountKobo - input.platformChargeKobo,
+													) / 100,
+											}
+										: {}),
 								},
 							],
 						}
@@ -202,12 +213,15 @@ export const monnifyAdapter: PaymentGatewayAdapter = {
 		const data = await call<{
 			paymentStatus?: string;
 			amountPaid?: number;
+			currencyCode?: string;
 			transactionReference?: string;
 		}>(credentials, `/api/v2/transactions/${encodeURIComponent(reference)}`);
 		return {
-			paid: data.paymentStatus === "PAID",
+			// OVERPAID is still paid — the amount check decides what it covers.
+			paid: data.paymentStatus === "PAID" || data.paymentStatus === "OVERPAID",
 			reference: data.transactionReference ?? reference,
 			amountKobo: Math.round((data.amountPaid ?? 0) * 100),
+			currency: data.currencyCode ?? "NGN",
 			raw: data,
 		} satisfies ChargeVerification;
 	},

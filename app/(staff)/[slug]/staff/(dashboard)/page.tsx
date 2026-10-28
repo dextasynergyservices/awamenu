@@ -1,8 +1,11 @@
 import { OrderStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { StaffMenuAvailability } from "@/components/staff/StaffMenuAvailability";
 import { StaffOrderFeed } from "@/components/staff/StaffOrderFeed";
 import { db } from "@/lib/db";
+import { isSoldOut } from "@/lib/menu-tags";
+import { formatInTimeZone } from "@/lib/zoned-time";
 
 export default async function StaffDashboardPage({
 	params,
@@ -17,6 +20,7 @@ export default async function StaffDashboardPage({
 			name: true,
 			slug: true,
 			currency: true,
+			timezone: true,
 			staffDefaultDineIn: true,
 			staffDefaultPickup: true,
 			staffDefaultDelivery: true,
@@ -28,6 +32,32 @@ export default async function StaffDashboardPage({
 	if (!restaurant) {
 		redirect(`/`);
 	}
+
+	// Published dishes, for the Menu (sold-out) panel.
+	const menuCategories = await db.menuCategory.findMany({
+		where: { restaurantId: restaurant.id, isActive: true },
+		orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+		select: {
+			id: true,
+			name: true,
+			items: {
+				where: { isAvailable: true },
+				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+				select: { id: true, name: true, soldOutUntil: true },
+			},
+		},
+	});
+	const staffMenu = menuCategories
+		.filter((c) => c.items.length > 0)
+		.map((c) => ({
+			id: c.id,
+			name: c.name,
+			items: c.items.map((i) => ({
+				id: i.id,
+				name: i.name,
+				soldOut: isSoldOut(i.soldOutUntil),
+			})),
+		}));
 
 	// Fetch active orders
 	const orders = await db.order.findMany({
@@ -79,10 +109,22 @@ export default async function StaffDashboardPage({
 		},
 	});
 
+	// Requests to approve, plus tonight's confirmed bookings so staff at the
+	// door can see who's coming and check them in.
+	const now = Date.now();
 	const rawReservations = await db.reservation.findMany({
 		where: {
 			restaurantId: restaurant.id,
-			status: "PENDING_APPROVAL",
+			OR: [
+				{ status: "PENDING_APPROVAL" },
+				{
+					status: "ACTIVE",
+					startsAt: {
+						gte: new Date(now - 3 * 60 * 60 * 1000),
+						lte: new Date(now + 24 * 60 * 60 * 1000),
+					},
+				},
+			],
 		},
 		orderBy: { startsAt: "asc" },
 		take: 50,
@@ -102,7 +144,15 @@ export default async function StaffDashboardPage({
 		customerName: r.customerName,
 		customerPhone: r.customerPhone,
 		date: r.startsAt.toISOString(),
-		time: r.startsAt.toLocaleTimeString([], {
+		// In the restaurant's timezone. toLocaleTimeString() here used the
+		// server's clock — UTC on Vercel — so staff saw every booking an hour
+		// off.
+		dateLabel: formatInTimeZone(r.startsAt, restaurant.timezone, {
+			weekday: "short",
+			day: "numeric",
+			month: "short",
+		}),
+		time: formatInTimeZone(r.startsAt, restaurant.timezone, {
 			hour: "2-digit",
 			minute: "2-digit",
 		}),
@@ -150,6 +200,12 @@ export default async function StaffDashboardPage({
 		>
 			{/* ✅ Responsive container */}
 			<div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 md:py-8 lg:px-8">
+				<div className="mb-4 flex justify-end">
+					<StaffMenuAvailability
+						slug={restaurant.slug}
+						categories={staffMenu}
+					/>
+				</div>
 				<StaffOrderFeed
 					orders={serializedOrders}
 					reservations={pendingReservations}

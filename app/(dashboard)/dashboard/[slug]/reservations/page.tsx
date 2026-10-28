@@ -3,13 +3,18 @@ import { Calendar, ChevronDown, Filter, Search } from "lucide-react";
 import Link from "next/link";
 import { ReservationStatusBanner } from "@/components/admin/ReservationStatusBanner";
 import { ReservationTabs } from "@/components/admin/ReservationTabs";
-import { ReservationStatusPoller } from "@/components/reservation/ReservationStatusPoller";
 import { ReservationsList } from "@/components/reservation/ReservationsList";
+import { Pagination } from "@/components/ui/Pagination";
 import { db } from "@/lib/db";
+import { clampPage, pageInfo, parsePage } from "@/lib/pagination";
 
 type ReservationsPageProps = {
 	params: Promise<{ slug: string }>;
-	searchParams?: Promise<{ reservationCode?: string }>;
+	searchParams?: Promise<{
+		reservationCode?: string;
+		page?: string;
+		size?: string;
+	}>;
 };
 
 export const dynamic = "force-dynamic";
@@ -61,7 +66,8 @@ export default async function ReservationsPage({
 	searchParams,
 }: ReservationsPageProps) {
 	const { slug } = await params;
-	const rawReservationCode = (await searchParams)?.reservationCode ?? "";
+	const query = (await searchParams) ?? {};
+	const rawReservationCode = query.reservationCode ?? "";
 	const reservationCode = rawReservationCode
 		.replace(/^#/, "")
 		.trim()
@@ -71,6 +77,10 @@ export default async function ReservationsPage({
 				OR: [{ id: reservationCode }, { id: { endsWith: reservationCode } }],
 			}
 		: undefined;
+	const totalReservations = await db.reservation.count({
+		where: { restaurant: { slug }, ...reservationWhere },
+	});
+	const page = clampPage(parsePage(query), totalReservations);
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug },
 		select: {
@@ -83,7 +93,8 @@ export default async function ReservationsPage({
 			reservations: {
 				where: reservationWhere,
 				orderBy: { startsAt: "desc" },
-				take: reservationCode ? 10 : 40,
+				skip: page.skip,
+				take: page.take,
 				select: {
 					id: true,
 					customerName: true,
@@ -101,6 +112,12 @@ export default async function ReservationsPage({
 					reservationAmountPaid: true,
 					specialRequests: true,
 					declineReason: true,
+					paymentDueAt: true,
+					refundRequiredReason: true,
+					refundedAt: true,
+					cancelledBy: true,
+					cancelledAt: true,
+					cancellationReason: true,
 					table: { select: { label: true, capacity: true } },
 					preOrder: {
 						select: {
@@ -145,7 +162,6 @@ export default async function ReservationsPage({
 
 	return (
 		<section className="grid gap-5">
-			<ReservationStatusPoller />
 			<ReservationTabs slug={slug} />
 			<ReservationStatusBanner
 				slug={slug}
@@ -238,11 +254,20 @@ export default async function ReservationsPage({
 
 			<div className="grid gap-4">
 				{serializedReservations.length > 0 ? (
-					<ReservationsList
-						reservations={serializedReservations}
-						currency={restaurant.currency}
-						slug={restaurant.slug}
-					/>
+					<>
+						<ReservationsList
+							reservations={serializedReservations}
+							currency={restaurant.currency}
+							slug={restaurant.slug}
+						/>
+						<Pagination
+							className="mt-4"
+							info={pageInfo(page, totalReservations)}
+							basePath={`/dashboard/${restaurant.slug}/reservations`}
+							query={query}
+							noun="bookings"
+						/>
+					</>
 				) : (
 					<div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center">
 						<p className="text-lg font-black text-slate-950">

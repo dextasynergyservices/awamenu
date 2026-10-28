@@ -51,6 +51,7 @@ export default async function StorefrontLayout({
 			: (restaurant?.logoUrl ?? null),
 		primaryColor: restaurant?.primaryColor ?? null,
 		showAwamenuBranding: planFeatures.showAwamenuBranding,
+		timeZone: restaurant?.timezone ?? undefined,
 	};
 
 	return (

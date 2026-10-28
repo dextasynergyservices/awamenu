@@ -6,6 +6,7 @@ import {
 	PaymentStatus,
 	Prisma,
 } from "@prisma/client";
+import { getRestaurantCommission } from "@/lib/commission";
 import { db } from "@/lib/db";
 
 /**
@@ -100,7 +101,11 @@ const dec = (value: Prisma.Decimal | number) => new Prisma.Decimal(value);
  * setting that will change, and a report that recalculates two-year-old
  * payments at today's rate reports numbers that were never true.
  */
-async function resolveSplit(source: GatewayCredit, gross: number) {
+async function resolveSplit(
+	source: GatewayCredit,
+	gross: number,
+	restaurantId: string,
+) {
 	const gatewayFee =
 		source.gatewayFeeMinorUnits != null
 			? toNaira(source.gatewayFeeMinorUnits)
@@ -116,10 +121,22 @@ async function resolveSplit(source: GatewayCredit, gross: number) {
 		};
 	}
 
-	const settings = await db.platformSetting.findFirst({
-		select: { awamenuPayCommissionPercent: true },
+	// The rate this charge was actually made at, recorded on its attempt when
+	// the customer was sent to pay. Falls back to the restaurant's current rate
+	// for payments that started before rates were recorded.
+	const attempt = await db.paymentAttempt.findFirst({
+		where: {
+			OR: [
+				{ reference: source.reference },
+				{ providerReference: source.reference },
+			],
+		},
+		select: { commissionPercent: true },
 	});
-	const commissionPercent = Number(settings?.awamenuPayCommissionPercent ?? 0);
+	const commissionPercent =
+		attempt?.commissionPercent != null
+			? Number(attempt.commissionPercent)
+			: (await getRestaurantCommission(restaurantId)).percent;
 	const platformFee =
 		Math.round(((gross * commissionPercent) / 100) * 100) / 100;
 
@@ -318,9 +335,7 @@ export async function refundPayment(params: {
 
 	if (!params.offline && entry.gateway && entry.reference) {
 		const { getGatewayAdapter } = await import("@/lib/payment-gateways");
-		const { resolveRefundCredentials } = await import(
-			"@/actions/payment-settings.actions"
-		);
+		const { resolveRefundCredentials } = await import("@/lib/payment-routing");
 		const credentials = await resolveRefundCredentials(
 			entry.restaurantId,
 			entry.gateway,
@@ -392,12 +407,15 @@ export async function refundPayment(params: {
 	});
 
 	if (order && remaining.lessThan(order.total)) {
+		const fullyRefunded = remaining.lessThanOrEqualTo(0);
 		await db.order.update({
 			where: { id: entry.orderId },
 			data: {
-				paymentStatus: remaining.lessThanOrEqualTo(0)
+				paymentStatus: fullyRefunded
 					? PaymentStatus.REFUNDED
 					: PaymentStatus.PENDING,
+				// The "Refund needed" flag is done with once everything is back.
+				...(fullyRefunded ? { refundRequiredReason: null } : {}),
 			},
 		});
 	}
@@ -452,7 +470,7 @@ async function recordEntry(
 
 	const split =
 		source.kind === "GATEWAY"
-			? await resolveSplit(source, amount.toNumber())
+			? await resolveSplit(source, amount.toNumber(), order.restaurantId)
 			: null;
 
 	try {

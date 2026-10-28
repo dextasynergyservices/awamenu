@@ -2,6 +2,8 @@
 
 import { Download, Printer, Share2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
+import { formatDateTime } from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 type ReceiptItem = {
@@ -139,7 +141,7 @@ function _roundedRect(
 	context.closePath();
 }
 
-function buildReceiptCanvas(receipt: ReceiptData) {
+function buildReceiptCanvas(receipt: ReceiptData, tz: string) {
 	// Standard thermal receipt width (80mm) is ~384px at 203 DPI. Let's use 400px.
 	const width = 400;
 	const padding = 24;
@@ -243,10 +245,7 @@ function buildReceiptCanvas(receipt: ReceiptData) {
 		`Customer: ${receipt.customerName}`,
 		`Type: ${receipt.orderType.replace("_", " ")}`,
 		`Status: ${receipt.status.replace("_", " ")}`,
-		`Date: ${new Date(receipt.createdAt).toLocaleString("en-NG", {
-			dateStyle: "short",
-			timeStyle: "short",
-		})}`,
+		`Date: ${formatDateTime(receipt.createdAt, tz)}`,
 		...extraDetailLines,
 	];
 
@@ -418,6 +417,7 @@ export function ReceiptActions({
 	hideShare,
 	size = "default",
 }: ReceiptActionsProps) {
+	const tz = useRestaurantTimeZone();
 	const [downloadOpen, setDownloadOpen] = useState(false);
 	const [shareOpen, setShareOpen] = useState(false);
 	const filename = useMemo(
@@ -427,7 +427,7 @@ export function ReceiptActions({
 	const docLabel = receipt.paymentStatus === "PAID" ? "Receipt" : "Invoice";
 
 	async function handlePrint() {
-		const canvas = buildReceiptCanvas(receipt);
+		const canvas = buildReceiptCanvas(receipt, tz);
 		const dataUrl = canvas.toDataURL("image/png");
 
 		const printWindow = window.open("", "_blank");
@@ -462,7 +462,7 @@ export function ReceiptActions({
 	}
 
 	async function createReceiptBlob(format: ReceiptFormat) {
-		const canvas = buildReceiptCanvas(receipt);
+		const canvas = buildReceiptCanvas(receipt, tz);
 		if (format === "pdf") {
 			return {
 				blob: buildPdfBlob(canvas),

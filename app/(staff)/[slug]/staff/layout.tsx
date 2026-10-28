@@ -52,6 +52,7 @@ export default async function StaffLayout({
 		// Staff-facing, not customer-facing — no attribution badge regardless of
 		// plan, matching how the owner's dashboard is treated.
 		showAwamenuBranding: false,
+		timeZone: restaurant?.timezone ?? undefined,
 	};
 
 	return (

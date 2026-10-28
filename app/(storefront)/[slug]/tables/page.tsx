@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
+import { notFound, redirect } from "next/navigation";
+import { RestaurantUnavailable } from "@/components/menu/RestaurantUnavailable";
 import { TableReservationFlow } from "@/components/reservation/TableReservationFlow";
+import { billingStateOf, canTrade } from "@/lib/billing-state";
 import { db } from "@/lib/db";
+import { holdingReservationWhere } from "@/lib/reservation-booking";
 import { resolveEffectivePolicy } from "@/lib/reservation-policy";
-import { isSubscriptionActive } from "@/lib/subscription";
+import {
+	getStorefrontShare,
+	shareDescription,
+	storefrontMetadata,
+} from "@/lib/storefront-share";
+import { wallClockIn } from "@/lib/zoned-time";
 
 type TablesPageProps = {
 	params: Promise<{ slug: string }>;
@@ -12,58 +19,60 @@ type TablesPageProps = {
 
 export const dynamic = "force-dynamic";
 
-function getMinimumDateTime(advanceBookingHours: number) {
-	const date = new Date(Date.now() + advanceBookingHours * 60 * 60 * 1000);
-	if (date.getSeconds() > 0 || date.getMilliseconds() > 0) {
-		date.setMinutes(date.getMinutes() + 1);
-	}
-	date.setSeconds(0, 0);
-	const yyyy = date.getFullYear();
-	const mm = String(date.getMonth() + 1).padStart(2, "0");
-	const dd = String(date.getDate()).padStart(2, "0");
-	const hh = String(date.getHours()).padStart(2, "0");
-	const min = String(date.getMinutes()).padStart(2, "0");
-	return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}` };
+/** The earliest bookable moment, on the restaurant's wall clock — not the
+ *  server's, which on Vercel is UTC and put Lagos an hour behind. */
+function getMinimumDateTime(advanceBookingHours: number, timeZone: string) {
+	const earliest = new Date(Date.now() + advanceBookingHours * 60 * 60 * 1000);
+	// Round up to the next whole minute so "now" is never offered.
+	earliest.setSeconds(60, 0);
+	return wallClockIn(timeZone, earliest);
 }
 
 export async function generateMetadata({
 	params,
 }: TablesPageProps): Promise<Metadata> {
 	const { slug } = await params;
-	const restaurant = await db.restaurant.findFirst({
-		where: { slug, isActive: true, tableReservationEnabled: true },
-		select: { name: true, description: true },
+	const share = await getStorefrontShare(slug);
+	if (!share?.bookings) return {};
+	return storefrontMetadata(share, {
+		page: "Book a table",
+		description: shareDescription(share, "tables"),
+		path: "/tables",
 	});
-
-	if (!restaurant) return {};
-
-	return {
-		title: `Reserve a Table | ${restaurant.name}`,
-		description:
-			restaurant.description ??
-			`Reserve a table and pre-order food at ${restaurant.name}.`,
-	};
 }
 
 export default async function TablesPage({ params }: TablesPageProps) {
 	const { slug } = await params;
 	const restaurant = await db.restaurant.findFirst({
-		where: { slug, isActive: true, tableReservationEnabled: true },
+		where: { slug },
 		select: {
 			id: true,
+			isActive: true,
+			tableReservationEnabled: true,
 			name: true,
 			slug: true,
 			logoUrl: true,
 			phone: true,
 			whatsappNumber: true,
 			currency: true,
+			timezone: true,
 			reservationSetting: true,
 			openingHours: {
 				select: { dayOfWeek: true, opensAt: true, closesAt: true },
 			},
 			blackoutDates: { select: { date: true } },
 			subscription: {
-				select: { status: true, currentPeriodEnd: true },
+				select: {
+					currentPeriodEnd: true,
+					billingInterval: true,
+					plan: {
+						select: {
+							monthlyPrice: true,
+							quarterlyPrice: true,
+							yearlyPrice: true,
+						},
+					},
+				},
 			},
 			tables: {
 				where: { isActive: true },
@@ -83,8 +92,15 @@ export default async function TablesPage({ params }: TablesPageProps) {
 					maxPartySize: true,
 					tableFee: true,
 					minimumSpend: true,
+					// Everything that holds the table — the same rule the server
+					// enforces, so the page can't offer a slot the booking will then
+					// refuse. Future only: this used to send every ACTIVE booking ever
+					// made, growing with each sitting.
 					reservations: {
-						where: { status: "ACTIVE" },
+						where: {
+							expiresAt: { gt: new Date() },
+							AND: [holdingReservationWhere()],
+						},
 						select: { startsAt: true, expiresAt: true },
 					},
 				},
@@ -112,9 +128,23 @@ export default async function TablesPage({ params }: TablesPageProps) {
 	});
 
 	if (!restaurant) notFound();
+	// Bookings switched off: the menu, not a 404 (old links and QR codes).
+	if (!restaurant.tableReservationEnabled) redirect(`/${slug}`);
 
-	if (!isSubscriptionActive(restaurant.subscription)) {
-		return <SubscriptionInactive restaurantName={restaurant.name} />;
+	// Suspended: the menu page explains.
+	if (!restaurant.isActive) redirect(`/${slug}`);
+	// Lapsed: bookings paused; the menu is still there to browse.
+	if (!canTrade(billingStateOf(restaurant.subscription))) {
+		return (
+			<RestaurantUnavailable
+				name={restaurant.name}
+				logoUrl={restaurant.logoUrl}
+				phone={restaurant.phone ?? restaurant.whatsappNumber}
+				title="Table bookings are paused"
+				message={`${restaurant.name} isn't taking online bookings right now. Please call the restaurant to book.`}
+				backHref={`/${slug}`}
+			/>
+		);
 	}
 
 	const setting =
@@ -168,6 +198,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
 	}));
 	const initialReservationDateTime = getMinimumDateTime(
 		setting.advanceBookingHours,
+		restaurant.timezone,
 	);
 
 	return (
@@ -180,11 +211,13 @@ export default async function TablesPage({ params }: TablesPageProps) {
 			phone={restaurant.phone}
 			whatsappNumber={restaurant.whatsappNumber}
 			currency={restaurant.currency}
+			timeZone={restaurant.timezone}
 			setting={{
 				bookingDescription: setting.bookingDescription,
 				advanceBookingHours: setting.advanceBookingHours,
 				slotIntervalMinutes:
 					"slotIntervalMinutes" in setting ? setting.slotIntervalMinutes : 30,
+				graceMinutes: "graceMinutes" in setting ? setting.graceMinutes : 15,
 				cancellationPolicy: setting.cancellationPolicy,
 				refundPolicy: "refundPolicy" in setting ? setting.refundPolicy : null,
 			}}

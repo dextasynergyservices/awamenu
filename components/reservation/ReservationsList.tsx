@@ -16,11 +16,20 @@ import {
 	checkInReservationAction,
 	checkOutReservationAction,
 	declineReservationAction,
+	flagReservationRefundAction,
+	markReservationNoShowAction,
+	markReservationRefundedAction,
 } from "@/actions/reservation.actions";
 import { ReservationActionForm } from "@/components/reservation/ReservationActionForm";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { PaymentStatus } from "@/lib/payment-status";
-import { ReservationStatus } from "@/lib/reservation-status";
+import {
+	getReservationPaymentLabel,
+	ReservationStatus,
+} from "@/lib/reservation-status";
+import { formatDateTime } from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 type ReservationPreOrderItem = {
@@ -48,6 +57,14 @@ type Reservation = {
 	reservationAmountPaid: number | null;
 	specialRequests: string | null;
 	declineReason: string | null;
+	/** When an approved, unpaid booking releases its table. */
+	paymentDueAt: Date | string | null;
+	/** Money arrived that can't be applied and must be returned. */
+	refundRequiredReason: string | null;
+	refundedAt: Date | string | null;
+	cancelledBy: string | null;
+	cancelledAt: Date | string | null;
+	cancellationReason: string | null;
 	table: { label: string; capacity: number };
 	preOrder: {
 		id: string;
@@ -72,12 +89,8 @@ function formatMoney(value: unknown, currency: string) {
 	}).format(Number(value ?? 0));
 }
 
-function formatDate(value: Date | string) {
-	const date = typeof value === "string" ? new Date(value) : value;
-	return new Intl.DateTimeFormat("en-NG", {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(date);
+function formatDate(value: Date | string, tz: string) {
+	return formatDateTime(value, tz);
 }
 
 function statusClass(status: ReservationStatus) {
@@ -121,6 +134,7 @@ export function ReservationsList({
 	currency,
 	slug,
 }: ReservationsListProps) {
+	const tz = useRestaurantTimeZone();
 	const [selectedReservationId, setSelectedReservationId] = useState<
 		string | null
 	>(null);
@@ -270,10 +284,10 @@ export function ReservationsList({
 											</td>
 											<td className="px-2 md:px-6 py-3 md:py-4">
 												<p className="font-medium text-slate-700 whitespace-nowrap">
-													{formatDate(reservation.startsAt).split(",")[0]}
+													{formatDate(reservation.startsAt, tz).split(",")[0]}
 												</p>
 												<p className="text-xs md:text-sm font-medium text-slate-500 mt-0.5 md:mt-1 whitespace-nowrap">
-													{formatDate(reservation.startsAt)
+													{formatDate(reservation.startsAt, tz)
 														.split(",")[1]
 														?.trim()}
 												</p>
@@ -330,6 +344,7 @@ function ReservationMobileCard({
 	currency: string;
 	onSelect: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	return (
 		<button
 			type="button"
@@ -341,7 +356,7 @@ function ReservationMobileCard({
 					{reservation.customerName}
 				</p>
 				<p className="mt-0.5 truncate text-xs font-medium text-slate-500">
-					{formatDate(reservation.startsAt)}
+					{formatDate(reservation.startsAt, tz)}
 				</p>
 				<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
 					<span
@@ -395,13 +410,36 @@ function ReservationDetailsModal({
 	slug: string;
 	onClose: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const canApprove = reservation.status === ReservationStatus.PENDING_APPROVAL;
 	const canDecline =
 		reservation.status === ReservationStatus.PENDING_APPROVAL ||
 		reservation.status === ReservationStatus.APPROVED;
+	// The modal only renders after a click, so reading the clock here can't
+	// cause a server/client mismatch.
+	const started = new Date(reservation.startsAt).getTime() <= Date.now();
+	const amount = Number(reservation.reservationAmountPaid ?? 0);
+	const paid = reservation.reservationPaymentStatus === "PAID" && amount > 0;
 	const canCheckIn = reservation.status === ReservationStatus.ACTIVE;
 	const canCheckOut = reservation.status === ReservationStatus.CHECKED_IN;
-	const canCancel = reservation.status === ReservationStatus.ACTIVE;
+	// Only before the booking's time; afterwards it's check-in or no-show.
+	const canCancel =
+		!started &&
+		(reservation.status === ReservationStatus.ACTIVE ||
+			(reservation.status === ReservationStatus.APPROVED && paid));
+	const canNoShow = started && reservation.status === ReservationStatus.ACTIVE;
+	// A paid booking that's over can be refunded at the restaurant's discretion.
+	const isOver =
+		reservation.status === ReservationStatus.COMPLETED ||
+		reservation.status === ReservationStatus.EXPIRED ||
+		reservation.status === ReservationStatus.CANCELLED ||
+		reservation.status === ReservationStatus.CHECKED_IN;
+	const canRefund =
+		paid &&
+		isOver &&
+		!reservation.refundRequiredReason &&
+		!reservation.refundedAt;
+	const phoneDigits = reservation.customerPhone.replace(/[^\d+]/g, "");
 	const totalFood = Number(reservation.preOrder?.total ?? 0);
 
 	return (
@@ -428,7 +466,12 @@ function ReservationDetailsModal({
 								<span
 									className={`rounded-full px-2 py-0.5 md:px-3 md:py-1 text-xs font-black ${paymentClass(reservation.reservationPaymentStatus)}`}
 								>
-									{reservation.reservationPaymentStatus}
+									{getReservationPaymentLabel({
+										reservationPaymentStatus:
+											reservation.reservationPaymentStatus,
+										amount: Number(reservation.reservationAmountPaid ?? 0),
+										refundRequired: Boolean(reservation.refundRequiredReason),
+									})}
 								</span>
 							</div>
 							<p className="mt-3 flex items-start gap-2 text-xs font-semibold text-slate-500">
@@ -436,7 +479,8 @@ function ReservationDetailsModal({
 									className="size-3.5 md:size-4 shrink-0 mt-0.5"
 									aria-hidden="true"
 								/>
-								<span>Requested on {formatDate(reservation.startsAt)}</span>
+								{/* This is the booking time, not when it was requested. */}
+								<span>Booked for {formatDate(reservation.startsAt, tz)}</span>
 							</p>
 						</div>
 						<div className="text-left md:text-right shrink-0">
@@ -479,8 +523,8 @@ function ReservationDetailsModal({
 							icon={<Eye className="size-3.5 md:size-4" />}
 							title="Reservation Policy"
 						>
-							<p>Starts: {formatDate(reservation.startsAt)}</p>
-							<p>Expires: {formatDate(reservation.expiresAt)}</p>
+							<p>Starts: {formatDate(reservation.startsAt, tz)}</p>
+							<p>Expires: {formatDate(reservation.expiresAt, tz)}</p>
 							<p>
 								Table: {reservation.table.label} (Capacity:{" "}
 								{reservation.table.capacity})
@@ -550,6 +594,76 @@ function ReservationDetailsModal({
 								<h3 className="mb-1 font-black text-yellow-800">Guest Note</h3>
 								<p className="font-semibold text-yellow-700">
 									{reservation.specialRequests}
+								</p>
+							</div>
+						) : null}
+
+						{reservation.status === ReservationStatus.CANCELLED &&
+						reservation.cancelledBy ? (
+							<div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs md:text-sm">
+								<h3 className="mb-1 font-black text-slate-900">
+									Cancelled by{" "}
+									{reservation.cancelledBy === "RESTAURANT"
+										? "you"
+										: "the guest"}
+									{reservation.cancelledAt
+										? ` · ${formatDate(reservation.cancelledAt, tz)}`
+										: ""}
+								</h3>
+								{reservation.cancellationReason ? (
+									<p className="font-semibold text-slate-600">
+										Reason: {reservation.cancellationReason}
+									</p>
+								) : null}
+							</div>
+						) : null}
+
+						{reservation.refundedAt ? (
+							<div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-xs md:text-sm">
+								<h3 className="font-black text-emerald-900">
+									Refunded · {formatDate(reservation.refundedAt, tz)}
+								</h3>
+							</div>
+						) : null}
+
+						{reservation.refundRequiredReason ? (
+							<div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs md:text-sm">
+								<h3 className="mb-1 font-black text-amber-900">
+									Refund needed
+								</h3>
+								<p className="whitespace-pre-line font-semibold text-amber-800">
+									{reservation.refundRequiredReason}
+								</p>
+								<p className="mt-2 font-medium text-amber-700">
+									Refund the guest from your payment dashboard using the
+									reference above, then mark it done here.
+								</p>
+								<ConfirmForm
+									action={markReservationRefundedAction}
+									hiddenFields={{ slug, reservationId: reservation.id }}
+									confirmMessage="Mark this refund as done? Only do this once the guest has been refunded."
+									className="mt-3"
+								>
+									<button
+										type="submit"
+										className="min-h-10 rounded-xl bg-amber-700 px-4 text-xs font-black text-white hover:bg-amber-800"
+									>
+										Mark as refunded
+									</button>
+								</ConfirmForm>
+							</div>
+						) : null}
+
+						{reservation.status === ReservationStatus.APPROVED &&
+						reservation.reservationPaymentStatus !== "PAID" &&
+						reservation.paymentDueAt ? (
+							<div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-xs md:text-sm">
+								<h3 className="mb-1 font-black text-emerald-900">
+									Waiting for the guest to pay
+								</h3>
+								<p className="font-semibold text-emerald-800">
+									Table held until {formatDate(reservation.paymentDueAt, tz)}.
+									If they haven't paid by then it is released automatically.
 								</p>
 							</div>
 						) : null}
@@ -672,32 +786,140 @@ function ReservationDetailsModal({
 									</ReservationActionForm>
 								)}
 
-								{canCancel && (
+								{canNoShow && (
 									<ReservationActionForm
-										action={cancelReservationAction}
+										action={markReservationNoShowAction}
 										className="grid gap-2.5 md:gap-3 rounded-2xl border border-slate-100 p-3 md:p-4"
 										onSuccess={onClose}
 									>
 										<h4 className="text-xs md:text-sm font-black text-slate-900">
-											Cancel Reservation
+											Guest didn&apos;t come?
 										</h4>
+										<p className="text-xs font-semibold text-slate-500">
+											The booking time has passed, so it can&apos;t be
+											cancelled. Mark a no-show to free the table.
+											{paid
+												? " Whether the deposit is kept follows your cancellation policy; you can still refund it afterwards."
+												: ""}
+										</p>
 										<input type="hidden" name="slug" value={slug} />
 										<input
 											type="hidden"
 											name="reservationId"
 											value={reservation.id}
 										/>
-										<SubmitButton className="min-h-10 md:min-h-11 w-full rounded-xl border border-red-100 bg-red-50 px-4 md:px-5 text-xs md:text-sm font-black text-red-700">
-											Cancel reservation
+										<SubmitButton className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-4 text-xs md:text-sm font-black text-slate-700">
+											Mark as no-show
 										</SubmitButton>
 									</ReservationActionForm>
 								)}
+
+								{canCancel && (
+									<ReservationActionForm
+										action={cancelReservationAction}
+										className="grid gap-2.5 md:gap-3 rounded-2xl border border-red-100 bg-red-50/40 p-3 md:p-4"
+										onSuccess={onClose}
+									>
+										<h4 className="text-xs md:text-sm font-black text-red-900">
+											Cancel booking
+										</h4>
+										{paid ? (
+											<p className="rounded-xl bg-white p-2.5 text-xs font-bold text-red-800">
+												The guest paid {formatMoney(amount, currency)}. Because
+												you&apos;re cancelling, it&apos;s marked as a full
+												refund you owe them.
+											</p>
+										) : null}
+										<input type="hidden" name="slug" value={slug} />
+										<input
+											type="hidden"
+											name="reservationId"
+											value={reservation.id}
+										/>
+										<label className="grid gap-1">
+											<span className="text-xs font-black text-red-800">
+												Reason (the guest will see this)
+											</span>
+											<textarea
+												name="reason"
+												required
+												minLength={3}
+												maxLength={300}
+												placeholder="e.g. The restaurant is closed for a private event."
+												className="min-h-20 w-full rounded-xl border border-red-100 bg-white p-2.5 text-base md:text-sm font-semibold text-slate-700 outline-none focus:border-red-300"
+											/>
+										</label>
+										<p className="text-[11px] font-semibold text-red-700/80">
+											They&apos;re told by email
+											{reservation.customerPhone ? " and SMS/WhatsApp" : ""},
+											and on their booking page.
+										</p>
+										<SubmitButton className="min-h-10 md:min-h-11 w-full rounded-xl bg-red-600 px-4 md:px-5 text-xs md:text-sm font-black text-white">
+											Cancel booking{paid ? " and owe refund" : ""}
+										</SubmitButton>
+									</ReservationActionForm>
+								)}
+
+								{canRefund && (
+									<ReservationActionForm
+										action={flagReservationRefundAction}
+										className="grid gap-2.5 rounded-2xl border border-amber-100 bg-amber-50/40 p-3 md:p-4"
+										onSuccess={onClose}
+									>
+										<h4 className="text-xs md:text-sm font-black text-amber-900">
+											Refund the guest
+										</h4>
+										<p className="text-xs font-semibold text-amber-800">
+											Optional, under your own policy: flags{" "}
+											{formatMoney(amount, currency)} as owed so you can pay it
+											back and mark it done.
+										</p>
+										<input type="hidden" name="slug" value={slug} />
+										<input
+											type="hidden"
+											name="reservationId"
+											value={reservation.id}
+										/>
+										<input
+											name="reason"
+											required
+											minLength={3}
+											maxLength={300}
+											placeholder="Reason, e.g. goodwill after a complaint"
+											className="min-h-10 w-full rounded-xl border border-amber-100 bg-white px-3 text-base md:text-sm font-semibold text-slate-700 outline-none focus:border-amber-300"
+										/>
+										<SubmitButton className="min-h-10 w-full rounded-xl border border-amber-200 bg-white px-4 text-xs md:text-sm font-black text-amber-800">
+											Flag refund
+										</SubmitButton>
+									</ReservationActionForm>
+								)}
+
+								{reservation.customerPhone ? (
+									<div className="flex flex-wrap gap-2">
+										<a
+											href={`tel:${phoneDigits}`}
+											className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+										>
+											Call guest
+										</a>
+										<a
+											href={`https://wa.me/${phoneDigits.replace(/^\+/, "")}`}
+											target="_blank"
+											rel="noreferrer"
+											className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
+										>
+											WhatsApp guest
+										</a>
+									</div>
+								) : null}
 
 								{!canApprove &&
 									!canDecline &&
 									!canCheckIn &&
 									!canCheckOut &&
-									!canCancel && (
+									!canCancel &&
+									!canNoShow &&
+									!canRefund && (
 										<div className="text-center text-xs md:text-sm font-semibold text-slate-500 py-4">
 											No actions available for this reservation status.
 										</div>

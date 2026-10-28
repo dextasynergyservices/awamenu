@@ -17,9 +17,19 @@ import {
 	deleteMenuItemAction,
 	updateMenuItemAction,
 } from "@/actions/menu.actions";
+import {
+	MenuTagPicker,
+	SoldOutToggle,
+} from "@/components/admin/MenuItemExtras";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
+import {
+	RowActionButton,
+	RowActionForm,
+	RowActionSeparator,
+	RowActions,
+} from "@/components/ui/RowActions";
 
 type MenuEditorProps = {
 	restaurantId: string;
@@ -39,6 +49,8 @@ type MenuEditorProps = {
 			sortOrder: number;
 			isAvailable: boolean;
 			isTodaySpecial: boolean;
+			soldOut: boolean;
+			tags: string[];
 		}>;
 	}>;
 };
@@ -349,7 +361,9 @@ export function MenuEditor({
 							<th className="px-3 py-3">Category</th>
 							<th className="px-3 py-3">Price</th>
 							<th className="px-3 py-3">Status</th>
-							<th className="px-3 py-3 text-right">Actions</th>
+							<th className="w-12 px-3 py-3">
+								<span className="sr-only">Actions</span>
+							</th>
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-slate-100">
@@ -449,72 +463,82 @@ export function MenuEditor({
 										/>
 									</td>
 									<td className="px-3 py-3 align-middle">
-										<span className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-											{item.isAvailable ? "Published" : "Draft"}
-										</span>
+										<div className="grid justify-items-start gap-1.5">
+											<span className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+												{item.isAvailable ? "Published" : "Draft"}
+											</span>
+											{item.isAvailable ? (
+												<SoldOutToggle
+													restaurantId={restaurantId}
+													slug={slug}
+													itemId={item.id}
+													soldOut={item.soldOut}
+												/>
+											) : null}
+										</div>
 									</td>
 									<td className="px-3 py-3 align-middle">
-										<div className="flex justify-end gap-2">
-											<label
-												className="grid size-9 cursor-pointer place-items-center rounded-lg text-slate-600 hover:bg-slate-50"
-												aria-label={`Upload ${item.name} photo`}
-											>
-												<Upload className="size-4" aria-hidden="true" />
-												<input
-													type="file"
-													accept="image/webp,image/jpeg,image/png"
-													className="sr-only"
-													onChange={async (event) => {
-														const fileInput = event.currentTarget;
-														const file = fileInput.files?.[0];
-														const hiddenInput = document.getElementById(
-															`item-image-${item.id}`,
+										<div className="flex justify-end">
+											{/* Opened from the menu's "Change photo". */}
+											<input
+												id={`item-photo-${item.id}`}
+												type="file"
+												tabIndex={-1}
+												aria-hidden="true"
+												accept="image/webp,image/jpeg,image/png"
+												className="sr-only"
+												onChange={async (event) => {
+													const fileInput = event.currentTarget;
+													const file = fileInput.files?.[0];
+													const hiddenInput = document.getElementById(
+														`item-image-${item.id}`,
+													);
+													if (
+														!file ||
+														!(hiddenInput instanceof HTMLInputElement)
+													) {
+														return;
+													}
+													try {
+														await uploadItemPhoto(
+															restaurantId,
+															file,
+															hiddenInput,
 														);
-														if (
-															!file ||
-															!(hiddenInput instanceof HTMLInputElement)
-														) {
-															return;
-														}
-														try {
-															await uploadItemPhoto(
-																restaurantId,
-																file,
-																hiddenInput,
-															);
-															hiddenInput.form?.requestSubmit();
-														} finally {
-															fileInput.value = "";
-														}
-													}}
-												/>
-											</label>
-											<button
-												type="button"
-												onClick={() => setEditingItem(item)}
-												className="grid size-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-50"
-												aria-label={`Edit ${item.name}`}
-											>
-												<Pencil className="size-4" aria-hidden="true" />
-											</button>
-											<ActionForm action={deleteMenuItemAction}>
-												<input
-													type="hidden"
-													name="restaurantId"
-													value={restaurantId}
-												/>
-												<input type="hidden" name="slug" value={slug} />
-												<input type="hidden" name="itemId" value={item.id} />
-												<SubmitButton
-													loadingText="Deleting..."
-													successText="Deleted"
-													className="inline-flex min-h-9 min-w-24 items-center justify-center gap-2 rounded-lg px-3 text-red-600 hover:bg-red-50"
-													aria-label={`Delete ${item.name}`}
+														hiddenInput.form?.requestSubmit();
+													} finally {
+														fileInput.value = "";
+													}
+												}}
+											/>
+											<RowActions label={`Actions for ${item.name}`}>
+												<RowActionButton
+													icon={Pencil}
+													onSelect={() => setEditingItem(item)}
 												>
-													<Trash2 className="size-4" aria-hidden="true" />
-													<span className="sr-only">Delete</span>
-												</SubmitButton>
-											</ActionForm>
+													Edit item
+												</RowActionButton>
+												<RowActionButton
+													icon={Upload}
+													onSelect={() =>
+														document
+															.getElementById(`item-photo-${item.id}`)
+															?.click()
+													}
+												>
+													{item.imageUrl ? "Change photo" : "Add photo"}
+												</RowActionButton>
+												<RowActionSeparator />
+												<RowActionForm
+													action={deleteMenuItemAction}
+													fields={{ restaurantId, slug, itemId: item.id }}
+													confirm={`Delete "${item.name}"? This can't be undone.`}
+													tone="danger"
+													icon={Trash2}
+												>
+													Delete item
+												</RowActionForm>
+											</RowActions>
 										</div>
 									</td>
 								</tr>
@@ -586,16 +610,6 @@ export function MenuEditor({
 								name="sortOrder"
 								value={editingItem.sortOrder}
 							/>
-							<input
-								type="hidden"
-								name="isAvailable"
-								value={editingItem.isAvailable ? "on" : ""}
-							/>
-							<input
-								type="hidden"
-								name="isTodaySpecial"
-								value={editingItem.isTodaySpecial ? "on" : ""}
-							/>
 							<select
 								name="categoryId"
 								defaultValue={editingItem.categoryId}
@@ -627,6 +641,27 @@ export function MenuEditor({
 								defaultValue={editingItem.price}
 								className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
 							/>
+							<div className="grid grid-cols-2 gap-2">
+								<label className="flex min-h-11 items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700">
+									Published
+									<input
+										name="isAvailable"
+										type="checkbox"
+										defaultChecked={editingItem.isAvailable}
+										className="size-5 accent-emerald-700"
+									/>
+								</label>
+								<label className="flex min-h-11 items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700">
+									Today&apos;s special
+									<input
+										name="isTodaySpecial"
+										type="checkbox"
+										defaultChecked={editingItem.isTodaySpecial}
+										className="size-5 accent-emerald-700"
+									/>
+								</label>
+							</div>
+							<MenuTagPicker defaultTags={editingItem.tags} />
 							<ImageUploadField
 								restaurantId={restaurantId}
 								inputId={`modal-item-image-${editingItem.id}`}

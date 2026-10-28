@@ -7,12 +7,14 @@ type PaymentRow = {
 	id: string;
 	restaurantName: string;
 	planName: string;
-	monthlyPrice: number;
+	amount: number;
 	status: string;
-	currentPeriodStart: string;
+	paidAt: string;
 };
 
 const STATUS_STYLES: Record<string, string> = {
+	SUCCESS: "bg-emerald-100 text-emerald-700",
+	MISMATCH: "bg-red-100 text-red-700",
 	ACTIVE: "bg-emerald-100 text-emerald-700",
 	TRIALING: "bg-blue-100 text-blue-700",
 	PAST_DUE: "bg-amber-100 text-amber-700",
@@ -20,6 +22,10 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+	SUCCESS: "Paid",
+	// Money arrived but was short or in the wrong currency, so no plan was
+	// granted. Needs a person: a tampered checkout or a mispriced Paystack plan.
+	MISMATCH: "Refused — review",
 	ACTIVE: "Active",
 	TRIALING: "Trialing",
 	PAST_DUE: "Past Due",
@@ -54,7 +60,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
 								{payment.restaurantName}
 							</p>
 							<p className="truncate text-xs font-medium text-slate-400">
-								{payment.planName} · ₦{payment.monthlyPrice.toLocaleString()}
+								{payment.planName} · ₦{payment.amount.toLocaleString()}
 							</p>
 						</div>
 						<span
@@ -92,7 +98,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
 									{payment.planName}
 								</td>
 								<td className="p-4 font-semibold text-slate-700">
-									₦{payment.monthlyPrice.toLocaleString()}
+									₦{payment.amount.toLocaleString()}
 								</td>
 								<td className="p-4">
 									<span
@@ -105,7 +111,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
 									</span>
 								</td>
 								<td className="p-4 font-medium text-slate-500">
-									{new Date(payment.currentPeriodStart).toLocaleDateString()}
+									{new Date(payment.paidAt).toLocaleDateString()}
 								</td>
 							</tr>
 						))}
@@ -126,7 +132,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
 								Amount
 							</p>
 							<p className="mt-0.5 text-sm font-semibold text-slate-700">
-								₦{selectedPayment.monthlyPrice.toLocaleString()}
+								₦{selectedPayment.amount.toLocaleString()}
 							</p>
 						</div>
 						<div>
@@ -134,9 +140,7 @@ export function PaymentsTable({ payments }: { payments: PaymentRow[] }) {
 								Date
 							</p>
 							<p className="mt-0.5 text-sm font-semibold text-slate-700">
-								{new Date(
-									selectedPayment.currentPeriodStart,
-								).toLocaleDateString()}
+								{new Date(selectedPayment.paidAt).toLocaleDateString()}
 							</p>
 						</div>
 						<div>

@@ -1,90 +1,78 @@
+import type { ReactElement } from "react";
 import { Resend } from "resend";
-import { RestaurantWelcome } from "@/emails/RestaurantWelcome";
-import { VerifyEmail } from "@/emails/VerifyEmail";
+import { CustomerCodeEmail } from "@/emails/customer";
+import {
+	AutoRenewalUpcomingEmail,
+	ExpiryUpcomingEmail,
+	GracePeriodEmail,
+	LapsedEmail,
+	PasswordResetEmail,
+	PayoutChangedEmail,
+	ReactivatedEmail,
+	RenewalReceiptEmail,
+	SubscriptionConfirmedEmail,
+	VerifyEmail,
+	WelcomeEmail,
+} from "@/emails/owner";
+import { renderEmail } from "@/emails/render";
 import { env, requireEnv } from "@/env";
+import {
+	getPlatformBrand,
+	getRestaurantEmailIdentity,
+} from "@/lib/email-brand";
+import { getQueuedMailer } from "@/lib/outbox";
 
+/**
+ * The real Resend client. Only for sends the person is waiting on (codes,
+ * verification); everything else goes through the outbox (getQueuedMailer).
+ */
 export function getResendClient() {
 	return new Resend(requireEnv("RESEND_API_KEY"));
 }
 
 /**
- * Signup, verification, and billing emails send from a dedicated address,
- * separate from `RESEND_FROM_EMAIL` (which stays reserved for order
- * confirmations to keep that inbox exclusively about orders). Falls back to
- * `RESEND_FROM_EMAIL` if the dedicated one hasn't been configured yet.
+ * AwaMenu's own sender, for mail to restaurant owners (accounts, billing,
+ * activity). `RESEND_FROM_EMAIL` stays for guest mail sent in a restaurant's
+ * name. Falls back to it if the dedicated address isn't configured yet.
  */
 export function getAccountsFromEmail() {
-	return env.RESEND_ACCOUNTS_FROM_EMAIL ?? requireEnv("RESEND_FROM_EMAIL");
+	const address =
+		env.RESEND_ACCOUNTS_FROM_EMAIL ?? requireEnv("RESEND_FROM_EMAIL");
+	return `AwaMenu <${address}>`;
 }
 
-/**
- * The From line for mail a customer receives about one restaurant.
- *
- * The restaurant's name leads because that is who the guest thinks they are
- * dealing with — but the sending domain stays AwaMenu's, since a restaurant has
- * not authorised us to send as their domain and SPF/DKIM would fail if we tried.
- */
-export function getRestaurantFromEmail(restaurantName: string) {
-	return `${restaurantName} via AwaMenu <${requireEnv("RESEND_FROM_EMAIL")}>`;
+/** HTML plus a plain-text part, for the sends that skip the outbox. */
+async function sendNow(message: {
+	from: string;
+	to: string;
+	subject: string;
+	react: ReactElement;
+}) {
+	const { html, text } = await renderEmail(message.react);
+	const { error } = await getResendClient().emails.send({
+		from: message.from,
+		to: message.to,
+		subject: message.subject,
+		html,
+		text,
+	});
+	if (error) throw new Error(`Resend: ${error.message}`);
 }
+
+const app = (path: string) => `${env.NEXT_PUBLIC_APP_URL}${path}`;
+
+// ─── Account (sent now: the person is waiting) ────────
 
 export async function sendVerificationEmail(input: {
 	to: string;
 	verifyUrl: string;
 	code: string;
 }) {
-	await getResendClient().emails.send({
+	await sendNow({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: "Verify your AwaMenu email address",
-		react: VerifyEmail({ verifyUrl: input.verifyUrl, code: input.code }),
-	});
-}
-
-export async function sendRestaurantWelcomeEmail(input: {
-	to: string;
-	restaurantName: string;
-	dashboardUrl: string;
-}) {
-	await getResendClient().emails.send({
-		from: getAccountsFromEmail(),
-		to: input.to,
-		subject: `Welcome to AwaMenu, ${input.restaurantName}`,
-		react: RestaurantWelcome(input),
-	});
-}
-
-export async function sendSubscriptionConfirmationEmail(input: {
-	to: string;
-	planName: string;
-}) {
-	await getResendClient().emails.send({
-		from: getAccountsFromEmail(),
-		to: input.to,
-		subject: "AwaMenu subscription confirmed",
-		text: `Your ${input.planName} subscription is confirmed. Continue setup from your AwaMenu onboarding page.`,
-	});
-}
-
-export async function sendOrderConfirmationEmail(input: {
-	to: string;
-	restaurantName: string;
-	restaurantReplyToEmail: string;
-	orderId: string;
-	orderUrl: string;
-	total: string;
-}) {
-	await getResendClient().emails.send({
-		// Displays as the restaurant, but still sends from our own verified
-		// domain — restaurants don't have their own domain verified with
-		// Resend, so this can't literally send "from" them. Reply-To points
-		// at the restaurant's own email so a customer reply reaches them,
-		// not us.
-		from: `${input.restaurantName} via AwaMenu <${requireEnv("RESEND_FROM_EMAIL")}>`,
-		replyTo: input.restaurantReplyToEmail,
-		to: input.to,
-		subject: `Order confirmed - ${input.restaurantName}`,
-		text: `Your order #${input.orderId.slice(-6).toUpperCase()} from ${input.restaurantName} is confirmed. Total: ${input.total}. Track it here: ${input.orderUrl}`,
+		subject: "Confirm your AwaMenu email address",
+		react: VerifyEmail({ brand: await getPlatformBrand(), ...input }),
 	});
 }
 
@@ -92,26 +80,47 @@ export async function sendPasswordResetOtpEmail(input: {
 	to: string;
 	otp: string;
 }) {
-	await getResendClient().emails.send({
+	await sendNow({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: "AwaMenu - Your Password Reset Code",
-		text: `Your password reset code is: ${input.otp}\n\nThis code is valid for 15 minutes. If you did not request a password reset, you can safely ignore this email.`,
+		subject: `${input.otp} is your AwaMenu password reset code`,
+		react: PasswordResetEmail({
+			brand: await getPlatformBrand(),
+			code: input.otp,
+		}),
 	});
 }
 
-export async function sendAutoRenewalUpcomingEmail(input: {
+/**
+ * A guest's sign-in code, in the restaurant's name and branding: the guest is
+ * signing in to that restaurant, not to AwaMenu.
+ */
+export async function sendCustomerOtpEmail(input: {
+	to: string;
+	code: string;
+	restaurantId: string;
+}) {
+	const identity = await getRestaurantEmailIdentity(input.restaurantId);
+	await sendNow({
+		from: identity.from,
+		to: input.to,
+		subject: `${input.code} is your ${identity.brand.name} code`,
+		react: CustomerCodeEmail({ brand: identity.brand, code: input.code }),
+	});
+}
+
+// ─── Account (queued) ─────────────────────────────────
+
+export async function sendRestaurantWelcomeEmail(input: {
 	to: string;
 	restaurantName: string;
-	daysLeft: number;
-	amount: string;
-	manageBillingUrl: string;
+	dashboardUrl: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: `Upcoming Charge: ${input.restaurantName} Auto-Renewal in ${input.daysLeft} Days`,
-		text: `Hello,\n\nYour subscription for ${input.restaurantName} will automatically renew in ${input.daysLeft} day(s).\n\nWe will auto-debit the amount of ${input.amount} from your saved payment method on your renewal date.\n\nTo manage your plan or billing details, visit: ${input.manageBillingUrl}\n\nThank you,\nThe AwaMenu Team`,
+		subject: `Welcome to AwaMenu, ${input.restaurantName}`,
+		react: WelcomeEmail({ brand: await getPlatformBrand(), ...input }),
 	});
 }
 
@@ -126,14 +135,83 @@ export async function sendAutoRenewalUpcomingEmail(input: {
 export async function sendPayoutAccountChangedEmail(input: {
 	to: string;
 	restaurantName: string;
+	restaurantSlug: string;
 	previous: string;
 	next: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
 		subject: `Payout account changed for ${input.restaurantName}`,
-		text: `Hello,\n\nThe bank account that receives payments for ${input.restaurantName} was just changed.\n\nPrevious: ${input.previous}\nNew: ${input.next}\n\nIf you made this change, no action is needed.\n\nIf you did NOT make this change, your payouts are now going somewhere else. Sign in and change it back immediately, then contact us.\n\nThe AwaMenu Team`,
+		react: PayoutChangedEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			previous: input.previous,
+			next: input.next,
+			settingsUrl: app(`/dashboard/${input.restaurantSlug}/settings`),
+		}),
+	});
+}
+
+// ─── Billing ──────────────────────────────────────────
+
+export async function sendSubscriptionConfirmationEmail(input: {
+	to: string;
+	planName: string;
+}) {
+	await getQueuedMailer().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `Your AwaMenu ${input.planName} plan is active`,
+		react: SubscriptionConfirmedEmail({
+			brand: await getPlatformBrand(),
+			planName: input.planName,
+			continueUrl: app("/dashboard"),
+		}),
+	});
+}
+
+export async function sendRenewalSuccessEmail(input: {
+	to: string;
+	restaurantName: string;
+	restaurantSlug: string;
+	amount: string;
+	planName: string;
+	periodEnd: string | null;
+}) {
+	await getQueuedMailer().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `Receipt: ${input.restaurantName} ${input.planName} plan renewed`,
+		react: RenewalReceiptEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			planName: input.planName,
+			amount: input.amount,
+			periodEnd: input.periodEnd,
+			receiptUrl: app(`/dashboard/${input.restaurantSlug}/billing`),
+		}),
+	});
+}
+
+export async function sendAutoRenewalUpcomingEmail(input: {
+	to: string;
+	restaurantName: string;
+	daysLeft: number;
+	amount: string;
+	manageBillingUrl: string;
+}) {
+	await getQueuedMailer().emails.send({
+		from: getAccountsFromEmail(),
+		to: input.to,
+		subject: `${input.restaurantName} renews in ${input.daysLeft} day${input.daysLeft === 1 ? "" : "s"} (${input.amount})`,
+		react: AutoRenewalUpcomingEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			daysLeft: input.daysLeft,
+			amount: input.amount,
+			billingUrl: input.manageBillingUrl,
+		}),
 	});
 }
 
@@ -143,11 +221,16 @@ export async function sendUpcomingExpiryEmail(input: {
 	daysLeft: number;
 	manageBillingUrl: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: `Action Required: ${input.restaurantName} Menu Expires in ${input.daysLeft} Day(s)`,
-		text: `Hello,\n\nThe subscription for ${input.restaurantName} will expire in ${input.daysLeft} day(s) because auto-renewal is turned off.\n\nPlease update your payment method or turn on auto-renewal to keep your menu online: ${input.manageBillingUrl}\n\nThank you,\nThe AwaMenu Team`,
+		subject: `${input.restaurantName}'s plan ends in ${input.daysLeft} day${input.daysLeft === 1 ? "" : "s"}`,
+		react: ExpiryUpcomingEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			daysLeft: input.daysLeft,
+			renewUrl: input.manageBillingUrl,
+		}),
 	});
 }
 
@@ -156,37 +239,15 @@ export async function sendGracePeriodEmail(input: {
 	restaurantName: string;
 	manageBillingUrl: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: `Action Required: ${input.restaurantName} Subscription Expired (Grace Period Started)`,
-		text: `Hello,\n\nThe subscription for ${input.restaurantName} has officially expired.\n\nWe have granted a 3-day grace period to keep your menu online. If you do not renew within the next 3 days, your public menu will be completely taken offline.\n\nPlease renew now: ${input.manageBillingUrl}\n\nThank you,\nThe AwaMenu Team`,
-	});
-}
-
-export async function sendCutOffEmail(input: {
-	to: string;
-	restaurantName: string;
-	manageBillingUrl: string;
-}) {
-	await getResendClient().emails.send({
-		from: getAccountsFromEmail(),
-		to: input.to,
-		subject: `Alert: ${input.restaurantName} Menu is Offline`,
-		text: `Hello,\n\nThe grace period for ${input.restaurantName} has ended, and your public menu is now offline.\n\nCustomers can no longer view your menu or place orders.\n\nTo restore access immediately, please renew your subscription: ${input.manageBillingUrl}\n\nThank you,\nThe AwaMenu Team`,
-	});
-}
-
-export async function sendCustomerOtpEmail(input: {
-	to: string;
-	code: string;
-	restaurantName: string;
-}) {
-	await getResendClient().emails.send({
-		from: getAccountsFromEmail(),
-		to: input.to,
-		subject: `${input.code} is your ${input.restaurantName} verification code`,
-		text: `Hello,\n\nYour verification code for ${input.restaurantName} is:\n\n${input.code}\n\nIt expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n\nThank you,\n${input.restaurantName} (via AwaMenu)`,
+		subject: `Action needed: ${input.restaurantName}'s plan has ended`,
+		react: GracePeriodEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			renewUrl: input.manageBillingUrl,
+		}),
 	});
 }
 
@@ -195,11 +256,15 @@ export async function sendSuspensionEmail(input: {
 	restaurantName: string;
 	manageBillingUrl: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
-		subject: `${input.restaurantName} has been suspended`,
-		text: `Hello,\n\nThe 3-day grace period for ${input.restaurantName} has now passed without a renewal, so the account has been suspended.\n\nWhat this means:\n  • Your public menu is offline and customers cannot place orders.\n  • You and your staff cannot access the dashboard.\n  • Nothing has been deleted — your menu, orders and settings are all safe.\n\nRenewing restores everything immediately: ${input.manageBillingUrl}\n\nIf you believe this is a mistake, just reply to this email and we'll help.\n\nThank you,\nThe AwaMenu Team`,
+		subject: `${input.restaurantName} has stopped taking orders`,
+		react: LapsedEmail({
+			brand: await getPlatformBrand(),
+			restaurantName: input.restaurantName,
+			renewUrl: input.manageBillingUrl,
+		}),
 	});
 }
 
@@ -208,25 +273,10 @@ export async function sendReactivationEmail(input: {
 	restaurantName: string;
 	dashboardUrl: string;
 }) {
-	await getResendClient().emails.send({
+	await getQueuedMailer().emails.send({
 		from: getAccountsFromEmail(),
 		to: input.to,
 		subject: `${input.restaurantName} is back online`,
-		text: `Hello,\n\nThanks for renewing — ${input.restaurantName} has been reactivated.\n\nYour public menu is live again, and you and your staff can access the dashboard as normal.\n\nGo to your dashboard: ${input.dashboardUrl}\n\nThank you,\nThe AwaMenu Team`,
-	});
-}
-
-export async function sendRenewalSuccessEmail(input: {
-	to: string;
-	restaurantName: string;
-	amount: string;
-	planName: string;
-	receiptUrl?: string;
-}) {
-	await getResendClient().emails.send({
-		from: getAccountsFromEmail(),
-		to: input.to,
-		subject: `Receipt: ${input.restaurantName} Subscription Renewed`,
-		text: `Hello,\n\nYour ${input.planName} subscription for ${input.restaurantName} has been successfully renewed!\n\nWe have successfully debited ${input.amount} from your saved payment method.\n\n${input.receiptUrl ? `You can view your receipt here: ${input.receiptUrl}\n\n` : ""}Thank you for using AwaMenu!\n\nThe AwaMenu Team`,
+		react: ReactivatedEmail({ brand: await getPlatformBrand(), ...input }),
 	});
 }

@@ -4,13 +4,21 @@ import {
 	PaymentStatus,
 	type Prisma,
 } from "@prisma/client";
-import { ChevronLeft, ChevronRight, Filter, Search } from "lucide-react";
+import { ChevronRight, Filter, Search } from "lucide-react";
 import Link from "next/link";
-import { AdminOrdersPoller } from "@/components/orders/AdminOrdersPoller";
 import { DesktopOrdersList } from "@/components/orders/DesktopOrdersList";
 import { MobileOrdersView } from "@/components/orders/MobileOrdersView";
+import { Pagination } from "@/components/ui/Pagination";
 import { db } from "@/lib/db";
+import { clampPage, pageInfo, parsePage } from "@/lib/pagination";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
+import {
+	addDaysToDateKey,
+	formatChange,
+	percentChange,
+	restaurantCalendar,
+	startOfDateIn,
+} from "@/lib/restaurant-day";
 
 type OrdersPageProps = {
 	params: Promise<{ slug: string }>;
@@ -21,6 +29,10 @@ type OrdersPageProps = {
 		type?: string;
 		dateFrom?: string;
 		dateTo?: string;
+		/** "1": only orders flagged as needing a refund. */
+		refund?: string;
+		page?: string;
+		size?: string;
 	}>;
 };
 
@@ -34,22 +46,22 @@ function formatMoney(value: number, currency: string) {
 	}).format(value);
 }
 
-function startOfWeek(date: Date) {
-	const copy = new Date(date);
-	const day = copy.getDay();
-	const diff = copy.getDate() - day + (day === 0 ? -6 : 1);
-	copy.setDate(diff);
-	copy.setHours(0, 0, 0, 0);
-	return copy;
-}
-
 function orderTypeLabel(type: string) {
 	return type.replaceAll("_", " ");
 }
 
-function buildDate(value: string | undefined, endOfDay = false) {
-	if (!value) return undefined;
-	const date = new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`);
+/** A filter date ("YYYY-MM-DD") as the start of that day, or of the next day
+ *  for an inclusive "to" date, in the restaurant's timezone. */
+function buildDate(
+	value: string | undefined,
+	timeZone: string,
+	endOfDay = false,
+) {
+	if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+	const date = startOfDateIn(
+		timeZone,
+		endOfDay ? addDaysToDateKey(value, 1) : value,
+	);
 	return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
@@ -71,8 +83,7 @@ export default async function OrdersPage({
 	)
 		? (query.type as OrderType)
 		: "";
-	const dateFrom = buildDate(query.dateFrom);
-	const dateTo = buildDate(query.dateTo, true);
+	const refundOnly = query.refund === "1";
 
 	const restaurant = await db.restaurant.findFirstOrThrow({
 		where: { slug },
@@ -81,8 +92,12 @@ export default async function OrdersPage({
 			slug: true,
 			name: true,
 			currency: true,
+			timezone: true,
 		},
 	});
+	const dateFrom = buildDate(query.dateFrom, restaurant.timezone);
+	const dateTo = buildDate(query.dateTo, restaurant.timezone, true);
+	const calendar = restaurantCalendar(restaurant.timezone);
 
 	const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
 
@@ -90,11 +105,12 @@ export default async function OrdersPage({
 		restaurantId: restaurant.id,
 		...(selectedStatus ? { status: selectedStatus } : {}),
 		...(selectedType ? { type: selectedType } : {}),
+		...(refundOnly ? { refundRequiredReason: { not: null } } : {}),
 		...(dateFrom || dateTo
 			? {
 					createdAt: {
 						...(dateFrom ? { gte: dateFrom } : {}),
-						...(dateTo ? { lte: dateTo } : {}),
+						...(dateTo ? { lt: dateTo } : {}),
 					},
 				}
 			: {}),
@@ -110,11 +126,15 @@ export default async function OrdersPage({
 		];
 	}
 
-	const [orders, statsOrders] = await Promise.all([
+	const totalOrders = await db.order.count({ where: orderWhere });
+	const page = clampPage(parsePage(query), totalOrders);
+
+	const [orders, statsOrders, lastWeekOrders] = await Promise.all([
 		db.order.findMany({
 			where: orderWhere,
 			orderBy: { createdAt: "desc" },
-			take: search ? 10 : 30,
+			skip: page.skip,
+			take: page.take,
 			select: {
 				id: true,
 				customerName: true,
@@ -124,6 +144,7 @@ export default async function OrdersPage({
 				status: true,
 				statusNote: true,
 				cancellationNote: true,
+				refundRequiredReason: true,
 				paymentStatus: true,
 				tableNumber: true,
 				tableLabel: true,
@@ -150,16 +171,13 @@ export default async function OrdersPage({
 						method: true,
 					},
 				},
-				events: {
-					select: {
-						id: true,
-						description: true,
-						isAutomatic: true,
-						createdAt: true,
-						staff: { select: { name: true, staffId: true } },
-					},
-					orderBy: { createdAt: "desc" },
-				},
+				confirmedAt: true,
+				acceptedAt: true,
+				preparingAt: true,
+				readyAt: true,
+				deliveredAt: true,
+				completedAt: true,
+				cancelledAt: true,
 				attendingStaff: {
 					select: {
 						name: true,
@@ -171,7 +189,7 @@ export default async function OrdersPage({
 		db.order.findMany({
 			where: {
 				restaurantId: restaurant.id,
-				createdAt: { gte: startOfWeek(new Date()) },
+				createdAt: { gte: calendar.weekStart },
 			},
 			select: {
 				id: true,
@@ -179,6 +197,17 @@ export default async function OrdersPage({
 				status: true,
 				paymentStatus: true,
 			},
+		}),
+		// Last week up to the same point, so the trend compares like with like.
+		db.order.findMany({
+			where: {
+				restaurantId: restaurant.id,
+				createdAt: {
+					gte: calendar.lastWeekStart,
+					lt: calendar.lastWeekSameTime,
+				},
+			},
+			select: { total: true, status: true, paymentStatus: true },
 		}),
 	]);
 
@@ -198,14 +227,16 @@ export default async function OrdersPage({
 	const pendingCount = statsOrders.filter(
 		(order) => order.paymentStatus === PaymentStatus.PENDING,
 	).length;
-	const revenue = statsOrders
-		.filter((order) => order.paymentStatus === PaymentStatus.PAID)
-		.reduce((total, order) => total + Number(order.total), 0);
+	const paidRevenue = (list: typeof lastWeekOrders) =>
+		list
+			.filter((order) => order.paymentStatus === PaymentStatus.PAID)
+			.reduce((total, order) => total + Number(order.total), 0);
+	const revenue = paidRevenue(statsOrders);
+	const ordersTrend = percentChange(statsOrders.length, lastWeekOrders.length);
+	const revenueTrend = percentChange(revenue, paidRevenue(lastWeekOrders));
 
 	return (
 		<section className="grid min-w-0 max-w-full gap-5 overflow-hidden">
-			<AdminOrdersPoller />
-
 			<div className="hidden md:grid md:grid-cols-[minmax(0,1fr)_auto] md:gap-6">
 				<div>
 					<p className="mt-2 text-sm font-semibold text-slate-500">
@@ -216,8 +247,8 @@ export default async function OrdersPage({
 					<MetricCard
 						label="Total Orders"
 						value={String(statsOrders.length)}
-						helper="This week"
-						trend="+12%"
+						helper="This week, vs last week"
+						trend={ordersTrend}
 					/>
 					<MetricCard
 						label="Pending"
@@ -228,19 +259,10 @@ export default async function OrdersPage({
 					<MetricCard
 						label="Revenue"
 						value={formatMoney(revenue, restaurant.currency)}
-						helper="This week"
-						trend="+8.2%"
-						withArrow
+						helper="Paid this week, vs last week"
+						trend={revenueTrend}
 					/>
 				</div>
-			</div>
-
-			<div className="md:hidden">
-				<p className="text-sm font-medium text-slate-500">{restaurant.name}</p>
-				<h1 className="mt-1 text-sm font-black text-slate-950">Orders</h1>
-				<p className="mt-1 text-xs font-medium text-slate-500">
-					Live feed for new and active customer orders.
-				</p>
 			</div>
 
 			<div className="grid min-w-0 gap-4">
@@ -345,6 +367,24 @@ export default async function OrdersPage({
 						</div>
 					) : null}
 
+					{refundOnly || selectedStatus ? (
+						<div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2">
+							<p className="text-xs font-bold text-amber-900">
+								Showing{" "}
+								{refundOnly
+									? "orders that need a refund"
+									: `${selectedStatus.replaceAll("_", " ").toLowerCase()} orders`}
+								.
+							</p>
+							<Link
+								href={`/dashboard/${restaurant.slug}/orders`}
+								className="text-xs font-black text-emerald-700"
+							>
+								Show all orders
+							</Link>
+						</div>
+					) : null}
+
 					<div className="mt-4 grid min-w-0 gap-3 md:hidden">
 						<MobileOrdersView
 							orders={serializedOrders}
@@ -372,34 +412,13 @@ export default async function OrdersPage({
 							</div>
 						)}
 					</div>
-					{orders.length > 0 ? (
-						<div className="mt-6 hidden items-center justify-between gap-3 md:flex">
-							<p className="text-sm font-semibold text-slate-500">
-								Showing 1 to {orders.length} of {orders.length} orders
-							</p>
-							<div className="flex items-center gap-2">
-								<button
-									type="button"
-									disabled
-									className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-400 disabled:opacity-60"
-								>
-									<ChevronLeft className="size-4" aria-hidden="true" />
-									<span className="sr-only">Previous page</span>
-								</button>
-								<span className="grid size-10 place-items-center rounded-full bg-emerald-700 text-sm font-black text-white shadow-[0_10px_24px_rgba(4,120,87,0.2)]">
-									1
-								</span>
-								<button
-									type="button"
-									disabled
-									className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-400 disabled:opacity-60"
-								>
-									<ChevronRight className="size-4" aria-hidden="true" />
-									<span className="sr-only">Next page</span>
-								</button>
-							</div>
-						</div>
-					) : null}
+					<Pagination
+						className="mt-6"
+						info={pageInfo(page, totalOrders)}
+						basePath={`/dashboard/${restaurant.slug}/orders`}
+						query={query}
+						noun="orders"
+					/>
 				</div>
 			</div>
 		</section>
@@ -417,10 +436,12 @@ function MetricCard({
 	label: string;
 	value: string;
 	helper: string;
-	trend?: string;
+	/** Percentage change; null when there's nothing to compare with. */
+	trend?: number | null;
 	accent?: string;
 	withArrow?: boolean;
 }) {
+	const trendText = trend === undefined ? null : formatChange(trend);
 	return (
 		<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_50px_rgba(15,23,42,0.04)]">
 			<div className="flex items-start justify-between gap-3">
@@ -429,9 +450,17 @@ function MetricCard({
 					<p className={`mt-2 text-xl font-black ${accent}`}>{value}</p>
 					<p className="mt-2 text-xs font-semibold text-slate-500">{helper}</p>
 				</div>
-				{trend ? (
-					<span className="mt-8 text-xs font-black text-emerald-700">
-						{trend}
+				{trendText ? (
+					<span
+						className={`mt-8 text-xs font-black ${
+							(trend ?? 0) > 0
+								? "text-emerald-700"
+								: (trend ?? 0) < 0
+									? "text-red-600"
+									: "text-slate-500"
+						}`}
+					>
+						{trendText}
 					</span>
 				) : null}
 				{withArrow ? (

@@ -17,11 +17,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
 	staffApproveReservationAction,
+	staffCheckInReservationAction,
 	staffUpdateOrderStatusAction,
 } from "@/actions/staff.actions";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import { PinPromptModal } from "@/components/staff/PinPromptModal";
+import {
+	formatClock,
+	formatDay,
+	formatOrderTime as formatOrderTimeIn,
+	isTodayIn,
+} from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────
@@ -60,6 +68,8 @@ type StaffReservation = {
 	customerName: string;
 	customerPhone: string;
 	date: string;
+	/** Formatted in the restaurant's timezone on the server. */
+	dateLabel: string;
 	time: string;
 	guestCount: number;
 	tableLabel: string;
@@ -118,18 +128,8 @@ function formatMoney(value: number, currency: string) {
 	}).format(value);
 }
 
-function formatOrderTime(value: string) {
-	const date = new Date(value);
-	const now = new Date();
-	const isToday = date.toDateString() === now.toDateString();
-	return `${
-		isToday
-			? "Today"
-			: new Intl.DateTimeFormat("en-NG", {
-					month: "short",
-					day: "numeric",
-				}).format(date)
-	}, ${new Intl.DateTimeFormat("en-NG", { hour: "numeric", minute: "2-digit" }).format(date)}`;
+function formatOrderTime(value: string, tz: string) {
+	return formatOrderTimeIn(value, tz);
 }
 
 // ─── Main Component ───────────────────────────────────
@@ -402,6 +402,7 @@ function StaffOrderCard({
 	currency: string;
 	onView: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const config = typeConfig[order.type] ?? typeConfig.DINE_IN;
 	const TypeIcon = config.icon;
 	const isPaid = order.paymentStatus === "PAID";
@@ -446,10 +447,7 @@ function StaffOrderCard({
 					</span>
 				</div>
 				<span className="shrink-0 text-xs font-semibold text-slate-400">
-					{new Date(order.createdAt).toLocaleTimeString([], {
-						hour: "2-digit",
-						minute: "2-digit",
-					})}
+					{formatClock(order.createdAt, tz)}
 				</span>
 			</div>
 
@@ -492,6 +490,7 @@ function StaffOrderTableRow({
 	currency: string;
 	onView: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const config = typeConfig[order.type] ?? typeConfig.DINE_IN;
 	const TypeIcon = config.icon;
 	const isPaid = order.paymentStatus === "PAID";
@@ -552,16 +551,12 @@ function StaffOrderTableRow({
 			</td>
 			<td className="py-4 pr-4">
 				<div className="font-semibold text-slate-700">
-					{new Date(order.createdAt).toLocaleTimeString([], {
-						hour: "2-digit",
-						minute: "2-digit",
-					})}
+					{formatClock(order.createdAt, tz)}
 				</div>
 				<div className="text-xs font-medium text-slate-500">
-					{new Date(order.createdAt).toDateString() ===
-					new Date().toDateString()
+					{isTodayIn(order.createdAt, tz)
 						? "Today"
-						: new Date(order.createdAt).toLocaleDateString()}
+						: formatDay(order.createdAt, tz)}
 				</div>
 			</td>
 			<td className="py-4 text-right">
@@ -592,7 +587,7 @@ function ReservationsTable({
 	if (reservations.length === 0) {
 		return (
 			<div className="py-12 text-center text-sm font-medium text-slate-500">
-				No pending reservations.
+				No reservation requests or bookings coming up.
 			</div>
 		);
 	}
@@ -617,7 +612,7 @@ function ReservationsTable({
 							</div>
 							<div className="text-right">
 								<p className="text-xs font-bold text-slate-700">
-									{new Date(res.date).toLocaleDateString()}
+									{res.dateLabel}
 								</p>
 								<p className="text-xs font-semibold text-slate-500">
 									{res.time} · {res.guestCount} guests
@@ -659,7 +654,7 @@ function ReservationsTable({
 								</td>
 								<td className="py-4 pr-4">
 									<div className="font-semibold text-slate-900">
-										{new Date(res.date).toLocaleDateString()}
+										{res.dateLabel}
 									</div>
 									<div className="text-xs font-medium text-slate-500">
 										{res.time}
@@ -691,20 +686,31 @@ function ReservationAction({
 	const [promptingPin, setPromptingPin] = useState(false);
 	const [isPending, startTransition] = useTransition();
 
-	function handleApprove(staffId: string) {
+	// A request is approved; a confirmed booking is checked in when the guest
+	// arrives. Both take the staff member's ID, for the record.
+	const isRequest = res.status === "PENDING_APPROVAL";
+
+	function handleStaffId(staffId: string, pin: string) {
 		setPromptingPin(false);
 		const fd = new FormData();
 		fd.set("reservationId", res.id);
 		fd.set("slug", slug);
 		fd.set("staffId", staffId);
+		fd.set("pin", pin);
 		startTransition(async () => {
 			try {
-				const result = await staffApproveReservationAction(fd);
+				const result = isRequest
+					? await staffApproveReservationAction(fd)
+					: await staffCheckInReservationAction(fd);
 				if ("error" in result) throw new Error(result.error);
 				router.refresh();
 			} catch (err) {
 				alert(
-					err instanceof Error ? err.message : "Error approving reservation",
+					err instanceof Error
+						? err.message
+						: isRequest
+							? "Error approving reservation"
+							: "Error checking in",
 				);
 			}
 		});
@@ -717,14 +723,20 @@ function ReservationAction({
 					type="button"
 					onClick={() => setPromptingPin(true)}
 					disabled={isPending}
-					className="inline-flex min-h-9 items-center rounded-lg bg-emerald-700 px-4 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-50"
+					className="inline-flex min-h-8 items-center rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
 				>
-					{isPending ? "Approving..." : "Approve"}
+					{isRequest
+						? isPending
+							? "Approving..."
+							: "Approve"
+						: isPending
+							? "Checking in..."
+							: "Check in"}
 				</button>
 			</div>
 			{promptingPin ? (
 				<PinPromptModal
-					onPinEnter={handleApprove}
+					onPinEnter={handleStaffId}
 					onClose={() => setPromptingPin(false)}
 				/>
 			) : null}
@@ -745,6 +757,7 @@ function StaffOrderDetailsModal({
 	slug: string;
 	onClose: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const router = useRouter();
 	const [promptingPin, setPromptingPin] = useState(false);
 	const [error, setError] = useState("");
@@ -762,7 +775,7 @@ function StaffOrderDetailsModal({
 		setPromptingPin(true);
 	}
 
-	function submitAction(staffId: string) {
+	function submitAction(staffId: string, pin: string) {
 		setPromptingPin(false);
 		setError("");
 		const fd = new FormData();
@@ -770,6 +783,7 @@ function StaffOrderDetailsModal({
 		fd.set("status", nextStatus);
 		fd.set("slug", slug);
 		fd.set("staffId", staffId);
+		fd.set("pin", pin);
 		startTransition(async () => {
 			try {
 				const result = await staffUpdateOrderStatusAction(fd);
@@ -905,7 +919,7 @@ function StaffOrderDetailsModal({
 										Order Time
 									</span>
 									<span className="font-black text-slate-700">
-										{formatOrderTime(order.createdAt)}
+										{formatOrderTime(order.createdAt, tz)}
 									</span>
 								</div>
 								<div className="flex justify-between">

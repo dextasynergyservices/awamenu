@@ -7,8 +7,14 @@ import {
 	deleteCategoryAction,
 	updateCategoryAction,
 } from "@/actions/menu.actions";
-import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
+import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
+import {
+	RowActionButton,
+	RowActionForm,
+	RowActionSeparator,
+	RowActions,
+} from "@/components/ui/RowActions";
 
 type CategoryManagerProps = {
 	restaurantId: string;
@@ -85,7 +91,9 @@ export function CategoryManager({
 							<th className="px-3 py-3">Category</th>
 							<th className="px-3 py-3">Items</th>
 							<th className="px-3 py-3">Status</th>
-							<th className="px-3 py-3 text-right">Actions</th>
+							<th className="w-12 px-3 py-3">
+								<span className="sr-only">Actions</span>
+							</th>
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-slate-100">
@@ -153,39 +161,35 @@ export function CategoryManager({
 										</span>
 									</td>
 									<td className="px-3 py-3 align-middle">
-										<div className="flex justify-end gap-2">
-											<FormSubmitButton
-												loadingText="Saving..."
-												successText="Saved"
-												form={`category-${category.id}`}
-												className="inline-flex min-h-9 min-w-24 items-center justify-center gap-2 rounded-lg px-3 text-slate-600 hover:bg-slate-50"
-												aria-label={`Save ${category.name}`}
-											>
-												<Pencil className="size-4" aria-hidden="true" />
-												<span className="sr-only">Save</span>
-											</FormSubmitButton>
-											<form action={deleteCategoryAction}>
-												<input
-													type="hidden"
-													name="restaurantId"
-													value={restaurantId}
-												/>
-												<input type="hidden" name="slug" value={slug} />
-												<input
-													type="hidden"
-													name="categoryId"
-													value={category.id}
-												/>
-												<SubmitButton
-													loadingText="Deleting..."
-													successText="Deleted"
-													className="inline-flex min-h-9 min-w-24 items-center justify-center gap-2 rounded-lg px-3 text-red-600 hover:bg-red-50"
-													aria-label={`Delete ${category.name}`}
+										<div className="flex justify-end">
+											<RowActions label={`Actions for ${category.name}`}>
+												<RowActionButton
+													icon={Pencil}
+													onSelect={() =>
+														(
+															document.getElementById(
+																`category-${category.id}`,
+															) as HTMLFormElement | null
+														)?.requestSubmit()
+													}
 												>
-													<Trash2 className="size-4" aria-hidden="true" />
-													<span className="sr-only">Delete</span>
-												</SubmitButton>
-											</form>
+													Save changes
+												</RowActionButton>
+												<RowActionSeparator />
+												<RowActionForm
+													action={deleteCategoryAction}
+													fields={{
+														restaurantId,
+														slug,
+														categoryId: category.id,
+													}}
+													confirm={`Delete the "${category.name}" category? Its ${category.items?.length ?? 0} item(s) are deleted too. This can't be undone.`}
+													tone="danger"
+													icon={Trash2}
+												>
+													Delete category
+												</RowActionForm>
+											</RowActions>
 										</div>
 									</td>
 								</tr>

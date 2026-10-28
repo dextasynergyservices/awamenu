@@ -1,12 +1,12 @@
 import type { PlanTier } from "@prisma/client";
 import { cache } from "react";
+import { billingStateOf, canTrade } from "@/lib/billing-state";
 import { db } from "@/lib/db";
 import {
 	BASE_MENU_TEMPLATE,
 	isMenuTemplateId,
 	type MenuTemplateId,
 } from "@/lib/menu-templates";
-import { isSubscriptionActive } from "@/lib/subscription";
 
 // `Plan.availableTemplates` is free-form text in the database, so anything
 // outside the implemented catalog is filtered out rather than trusted — a typo
@@ -123,15 +123,23 @@ export const getRestaurantPlanFeatures = cache(
 		const subscription = await db.subscription.findFirst({
 			where: { restaurantId },
 			select: {
-				status: true,
 				currentPeriodEnd: true,
-				plan: { select: planSelect },
+				billingInterval: true,
+				plan: {
+					select: {
+						...planSelect,
+						monthlyPrice: true,
+						quarterlyPrice: true,
+						yearlyPrice: true,
+					},
+				},
 			},
 		});
 
 		// A lapsed subscription keeps the row but loses the entitlements — the
 		// restaurant falls back to Free rather than retaining paid features.
-		if (!subscription || !isSubscriptionActive(subscription)) {
+		// Same rule as everywhere else (lib/billing-state.ts).
+		if (!subscription || !canTrade(billingStateOf(subscription))) {
 			return getFreePlanFeatures();
 		}
 

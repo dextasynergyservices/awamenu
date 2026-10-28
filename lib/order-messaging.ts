@@ -1,9 +1,10 @@
 import { CustomerUpdateChannel, OrderStatus, OrderType } from "@prisma/client";
-import * as Sentry from "@sentry/nextjs";
 import { env } from "@/env";
 import { db } from "@/lib/db";
-import { canDeliverOn, sendTwilioMessage, toE164 } from "@/lib/otp-delivery";
+import { canDeliverOn, toE164 } from "@/lib/otp-delivery";
+import { enqueue } from "@/lib/outbox";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
+import type { WhatsAppTemplateKey } from "@/lib/whatsapp-templates";
 
 /**
  * Automatic WhatsApp/SMS updates to the customer as their order progresses.
@@ -47,36 +48,63 @@ function composeMessage(input: {
 	restaurantName: string;
 	reference: string;
 	orderUrl: string;
-}) {
+}): { body: string; templateKey: WhatsAppTemplateKey } {
 	const { restaurantName, reference, type, orderUrl } = input;
 	const prefix = `${restaurantName}: order #${reference}`;
 
+	// Each body matches its approved WhatsApp template word for word (see
+	// docs/whatsapp-templates.md), with {{1}} restaurant, {{2}} reference and
+	// {{3}} link — so SMS and WhatsApp customers read the same message.
 	if (input.status === OrderStatus.CONFIRMED) {
-		return `${prefix} is confirmed and we've started on it. Track it here: ${orderUrl}`;
+		return {
+			templateKey: "order_confirmed",
+			body: `${prefix} is confirmed and we've started on it. Track it here: ${orderUrl}`,
+		};
 	}
 
 	if (input.status === OrderStatus.READY) {
 		if (type === OrderType.DELIVERY) {
-			return `${prefix} is packed and on its way to you. Track it here: ${orderUrl}`;
+			return {
+				templateKey: "order_on_the_way",
+				body: `${prefix} is packed and on its way to you. Track it here: ${orderUrl}`,
+			};
 		}
 		if (type === OrderType.PICKUP) {
-			return `${prefix} is ready for pickup. Show this reference when you arrive: ${orderUrl}`;
+			return {
+				templateKey: "order_ready_pickup",
+				body: `${prefix} is ready for pickup. Show this reference when you arrive: ${orderUrl}`,
+			};
 		}
 		if (type === OrderType.TABLE_RESERVATION) {
-			return `${prefix} — your table is ready. Details: ${orderUrl}`;
+			return {
+				templateKey: "reservation_table_ready",
+				body: `${prefix}: your table is ready. Details: ${orderUrl}`,
+			};
 		}
-		return `${prefix} is ready and coming to your table.`;
+		return {
+			templateKey: "order_ready_table",
+			body: `${prefix} is ready and coming to your table. Details: ${orderUrl}`,
+		};
 	}
 
 	if (input.status === OrderStatus.DELIVERED) {
-		return `${prefix} has been delivered. Enjoy! Rate your order: ${orderUrl}`;
+		return {
+			templateKey: "order_delivered",
+			body: `${prefix} has been delivered. Enjoy! Rate your order: ${orderUrl}`,
+		};
 	}
 
 	// COMPLETED
 	if (type === OrderType.TABLE_RESERVATION) {
-		return `${prefix} — your reservation is complete. Thanks for visiting ${restaurantName}. Rate it here: ${orderUrl}`;
+		return {
+			templateKey: "reservation_completed",
+			body: `${prefix}: your reservation is complete. Thank you for visiting. Rate it here: ${orderUrl}`,
+		};
 	}
-	return `${prefix} is complete. Thanks for choosing ${restaurantName}. Rate your order: ${orderUrl}`;
+	return {
+		templateKey: "order_completed",
+		body: `${prefix} is complete. Thank you for ordering. Rate your order: ${orderUrl}`,
+	};
 }
 
 /**
@@ -131,7 +159,19 @@ export async function notifyCustomerOrderStatus(
 	// as messaged while no sender number exists, so the customer would never get
 	// it — not even once a number is bought. Silent by design: an unconfigured
 	// platform isn't an error worth paging anyone about.
-	if (!canDeliverOn(transport)) return;
+	const reference = order.id.slice(-6).toUpperCase();
+	const orderUrl = `${env.NEXT_PUBLIC_APP_URL}/${order.restaurant.slug}/order/${order.id}`;
+	const message = composeMessage({
+		status,
+		type: order.type,
+		restaurantName: order.restaurant.name,
+		reference,
+		orderUrl,
+	});
+
+	// WhatsApp also needs this message's template approved; without it the send
+	// would be rejected, so the milestone is skipped rather than claimed.
+	if (!canDeliverOn(transport, message.templateKey)) return;
 
 	// Claim next: a second caller for the same milestone hits the unique
 	// constraint and stops here rather than sending again.
@@ -147,30 +187,20 @@ export async function notifyCustomerOrderStatus(
 		return;
 	}
 
-	const reference = order.id.slice(-6).toUpperCase();
-	const body = composeMessage({
-		status,
-		type: order.type,
-		restaurantName: order.restaurant.name,
-		reference,
-		orderUrl: `${env.NEXT_PUBLIC_APP_URL}/${order.restaurant.slug}/order/${order.id}`,
-	});
-
-	const result = await sendTwilioMessage({
+	// Queued: sent right after the response, retried with backoff if Twilio
+	// fails. The OrderMessage row above still guarantees one message per
+	// milestone, however many paths reach it.
+	await enqueue("MESSAGE", {
 		to: toE164(order.customerPhone),
 		channel: transport,
-		body,
-	});
-
-	if ("error" in result) {
-		// Left as a captured error rather than thrown: a failed courtesy message
-		// must never roll back the status change that triggered it. The row stays
-		// so a retry storm can't spam the customer.
-		Sentry.captureException(
-			new Error(`Order message failed: ${result.error}`),
-			{
-				tags: { orderId: order.id, status, channel },
+		body: message.body,
+		template: {
+			key: message.templateKey,
+			variables: {
+				"1": order.restaurant.name,
+				"2": reference,
+				"3": orderUrl,
 			},
-		);
-	}
+		},
+	});
 }

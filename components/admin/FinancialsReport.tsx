@@ -10,7 +10,9 @@ import {
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import type { FinancialSummary } from "@/lib/financials";
+import { formatDay, formatOrderTime } from "@/lib/restaurant-time";
 
 type Row = {
 	id: string;
@@ -44,20 +46,9 @@ type AuditEvent = {
 const naira = (value: number) =>
 	`₦${value.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const shortDate = (iso: string) =>
-	new Date(iso).toLocaleDateString("en-GB", {
-		day: "numeric",
-		month: "short",
-		year: "numeric",
-	});
+const shortDate = (iso: string, tz: string) => formatDay(iso, tz);
 
-const dateTime = (iso: string) =>
-	new Date(iso).toLocaleString("en-GB", {
-		day: "numeric",
-		month: "short",
-		hour: "2-digit",
-		minute: "2-digit",
-	});
+const dateTime = (iso: string, tz: string) => formatOrderTime(iso, tz);
 
 /**
  * The owner's financial record.
@@ -74,12 +65,15 @@ export function FinancialsReport({
 	summary,
 	range,
 	auditEvents,
+	pager,
 }: {
 	slug: string;
 	rows: Row[];
 	summary: FinancialSummary;
 	range: { from: string; to: string };
 	auditEvents: AuditEvent[];
+	/** Server-rendered pagination for the payments list. */
+	pager?: React.ReactNode;
 }) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -91,6 +85,7 @@ export function FinancialsReport({
 		const next = new URLSearchParams(searchParams.toString());
 		next.set("from", from);
 		next.set("to", to);
+		next.delete("page");
 		router.push(`/dashboard/${slug}/financials?${next}`);
 	}
 
@@ -253,7 +248,10 @@ export function FinancialsReport({
 			</div>
 
 			{tab === "payments" ? (
-				<PaymentsTable rows={rows} range={range} slug={slug} />
+				<>
+					<PaymentsTable rows={rows} range={range} slug={slug} />
+					{pager}
+				</>
 			) : (
 				<ActivityLog events={auditEvents} />
 			)}
@@ -313,6 +311,7 @@ function PaymentsTable({
 	range: { from: string; to: string };
 	slug: string;
 }) {
+	const tz = useRestaurantTimeZone();
 	if (rows.length === 0) {
 		return (
 			<div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
@@ -320,8 +319,8 @@ function PaymentsTable({
 					No payments in this period
 				</p>
 				<p className="mx-auto mt-1 max-w-sm text-xs font-medium leading-5 text-slate-500">
-					Nothing was recorded between {shortDate(range.from)} and{" "}
-					{shortDate(range.to)}. Try a wider date range.
+					Nothing was recorded between {shortDate(range.from, tz)} and{" "}
+					{shortDate(range.to, tz)}. Try a wider date range.
 				</p>
 			</div>
 		);
@@ -360,7 +359,7 @@ function PaymentsTable({
 							return (
 								<tr key={row.id} className="align-middle">
 									<td className="whitespace-nowrap px-4 py-3 text-xs font-medium text-slate-500">
-										{dateTime(row.createdAt)}
+										{dateTime(row.createdAt, tz)}
 									</td>
 									<td className="whitespace-nowrap px-4 py-3 text-xs font-black text-slate-900">
 										{row.orderRef}
@@ -553,6 +552,7 @@ function StatusPill({ status, note }: { status: string; note: string | null }) {
 }
 
 function ActivityLog({ events }: { events: AuditEvent[] }) {
+	const tz = useRestaurantTimeZone();
 	if (events.length === 0) {
 		return (
 			<div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
@@ -599,7 +599,7 @@ function ActivityLog({ events }: { events: AuditEvent[] }) {
 							) : null}
 						</p>
 						<p className="mt-0.5 text-[11px] font-medium text-slate-400">
-							{dateTime(event.createdAt)}
+							{dateTime(event.createdAt, tz)}
 						</p>
 					</li>
 				))}

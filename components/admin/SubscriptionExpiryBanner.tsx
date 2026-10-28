@@ -97,14 +97,14 @@ export function SubscriptionExpiryBanner({
 			: `${planName} expires in`;
 
 	const detail = hasExpired
-		? "Renew now to avoid your menu going offline and your dashboard being locked."
+		? "Renew now to keep taking orders. After the grace period your restaurant goes read-only: customers can see your menu but can't order or book."
 		: autoRenew
 			? "Your saved card will be charged automatically. Make sure it's still valid."
-			: "Auto-renewal is off, so your menu will go offline unless you renew.";
+			: "Auto-renewal is off. Renew before it ends to keep taking orders and bookings.";
 
 	return (
 		<section
-			className={`mb-4 rounded-2xl border p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] ${tone}`}
+			className={`mb-4 rounded-2xl border p-4 print:hidden shadow-[0_10px_28px_rgba(15,23,42,0.04)] ${tone}`}
 			aria-live="polite"
 		>
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -132,7 +132,7 @@ export function SubscriptionExpiryBanner({
 					)}
 
 					<Link
-						href={`/dashboard/${slug}/settings`}
+						href={`/dashboard/${slug}/renew`}
 						className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-800"
 					>
 						Renew

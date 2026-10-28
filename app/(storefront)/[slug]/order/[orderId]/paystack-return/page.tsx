@@ -1,24 +1,28 @@
 import { redirect } from "next/navigation";
-import { verifyOrderPaymentReference } from "@/lib/payments";
+import {
+	referenceFromReturnParams,
+	verifyOrderPaymentReference,
+} from "@/lib/payments";
 
-type PaystackReturnPageProps = {
+/**
+ * Where every provider returns the customer after an order checkout. The name
+ * is historical; Flutterwave and Monnify land here too, each with its own
+ * query parameter for the reference.
+ */
+type PaymentReturnPageProps = {
 	params: Promise<{ slug: string; orderId: string }>;
-	searchParams?: Promise<{ reference?: string; trxref?: string }>;
+	searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function PaystackReturnPage({
+export default async function PaymentReturnPage({
 	params,
 	searchParams,
-}: PaystackReturnPageProps) {
+}: PaymentReturnPageProps) {
 	const { slug, orderId } = await params;
-	const { reference, trxref } = (await searchParams) ?? {};
-	const paystackReference = reference ?? trxref;
+	const reference = referenceFromReturnParams(await searchParams);
 
-	if (paystackReference) {
-		await verifyOrderPaymentReference({
-			orderId,
-			reference: paystackReference,
-		});
+	if (reference) {
+		await verifyOrderPaymentReference({ orderId, reference });
 	}
 
 	redirect(`/${slug}/order/${orderId}`);

@@ -1,5 +1,10 @@
 import type { PaymentMethod, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import {
+	addDaysToDateKey,
+	dateKeyIn,
+	startOfDateIn,
+} from "@/lib/restaurant-day";
 
 /**
  * Reads the payment ledger for reporting.
@@ -46,16 +51,32 @@ export type FinancialSummary = {
 
 const num = (value: Prisma.Decimal | null) => (value ? value.toNumber() : 0);
 
-/** Inclusive of both endpoints, in the server's timezone. */
-export function parseDateRange(from?: string | null, to?: string | null) {
-	const end = to ? new Date(`${to}T23:59:59.999`) : new Date();
-	const start = from
-		? new Date(`${from}T00:00:00.000`)
-		: new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Inclusive of both days, in the restaurant's timezone: "1 Oct" means from
+ * midnight in Lagos, not midnight on the server. Defaults to the last 30 days.
+ */
+export function parseDateRange(
+	from: string | null | undefined,
+	to: string | null | undefined,
+	timeZone: string,
+) {
+	const today = dateKeyIn(timeZone, new Date());
+	let toKey = to && DATE_KEY.test(to) ? to : today;
+	let fromKey =
+		from && DATE_KEY.test(from) ? from : addDaysToDateKey(toKey, -29);
 	// A reversed range returns nothing and looks like a bug in the data rather
 	// than a typo in the filter, so it is corrected rather than obeyed.
-	return start > end ? { start: end, end: start } : { start, end };
+	if (fromKey > toKey) [fromKey, toKey] = [toKey, fromKey];
+	return {
+		start: startOfDateIn(timeZone, fromKey),
+		end: new Date(
+			startOfDateIn(timeZone, addDaysToDateKey(toKey, 1)).getTime() - 1,
+		),
+		fromKey,
+		toKey,
+	};
 }
 
 export async function getLedgerRows(

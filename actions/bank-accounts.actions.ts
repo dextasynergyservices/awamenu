@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
+import { revalidatePublicMenu } from "@/lib/public-menu";
+import { assertOwnerCanChange } from "@/lib/restaurant-access";
 
 const bankAccountSchema = z.object({
 	id: z.string().optional(),
@@ -15,6 +17,7 @@ const bankAccountSchema = z.object({
 
 export async function saveBankAccountAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = bankAccountSchema.parse({
 		id: formData.get("id")?.toString() || undefined,
 		slug: formData.get("slug"),
@@ -49,11 +52,12 @@ export async function saveBankAccountAction(formData: FormData) {
 	}
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 }
 
 export async function toggleBankAccountStatusAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const id = formData.get("id") as string;
 	const slug = formData.get("slug") as string;
 	const isActive = formData.get("isActive") === "true";
@@ -69,11 +73,12 @@ export async function toggleBankAccountStatusAction(formData: FormData) {
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 }
 
 export async function deleteBankAccountAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const id = formData.get("id") as string;
 	const slug = formData.get("slug") as string;
 
@@ -87,5 +92,5 @@ export async function deleteBankAccountAction(formData: FormData) {
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 }

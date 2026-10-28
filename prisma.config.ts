@@ -10,9 +10,17 @@ import { defineConfig } from "prisma/config";
 // PrismaClient at runtime (lib/db.ts reads DATABASE_URL from the real
 // environment). It lets `generate` and `validate` — which don't need a
 // reachable database — run in CI without a DATABASE_URL secret.
+const PLACEHOLDER =
+	"postgresql://placeholder:placeholder@localhost:5432/placeholder";
 if (!process.env.DATABASE_URL) {
-	process.env.DATABASE_URL =
-		"postgresql://placeholder:placeholder@localhost:5432/placeholder";
+	process.env.DATABASE_URL = PLACEHOLDER;
+}
+// Migrations need a direct (non-pooled) connection: Neon's pooler runs
+// PgBouncer in transaction mode, which can't hold the session-level advisory
+// lock prisma migrate takes. Falls back to DATABASE_URL where no direct URL is
+// set (CI generate/validate), which never connects anyway.
+if (!process.env.DIRECT_DATABASE_URL) {
+	process.env.DIRECT_DATABASE_URL = process.env.DATABASE_URL;
 }
 
 export default defineConfig({

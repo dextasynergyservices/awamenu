@@ -142,8 +142,9 @@ export function RestaurantInfoForm({
 							<span className="font-bold text-emerald-700">
 								{previewHost}/{formValues.slug}
 							</span>
-							. Changing it breaks any QR codes or links you&apos;ve already
-							shared.
+							. If you change it, QR codes and links you&apos;ve already shared
+							keep working — they redirect to the new address. Staff will need
+							to sign in to the staff dashboard again.
 						</p>
 					</div>
 

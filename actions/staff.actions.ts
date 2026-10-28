@@ -21,17 +21,29 @@ import { db } from "@/lib/db";
 import { dispatchNotification } from "@/lib/notifications";
 import { notifyOrderConfirmed, notifyOrderPaid } from "@/lib/order-emails";
 import { notifyCustomerOrderStatus } from "@/lib/order-messaging";
-import { isStatusAllowedForType } from "@/lib/order-status-flow";
+import {
+	getStatusLabel,
+	isStatusAllowedForType,
+} from "@/lib/order-status-flow";
 import { creditOrder } from "@/lib/payment-ledger";
+import { revalidatePublicMenu } from "@/lib/public-menu";
+import { cancelReservationExpiry } from "@/lib/qstash";
 import { enforceRateLimit, getClientIp } from "@/lib/ratelimit";
+import { approveReservation } from "@/lib/reservation-booking";
+import {
+	assertOwnerCanChange,
+	assertStaffCanChange,
+} from "@/lib/restaurant-access";
+import { startOfNextDayIn } from "@/lib/restaurant-day";
 import {
 	decryptSecret,
 	isEncryptedSecret,
 	secretsMatch,
 } from "@/lib/secret-box";
 import { createStaffSession, destroyStaffSession } from "@/lib/staff-auth";
+import { verifyStaffAction } from "@/lib/staff-guard";
 import { generateStaffId } from "@/lib/staff-id";
-import { resolveStaffPermissions } from "@/lib/staff-permissions";
+import { issueStaffPin } from "@/lib/staff-pin";
 
 // ─── Helpers ──────────────────────────────────────────
 
@@ -59,61 +71,10 @@ async function verifyOwnerPassword(userId: string, password: string) {
 }
 
 /**
- * Identifies which staff member is performing an action, so it can be
- * attributed to them in the order timeline.
- *
- * This is attribution, not authentication — access to the staff dashboard is
- * already granted by the restaurant's shared password. It previously asked for
- * a separate 4-digit PIN, which read as a second login and confused staff; the
- * Staff ID is the identifier the system already issues and shows to the owner,
- * so it's used directly.
+ * Staff actions name who is acting with a Staff ID plus that member's PIN
+ * (lib/staff-pin.ts). The shared staff password only unlocks the dashboard;
+ * the PIN is what stops one staff member acting under a colleague's ID.
  */
-/**
- * Resolves a staff member and their effective permissions.
- *
- * Deliberately throws `ActionError` rather than returning one: this is a
- * helper, not an entry point. Every caller runs inside `actionResult`, which
- * turns "Invalid Staff ID." into a message the staff member actually sees —
- * a thrown message would reach production as an opaque digest instead.
- */
-export async function verifyStaffAction(slug: string, staffId: string) {
-	const restaurant = await db.restaurant.findUnique({
-		where: { slug, isActive: true },
-		select: {
-			id: true,
-			slug: true,
-			staffDefaultDineIn: true,
-			staffDefaultPickup: true,
-			staffDefaultDelivery: true,
-			staffDefaultCashPayment: true,
-			staffDefaultApproveReservations: true,
-		},
-	});
-
-	if (!restaurant) {
-		throw new ActionError("Restaurant not found.");
-	}
-
-	const clientIp = await getClientIp();
-	await enforceRateLimit("staffPin", `${clientIp}:${restaurant.id}`);
-
-	const staff = await db.staffMember.findFirst({
-		where: {
-			restaurantId: restaurant.id,
-			// Scoped to this restaurant as well as the id, so an id from another
-			// restaurant can never attribute actions here.
-			staffId: staffId.trim().toUpperCase(),
-			isActive: true,
-		},
-	});
-
-	if (!staff) {
-		throw new ActionError("Invalid Staff ID.");
-	}
-
-	const permissions = resolveStaffPermissions(restaurant, staff);
-	return { staff, permissions, restaurant };
-}
 
 // ─── Admin Actions ────────────────────────────────────
 
@@ -124,6 +85,7 @@ const createStaffSchema = z.object({
 
 export async function createStaffAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = createStaffSchema.parse({
 		slug: formData.get("slug"),
 		name: formData.get("name"),
@@ -136,16 +98,19 @@ export async function createStaffAction(formData: FormData) {
 
 	const staffId = await generateUniqueStaffId();
 
-	await db.staffMember.create({
+	const member = await db.staffMember.create({
 		data: {
 			restaurantId: restaurant.id,
 			name: input.name,
 			staffId,
 		},
+		select: { id: true },
 	});
+	const pin = await issueStaffPin(member.id);
 
 	revalidatePath(`/dashboard/${restaurant.slug}/staff`);
-	return { staffId };
+	// The PIN is returned once, for the owner to hand over; only its hash is kept.
+	return { staffId, pin };
 }
 
 /**
@@ -168,21 +133,19 @@ async function generateUniqueStaffId(): Promise<string> {
 	);
 }
 
-const rotateStaffIdSchema = z.object({
+const resetStaffPinSchema = z.object({
 	slug: z.string().min(1),
 	staffMemberId: z.string().cuid(),
 });
 
 /**
- * Issues a fresh Staff ID for one member — used when an ID has been shared too
- * widely or a member leaves and their code is still circulating.
- *
- * Past orders keep their attribution: the timeline references the immutable
- * `StaffMember.id`, not this human-facing code.
+ * Issues a new PIN for one member: when they forget it, it has been seen, or
+ * it is locked after wrong guesses. The old PIN stops working immediately.
+ * The Staff ID is unchanged, and past orders keep their attribution.
  */
-export async function rotateStaffIdAction(formData: FormData) {
+export async function resetStaffPinAction(formData: FormData) {
 	const user = await requireUser();
-	const input = rotateStaffIdSchema.parse({
+	const input = resetStaffPinSchema.parse({
 		slug: formData.get("slug"),
 		staffMemberId: formData.get("staffMemberId"),
 	});
@@ -192,15 +155,24 @@ export async function rotateStaffIdAction(formData: FormData) {
 		select: { id: true, slug: true },
 	});
 
-	const staffId = await generateUniqueStaffId();
-
-	await db.staffMember.update({
+	// Scoped to the owner's restaurant before issuing anything.
+	const member = await db.staffMember.findFirstOrThrow({
 		where: { id: input.staffMemberId, restaurantId: restaurant.id },
-		data: { staffId },
+		select: { id: true, name: true },
+	});
+	const pin = await issueStaffPin(member.id);
+
+	await recordAuditEvent({
+		restaurantId: restaurant.id,
+		actorType: AuditActorType.OWNER,
+		actorId: user.id,
+		actorName: user.name,
+		action: "staff.pin_reset",
+		target: member.name,
 	});
 
 	revalidatePath(`/dashboard/${restaurant.slug}/staff`);
-	return { staffId };
+	return { pin };
 }
 
 const deactivateStaffSchema = z.object({
@@ -239,6 +211,7 @@ const reactivateStaffSchema = z.object({
 
 export async function reactivateStaffAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = reactivateStaffSchema.parse({
 		slug: formData.get("slug"),
 		staffMemberId: formData.get("staffMemberId"),
@@ -269,6 +242,7 @@ const updateStaffPermissionsSchema = z.object({
 
 export async function updateStaffPermissionsAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 
 	function parseBooleanOrNull(value: FormDataEntryValue | null) {
 		if (value === null || value === "null" || value === "") return null;
@@ -319,6 +293,7 @@ const updateGlobalStaffPermissionsSchema = z.object({
 
 export async function updateGlobalStaffPermissionsAction(formData: FormData) {
 	const user = await requireUser();
+	await assertOwnerCanChange(user.id, formData);
 	const input = updateGlobalStaffPermissionsSchema.parse({
 		slug: formData.get("slug"),
 		staffDefaultDineIn: formData.get("staffDefaultDineIn") === "true",
@@ -379,6 +354,9 @@ export async function staffLoginAction(formData: FormData) {
 		// otherwise all share one IP-only bucket anyway).
 		const clientIp = await getClientIp();
 		await enforceRateLimit("staffLogin", `${clientIp}:${input.slug}`);
+		// And per restaurant whatever the IP, which is what the comment above
+		// promised: spreading guesses across addresses no longer helps.
+		await enforceRateLimit("staffLoginRestaurant", input.slug);
 
 		if (!restaurant?.staffDashboardPassword) {
 			throw new ActionError("Invalid login credentials.");
@@ -440,6 +418,7 @@ export async function recordDineInPaymentAction(formData: FormData) {
 		const { staff, permissions, restaurant } = await verifyStaffAction(
 			input.slug,
 			input.staffId,
+			String(formData.get("pin") ?? ""),
 		);
 
 		// Hiding the button in the UI isn't enforcement — this is a server action,
@@ -557,6 +536,7 @@ export async function staffUpdateOrderStatusAction(formData: FormData) {
 		const { staff, permissions, restaurant } = await verifyStaffAction(
 			input.slug,
 			input.staffId,
+			String(formData.get("pin") ?? ""),
 		);
 
 		// Cannot cancel or complete via this action
@@ -644,9 +624,9 @@ export async function staffUpdateOrderStatusAction(formData: FormData) {
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.ORDER_STATUS_CHANGED,
-			audience: NotificationAudience.BOTH,
-			title: "Order status updated",
-			body: `${staff.name} updated order #${input.orderId.slice(-6).toUpperCase()} to ${input.status.replace(/_/g, " ")}`,
+			audience: NotificationAudience.ADMIN,
+			title: `Order #${input.orderId.slice(-6).toUpperCase()}: ${getStatusLabel(order.type, input.status)}`,
+			body: `Updated by ${staff.name}`,
 			actionUrl: `/dashboard/${restaurant.slug}/orders?orderId=${input.orderId}`,
 			metadata: {
 				orderId: input.orderId,
@@ -678,46 +658,174 @@ export async function staffApproveReservationAction(formData: FormData) {
 		const { staff, permissions, restaurant } = await verifyStaffAction(
 			input.slug,
 			input.staffId,
+			String(formData.get("pin") ?? ""),
 		);
 
+		await assertStaffCanChange(restaurant.id);
 		if (!permissions.approveReservations) {
 			throw new ActionError(
 				"You do not have permission to approve reservations.",
 			);
 		}
 
-		const reservation = await db.reservation.findFirstOrThrow({
-			where: {
-				id: input.reservationId,
-				restaurantId: restaurant.id,
-				status: "PENDING_APPROVAL",
-			},
-			select: {
-				id: true,
-				customerName: true,
-				table: { select: { label: true } },
-			},
-		});
-
-		await db.reservation.update({
-			where: { id: reservation.id },
-			data: {
-				status: "APPROVED",
-				approvedAt: new Date(),
-			},
+		// The same approval the owner uses. This used to flip the status on its
+		// own — no overlap check (so staff could double-book a table), no amount
+		// due or payment deadline, and free bookings were left on APPROVED where
+		// they never became active.
+		const approved = await approveReservation({
+			restaurantId: restaurant.id,
+			reservationId: input.reservationId,
 		});
 
 		await dispatchNotification({
 			restaurantId: restaurant.id,
 			type: NotificationType.NEW_RESERVATION,
 			audience: NotificationAudience.ADMIN,
-			title: `Reservation approved — ${reservation.table.label}`,
-			body: `${staff.name} approved ${reservation.customerName}'s reservation`,
+			title: `Reservation approved — ${approved.tableLabel}`,
+			body: `${staff.name} approved ${approved.customerName}'s reservation`,
 			actionUrl: `/dashboard/${restaurant.slug}/reservations`,
-			metadata: { reservationId: reservation.id, staffId: staff.id },
+			metadata: { reservationId: input.reservationId, staffId: staff.id },
 		});
 
 		revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
+		revalidatePath(`/${restaurant.slug}/tables`);
+		revalidatePath(`/${restaurant.slug}/reservation/${input.reservationId}`);
 		revalidatePath(`/${restaurant.slug}/staff`);
+	});
+}
+
+const staffCheckInSchema = z.object({
+	slug: z.string().min(1),
+	staffId: z.string().min(4).max(12),
+	reservationId: z.string().cuid(),
+});
+
+/**
+ * Staff at the door check a guest in when they arrive.
+ *
+ * Only the owner could before, which left the people actually seating guests
+ * unable to record it — and an unchecked-in booking is released as a no-show
+ * once its grace window passes. Conditional, like the owner's check-in, so it
+ * can't revive a booking the no-show sweep released a moment ago.
+ */
+export async function staffCheckInReservationAction(formData: FormData) {
+	return actionResult(async () => {
+		const input = staffCheckInSchema.parse({
+			slug: formData.get("slug"),
+			staffId: formData.get("staffId"),
+			reservationId: formData.get("reservationId"),
+		});
+
+		const { staff, permissions, restaurant } = await verifyStaffAction(
+			input.slug,
+			input.staffId,
+			String(formData.get("pin") ?? ""),
+		);
+		if (!permissions.dineIn) {
+			throw new ActionError("You do not have permission to seat guests.");
+		}
+
+		const reservation = await db.reservation.findFirst({
+			where: { id: input.reservationId, restaurantId: restaurant.id },
+			select: {
+				id: true,
+				qstashMessageId: true,
+				customerName: true,
+				table: { select: { label: true } },
+			},
+		});
+		if (!reservation) throw new ActionError("Reservation not found.");
+
+		const { count } = await db.reservation.updateMany({
+			where: { id: reservation.id, status: "ACTIVE" },
+			data: { status: "CHECKED_IN", qstashMessageId: null },
+		});
+		if (count === 0) {
+			throw new ActionError(
+				"This booking can't be checked in — it may have expired or already been seated.",
+			);
+		}
+		await cancelReservationExpiry(reservation.qstashMessageId);
+
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: AuditActorType.STAFF,
+			actorId: staff.id,
+			actorName: staff.name,
+			action: "reservation.checked_in",
+			target: `${reservation.customerName} — ${reservation.table.label}`,
+		});
+
+		revalidatePath(`/${restaurant.slug}/staff`);
+		revalidatePath(`/dashboard/${restaurant.slug}/reservations`);
+		revalidatePath(`/${restaurant.slug}/reservation/${reservation.id}`);
+	});
+}
+
+const staffSoldOutSchema = z.object({
+	slug: z.string().min(1),
+	staffId: z.string().min(4).max(12),
+	itemId: z.string().cuid(),
+	soldOut: z.enum(["today", "off"]),
+});
+
+/**
+ * The kitchen runs out mid-service: any staff member (Staff ID + PIN) can
+ * mark a published dish sold out until tomorrow, or back in stock. Low risk,
+ * so no extra permission, but recorded in the restaurant's audit trail.
+ */
+export async function staffSetSoldOutAction(formData: FormData) {
+	return actionResult(async () => {
+		const input = staffSoldOutSchema.parse({
+			slug: formData.get("slug"),
+			staffId: formData.get("staffId"),
+			itemId: formData.get("itemId"),
+			soldOut: formData.get("soldOut"),
+		});
+
+		const { staff, restaurant } = await verifyStaffAction(
+			input.slug,
+			input.staffId,
+			String(formData.get("pin") ?? ""),
+		);
+		await assertStaffCanChange(restaurant.id);
+
+		const item = await db.menuItem.findFirst({
+			where: {
+				id: input.itemId,
+				isAvailable: true,
+				category: { restaurantId: restaurant.id },
+			},
+			select: {
+				id: true,
+				name: true,
+				category: { select: { restaurant: { select: { timezone: true } } } },
+			},
+		});
+		if (!item) throw new ActionError("Dish not found.");
+
+		await db.menuItem.update({
+			where: { id: item.id },
+			data: {
+				soldOutUntil:
+					input.soldOut === "today"
+						? startOfNextDayIn(item.category.restaurant.timezone)
+						: null,
+			},
+		});
+
+		await recordAuditEvent({
+			restaurantId: restaurant.id,
+			actorType: AuditActorType.STAFF,
+			actorId: staff.id,
+			actorName: staff.name,
+			action:
+				input.soldOut === "today" ? "menu.sold_out" : "menu.back_in_stock",
+			target: item.name,
+		});
+
+		revalidatePublicMenu(restaurant.slug);
+		revalidatePath(`/${restaurant.slug}/staff`);
+		revalidatePath(`/dashboard/${restaurant.slug}/menu`);
 	});
 }

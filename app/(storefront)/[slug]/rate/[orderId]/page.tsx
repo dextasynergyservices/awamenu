@@ -1,5 +1,5 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
 import { RatingForm } from "@/components/rating/RatingForm";
 import { TrackingUnavailable } from "@/components/tracking/TrackingUnavailable";
 import { db } from "@/lib/db";
@@ -8,7 +8,17 @@ import {
 	isOrderRatingEligible,
 	RATING_METRICS_BY_CONTEXT,
 } from "@/lib/rating";
-import { isSubscriptionActive } from "@/lib/subscription";
+import { privateStorefrontMetadata } from "@/lib/storefront-share";
+
+/** The restaurant's name in the tab and link preview; never indexed. */
+export async function generateMetadata({
+	params,
+}: {
+	params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+	const { slug } = await params;
+	return privateStorefrontMetadata(slug, "Rate your order");
+}
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +43,6 @@ export default async function RateOrderPage({ params }: RatePageProps) {
 				select: {
 					name: true,
 					slug: true,
-					subscription: { select: { status: true, currentPeriodEnd: true } },
 				},
 			},
 			rating: { select: { id: true } },
@@ -48,10 +57,6 @@ export default async function RateOrderPage({ params }: RatePageProps) {
 				type="order"
 			/>
 		);
-	}
-
-	if (!isSubscriptionActive(order.restaurant.subscription)) {
-		return <SubscriptionInactive restaurantName={order.restaurant.name} />;
 	}
 
 	if (order.rating || !isOrderRatingEligible(order)) {

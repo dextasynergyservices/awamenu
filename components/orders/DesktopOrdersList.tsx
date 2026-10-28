@@ -16,14 +16,16 @@ import {
 import { useMemo, useState } from "react";
 import { OrderActionForm } from "@/components/orders/OrderActionForm";
 import {
-	type OrderEventDTO,
+	type OrderStageTimes,
 	OrderTimelineModal,
 } from "@/components/orders/OrderTimeline";
 import { ReceiptActions } from "@/components/orders/ReceiptActions";
 import { SplitPaymentModal } from "@/components/orders/SplitPaymentModal";
+import { useRestaurantTimeZone } from "@/components/shared/RestaurantBrandContext";
 import { SubmitButton } from "@/components/ui/action-button";
 import { PasswordInput } from "@/components/ui/password-input";
 import { getStatusFlow, getStatusLabel } from "@/lib/order-status-flow";
+import { formatOrderTime as formatOrderTimeIn } from "@/lib/restaurant-time";
 import { cn } from "@/lib/utils";
 
 type OrderItem = {
@@ -43,6 +45,7 @@ type Order = {
 	status: string;
 	statusNote: string | null;
 	cancellationNote: string | null;
+	refundRequiredReason?: string | null;
 	paymentStatus: string;
 	tableNumber: string | null;
 	tableLabel: string | null;
@@ -63,7 +66,13 @@ type Order = {
 		amount: string | number;
 		method: string;
 	}>;
-	events: OrderEventDTO[];
+	confirmedAt?: Date | string | null;
+	acceptedAt?: Date | string | null;
+	preparingAt?: Date | string | null;
+	readyAt?: Date | string | null;
+	deliveredAt?: Date | string | null;
+	completedAt?: Date | string | null;
+	cancelledAt?: Date | string | null;
 	attendingStaff: { name: string; staffId: string | null } | null;
 };
 
@@ -95,21 +104,8 @@ function formatMoney(value: number, currency: string) {
 	}).format(value);
 }
 
-function formatOrderTime(value: string) {
-	const date = new Date(value);
-	const now = new Date();
-	const isToday = date.toDateString() === now.toDateString();
-	return `${
-		isToday
-			? "Today"
-			: new Intl.DateTimeFormat("en-NG", {
-					month: "short",
-					day: "numeric",
-				}).format(date)
-	}, ${new Intl.DateTimeFormat("en-NG", {
-		hour: "numeric",
-		minute: "2-digit",
-	}).format(date)}`;
+function formatOrderTime(value: string, tz: string) {
+	return formatOrderTimeIn(value, tz);
 }
 
 function orderTypeLabel(type: string) {
@@ -208,6 +204,7 @@ export function DesktopOrdersList({
 	restaurantName,
 	whatsappEnabled,
 }: DesktopOrdersListProps) {
+	const tz = useRestaurantTimeZone();
 	const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 	const selectedOrder = selectedOrderId
 		? (orders.find((order) => order.id === selectedOrderId) ?? null)
@@ -276,7 +273,7 @@ export function DesktopOrdersList({
 							</span>
 							<span className="mt-2 flex items-center justify-end gap-1 text-xs font-semibold text-slate-500">
 								<Clock3 className="size-3.5" aria-hidden="true" />
-								{formatOrderTime(order.createdAt)}
+								{formatOrderTime(order.createdAt, tz)}
 							</span>
 						</span>
 						<ChevronRight
@@ -361,6 +358,7 @@ function OrderDetailsModalContent({
 	onClose: () => void;
 	onOpenSplitPayment: () => void;
 }) {
+	const tz = useRestaurantTimeZone();
 	const [showTimeline, setShowTimeline] = useState(false);
 	const selectedDefaultStatus = getInitialSelectedStatus(
 		order.status,
@@ -445,7 +443,7 @@ function OrderDetailsModalContent({
 						</div>
 						<p className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
 							<Clock3 className="size-3.5" aria-hidden="true" />
-							Placed on {formatOrderTime(order.createdAt)}
+							Placed on {formatOrderTime(order.createdAt, tz)}
 						</p>
 					</div>
 					<div className="text-right">
@@ -470,6 +468,14 @@ function OrderDetailsModalContent({
 
 				<div className="grid max-h-[calc(88vh-6.25rem)] gap-4 overflow-y-auto px-7 pb-6 md:grid-cols-[18rem_minmax(0,1fr)]">
 					<div className="grid content-start gap-4">
+						{order.refundRequiredReason ? (
+							<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
+								<p className="font-black text-amber-900">Refund needed</p>
+								<p className="mt-1 whitespace-pre-line font-semibold text-amber-800">
+									{order.refundRequiredReason}
+								</p>
+							</div>
+						) : null}
 						<InfoCard
 							icon={<User className="size-4" />}
 							title="Customer Details"
@@ -586,7 +592,7 @@ function OrderDetailsModalContent({
 							</div>
 						</div>
 
-						{order.events ? (
+						{order.createdAt ? (
 							<div className="rounded-2xl bg-slate-50 p-4">
 								<button
 									type="button"
@@ -799,14 +805,7 @@ function OrderDetailsModalContent({
 
 			{showTimeline && (
 				<OrderTimelineModal
-					events={order.events || []}
-					fallback={{
-						createdAt: order.createdAt,
-						status: order.status,
-						paymentStatus: order.paymentStatus,
-						paymentMethod: order.dineInPaymentMethod,
-						attendingStaff: order.attendingStaff,
-					}}
+					order={order as OrderStageTimes}
 					onClose={() => setShowTimeline(false)}
 				/>
 			)}
@@ -823,6 +822,7 @@ function StatusStepper({
 	orderType: string;
 	createdAt: string;
 }) {
+	const tz = useRestaurantTimeZone();
 	const steps = getStatusSteps(orderType);
 	const currentIndex = getStepIndex(status, orderType);
 
@@ -877,7 +877,7 @@ function StatusStepper({
 									{step.label}
 								</p>
 								<p className="mt-1 text-[10px] font-semibold text-slate-400">
-									{formatOrderTime(createdAt).split(", ").at(-1)}
+									{formatOrderTime(createdAt, tz).split(", ").at(-1)}
 								</p>
 							</div>
 						</div>

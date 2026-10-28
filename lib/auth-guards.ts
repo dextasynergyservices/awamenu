@@ -43,6 +43,7 @@ export async function redirectCompletedOnboarding(userId: string) {
 	const user = await db.user.findUnique({
 		where: { id: userId },
 		select: {
+			role: true,
 			onboardingStatus: true,
 			restaurants: {
 				select: { slug: true },
@@ -51,6 +52,9 @@ export async function redirectCompletedOnboarding(userId: string) {
 			},
 		},
 	});
+
+	// A super admin has no restaurant; onboarding would ask them to buy a plan.
+	if (user?.role === UserRole.SUPER_ADMIN) redirect("/super-admin");
 
 	if (user?.onboardingStatus === "COMPLETE" && user.restaurants[0]) {
 		redirect(`/dashboard/${user.restaurants[0].slug}`);

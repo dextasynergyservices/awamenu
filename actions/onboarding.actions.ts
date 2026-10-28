@@ -11,6 +11,8 @@ import { addBillingPeriod, parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { sendRestaurantWelcomeEmail } from "@/lib/email";
 import { initiateSubscriptionPayment } from "@/lib/payments";
+import { isReservedSlug } from "@/lib/slug";
+import { isSlugAvailable } from "@/lib/slug-aliases";
 
 const choosePlanSchema = z.object({
 	planId: z.string().cuid(),
@@ -121,10 +123,14 @@ export async function completeSetupAction(formData: FormData) {
 			whatsappNumber: formData.get("whatsappNumber") || undefined,
 		});
 
-		const existing = await db.restaurant.findUnique({
-			where: { slug: input.slug },
-		});
-		if (existing) {
+		if (isReservedSlug(input.slug)) {
+			throw new ActionError(
+				"That web address is reserved. Please choose another.",
+			);
+		}
+		// Also refuses other restaurants' old slugs, whose printed QR codes
+		// still redirect to them.
+		if (!(await isSlugAvailable(input.slug))) {
 			throw new ActionError("Restaurant slug is already taken.");
 		}
 

@@ -61,3 +61,27 @@ export async function actionData<T extends object>(
 		throw error;
 	}
 }
+
+/**
+ * Validates action input, turning the first problem into a readable message
+ * ("Say why, for the audit log.") instead of a thrown ZodError, which would
+ * reach the browser as a generic error digest.
+ */
+export function parseInput<T>(
+	schema: {
+		safeParse: (
+			data: unknown,
+		) =>
+			| { success: true; data: T }
+			| { success: false; error: { issues: Array<{ message: string }> } };
+	},
+	data: unknown,
+): T {
+	const result = schema.safeParse(data);
+	if (!result.success) {
+		throw new ActionError(
+			result.error.issues[0]?.message ?? "Check the form and try again.",
+		);
+	}
+	return result.data;
+}

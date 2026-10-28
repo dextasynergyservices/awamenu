@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth-guards";
 import { parseBillingInterval } from "@/lib/billing";
 import { db } from "@/lib/db";
 import { initiateSubscriptionPayment } from "@/lib/payments";
+import { revalidatePublicMenu } from "@/lib/public-menu";
 
 const downgradeSchema = z.object({
 	restaurantId: z.string().min(1),
@@ -114,7 +115,7 @@ export async function downgradeToFreeAction(formData: FormData) {
 	]);
 
 	revalidatePath(`/dashboard/${restaurant.slug}`);
-	revalidatePath(`/${restaurant.slug}`);
+	revalidatePublicMenu(restaurant.slug);
 	redirect(`/dashboard/${restaurant.slug}`);
 }
 

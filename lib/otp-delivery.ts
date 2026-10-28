@@ -1,4 +1,11 @@
 import { env } from "@/env";
+import {
+	canSendWhatsApp,
+	allowFreeformWhatsApp as canSendWhatsAppFreeform,
+	type WhatsAppTemplate,
+	type WhatsAppTemplateKey,
+	whatsappTemplateSid,
+} from "@/lib/whatsapp-templates";
 
 /**
  * Sends a login code over WhatsApp or SMS through Twilio.
@@ -23,7 +30,11 @@ export function availableOtpChannels(): OtpChannel[] {
 		(env.TWILIO_AUTH_TOKEN ||
 			(env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET));
 	if (!hasCredentials) return channels;
-	if (env.TWILIO_WHATSAPP_FROM) channels.push("whatsapp");
+	// WhatsApp sign-in also needs an approved template for the code — without
+	// one every send is rejected, so the option isn't offered.
+	if (env.TWILIO_WHATSAPP_FROM && canSendWhatsApp("verification_code")) {
+		channels.push("whatsapp");
+	}
 	if (env.TWILIO_SMS_FROM) channels.push("sms");
 	return channels;
 }
@@ -53,6 +64,8 @@ export async function sendOtpOverTwilio(input: {
 		to: input.to,
 		channel: input.channel,
 		body: `${input.code} is your ${input.restaurantName} verification code. It expires in 10 minutes.`,
+		// WhatsApp authentication templates carry the code only.
+		template: { key: "verification_code", variables: { "1": input.code } },
 	});
 
 	// The transport speaks in infrastructure terms; a customer needs to be told
@@ -71,15 +84,33 @@ export async function sendOtpOverTwilio(input: {
  * The single place credentials, E.164 conversion and the `whatsapp:` prefix
  * are handled, so order updates and login codes cannot drift apart.
  */
-/** Whether a channel can actually be delivered on right now. */
-export function canDeliverOn(channel: "whatsapp" | "sms") {
-	return availableOtpChannels().includes(channel);
+/**
+ * Whether a channel can actually be delivered on right now — for WhatsApp, for
+ * this particular message, since each needs its own approved template.
+ */
+export function canDeliverOn(
+	channel: "whatsapp" | "sms",
+	templateKey?: WhatsAppTemplateKey,
+) {
+	const hasCredentials =
+		env.TWILIO_ACCOUNT_SID &&
+		(env.TWILIO_AUTH_TOKEN ||
+			(env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET));
+	if (!hasCredentials) return false;
+	if (channel === "sms") return Boolean(env.TWILIO_SMS_FROM);
+	return (
+		Boolean(env.TWILIO_WHATSAPP_FROM) &&
+		(templateKey ? canSendWhatsApp(templateKey) : true)
+	);
 }
 
 export async function sendTwilioMessage(input: {
 	to: string;
 	channel: "whatsapp" | "sms";
+	/** Used for SMS, and for WhatsApp only in sandbox (free-form) mode. */
 	body: string;
+	/** Required for WhatsApp in production — see lib/whatsapp-templates.ts. */
+	template?: WhatsAppTemplate;
 }): Promise<{ ok: true } | { error: string }> {
 	const accountSid = env.TWILIO_ACCOUNT_SID;
 
@@ -114,8 +145,24 @@ export async function sendTwilioMessage(input: {
 			input.channel === "whatsapp" && !from.startsWith("whatsapp:")
 				? `whatsapp:${from}`
 				: from,
-		Body: body,
 	});
+
+	// WhatsApp: the approved template, with its variables. Free text only in
+	// sandbox mode — in production WhatsApp rejects it outright.
+	const templateSid =
+		input.channel === "whatsapp" && input.template
+			? whatsappTemplateSid(input.template.key)
+			: null;
+	if (templateSid && input.template) {
+		params.set("ContentSid", templateSid);
+		params.set("ContentVariables", JSON.stringify(input.template.variables));
+	} else if (input.channel === "whatsapp" && !canSendWhatsAppFreeform()) {
+		return {
+			error: `No approved WhatsApp template for "${input.template?.key ?? "this message"}".`,
+		};
+	} else {
+		params.set("Body", body);
+	}
 
 	try {
 		const response = await fetch(

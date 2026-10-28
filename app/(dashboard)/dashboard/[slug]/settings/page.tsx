@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AdminAccountSettings } from "@/components/admin/AdminAccountSettings";
 import { BankAccountsManager } from "@/components/admin/BankAccountsManager";
 import { OpeningHoursEditor } from "@/components/admin/OpeningHoursEditor";
+import { OrderingSettingsForm } from "@/components/admin/OrderingSettingsForm";
 import { PaymentIntegrations } from "@/components/admin/PaymentIntegrations";
 import { QRDownload } from "@/components/admin/QRDownload";
 import { RestaurantBrandingForm } from "@/components/admin/RestaurantBrandingForm";
@@ -12,6 +13,8 @@ import { SubscriptionDetailsCard } from "@/components/admin/SubscriptionDetailsC
 import { env } from "@/env";
 import { requireUser } from "@/lib/auth-guards";
 import { parseBillingInterval } from "@/lib/billing";
+import { billingStateOf, subscriptionPrice } from "@/lib/billing-state";
+import { getRestaurantCommission } from "@/lib/commission";
 import { db } from "@/lib/db";
 import { verifySubscriptionPaymentReference } from "@/lib/payments";
 import { getRestaurantPlanFeatures } from "@/lib/plan-features";
@@ -51,6 +54,11 @@ export default async function SettingsPage({
 			fontFamily: true,
 			activeTemplate: true,
 			dineInPaymentPolicy: true,
+			dineInEnabled: true,
+			pickupEnabled: true,
+			deliveryEnabled: true,
+			deliveryFee: true,
+			freeDeliveryMinimum: true,
 			openingHours: {
 				select: { dayOfWeek: true, opensAt: true, closesAt: true },
 				orderBy: [{ dayOfWeek: "asc" }, { opensAt: "asc" }],
@@ -131,9 +139,14 @@ export default async function SettingsPage({
 		isConnected: Boolean(row.subaccountCode),
 	}));
 
-	const commissionPercent = Number(
-		platformSettings?.awamenuPayCommissionPercent ?? 0,
-	);
+	// This restaurant's own rate: the platform's, or a custom/exempt one a
+	// super admin set (lib/commission.ts).
+	const commissionPercent = (
+		await getRestaurantCommission(
+			restaurant.id,
+			Number(platformSettings?.awamenuPayCommissionPercent ?? 0),
+		)
+	).percent;
 
 	const qrUrl = `${env.NEXT_PUBLIC_APP_URL}/${restaurant.slug}`;
 	// `/staff/{slug}` rather than `/staff/{slug}/login` — it redirects to the
@@ -200,11 +213,32 @@ export default async function SettingsPage({
 				{/* Column 2 */}
 				<div className="grid gap-3 md:gap-8">
 					<SubscriptionDetailsCard
-						planName={restaurant.subscription?.plan?.name}
-						status={restaurant.subscription?.status}
-						currentPeriodEnd={restaurant.subscription?.currentPeriodEnd ?? null}
-						hasCard={!!restaurant.subscription?.paystackCustomerCode}
+						planName={restaurant.subscription?.plan?.name ?? null}
+						state={billingStateOf(restaurant.subscription)}
+						periodEnd={
+							restaurant.subscription &&
+							subscriptionPrice(restaurant.subscription) > 0
+								? restaurant.subscription.currentPeriodEnd.toISOString()
+								: null
+						}
+						autoRenew={Boolean(
+							restaurant.subscription?.paystackSubscriptionCode,
+						)}
 						slug={restaurant.slug}
+					/>
+
+					<OrderingSettingsForm
+						slug={restaurant.slug}
+						currency={restaurant.currency}
+						dineInEnabled={restaurant.dineInEnabled}
+						pickupEnabled={restaurant.pickupEnabled}
+						deliveryEnabled={restaurant.deliveryEnabled}
+						deliveryFee={Number(restaurant.deliveryFee)}
+						freeDeliveryMinimum={
+							restaurant.freeDeliveryMinimum === null
+								? null
+								: Number(restaurant.freeDeliveryMinimum)
+						}
 					/>
 
 					<OpeningHoursEditor

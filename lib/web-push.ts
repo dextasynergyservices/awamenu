@@ -10,6 +10,16 @@ type SendWebPushInput = {
 	audience: "ADMIN" | "STAFF" | "BOTH";
 };
 
+/**
+ * Links are written for the owner dashboard (/dashboard/{slug}/orders?...).
+ * Staff can't open that, so their pushes go to the staff dashboard with the
+ * same query (orderId, reservationId), which it understands.
+ */
+function staffUrl(actionUrl: string | undefined) {
+	const match = actionUrl?.match(/^\/dashboard\/([^/?]+)[^?]*(\?.*)?$/);
+	return match ? `/${match[1]}/staff${match[2] ?? ""}` : actionUrl;
+}
+
 function getVapidKeys() {
 	const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 	const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -51,16 +61,20 @@ export async function sendWebPush(input: SendWebPushInput) {
 			endpoint: true,
 			p256dh: true,
 			auth: true,
+			staffMemberId: true,
 		},
 	});
 
 	if (subscriptions.length === 0) return;
 
-	const payload = JSON.stringify({
-		title: input.title,
-		body: input.body,
-		url: input.actionUrl,
-	});
+	const payloadFor = (staff: boolean) =>
+		JSON.stringify({
+			title: input.title,
+			body: input.body,
+			url: staff ? staffUrl(input.actionUrl) : input.actionUrl,
+		});
+	const ownerPayload = payloadFor(false);
+	const staffPayload = payloadFor(true);
 
 	const staleIds: string[] = [];
 
@@ -72,7 +86,7 @@ export async function sendWebPush(input: SendWebPushInput) {
 						endpoint: sub.endpoint,
 						keys: { p256dh: sub.p256dh, auth: sub.auth },
 					},
-					payload,
+					sub.staffMemberId ? staffPayload : ownerPayload,
 					{ TTL: 86_400 },
 				);
 			} catch (error) {

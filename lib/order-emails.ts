@@ -1,28 +1,37 @@
-import { OrderType } from "@prisma/client";
+import { OrderType, PaymentStatus } from "@prisma/client";
 import * as Sentry from "@sentry/nextjs";
+import type { ReactElement } from "react";
+import type { EmailBrand } from "@/emails/brand";
+import {
+	OrderCancelledEmail,
+	OrderCompletedEmail,
+	OrderConfirmedEmail,
+	OrderReceiptEmail,
+} from "@/emails/customer";
+import { NewOrderEmail, OwnerPaymentReceivedEmail } from "@/emails/owner";
 import { env } from "@/env";
 import { db } from "@/lib/db";
+import { getAccountsFromEmail } from "@/lib/email";
 import {
-	sendAdminNewOrderEmail,
-	sendAdminOrderCompletedEmail,
-	sendAdminPaymentReceivedEmail,
-	sendOrderCancelledEmail,
-	sendOrderCompletedEmail,
-	sendOrderConfirmedEmail,
-	sendOrderReceiptEmail,
-} from "@/lib/order-email-templates";
+	getPlatformBrand,
+	getRestaurantEmailIdentity,
+} from "@/lib/email-brand";
+import { getQueuedMailer } from "@/lib/outbox";
 
 /**
  * Every lifecycle email for an order, in one place.
  *
- * Previously the only customer email fired the moment an order was *created* —
- * so a customer was told "order confirmed" before the restaurant had even seen
- * it, and could then be declined. Each event now has its own trigger, and the
- * word "confirmed" is reserved for an order a restaurant has actually accepted.
+ * Guests hear from the restaurant (its name, logo and colour); the owner hears
+ * from AwaMenu. The owner is emailed about things they didn't do themselves
+ * (a new order, a customer's payment), never about their own actions.
  *
- * Every function here is safe to call more than once. That matters because a
- * payment can be reported by the Paystack webhook and by the customer's return
- * to the order page at nearly the same instant; both call `notifyOrderPaid`.
+ * The word "confirmed" is reserved for an order a restaurant has actually
+ * accepted: nothing goes to the guest when an order is merely placed, because
+ * it can still be declined.
+ *
+ * Every function here is safe to call more than once. A payment can be
+ * reported by the Paystack webhook and by the customer's return to the order
+ * page at nearly the same instant; both call `notifyOrderPaid`.
  */
 
 /** Columns that record which lifecycle emails an order has already had. */
@@ -72,7 +81,7 @@ function describeCompletion(type: OrderType) {
 	if (type === OrderType.TABLE_RESERVATION) {
 		return "Your table reservation is complete.";
 	}
-	return "Your order is complete. Thanks for dining with us.";
+	return "Your order is complete.";
 }
 
 async function loadOrder(orderId: string) {
@@ -82,6 +91,7 @@ async function loadOrder(orderId: string) {
 			id: true,
 			type: true,
 			total: true,
+			paymentStatus: true,
 			customerName: true,
 			customerEmail: true,
 			tableNumber: true,
@@ -104,6 +114,8 @@ async function loadOrder(orderId: string) {
 
 type LoadedOrder = NonNullable<Awaited<ReturnType<typeof loadOrder>>>;
 
+const reference = (order: LoadedOrder) => order.id.slice(-6).toUpperCase();
+
 function orderUrl(order: LoadedOrder) {
 	return `${env.NEXT_PUBLIC_APP_URL}/${order.restaurant.slug}/order/${order.id}`;
 }
@@ -123,6 +135,9 @@ function lineItems(order: LoadedOrder) {
 	}));
 }
 
+const total = (order: LoadedOrder) =>
+	formatMoney(Number(order.total), order.restaurant.currency);
+
 /**
  * Email delivery must never fail the action that triggered it.
  *
@@ -130,7 +145,7 @@ function lineItems(order: LoadedOrder) {
  * bounced off a Resend outage, is a support ticket. An exception thrown back
  * into `acceptOrderAction` would be a failed acceptance — much worse.
  */
-async function attempt(label: string, run: () => Promise<void>) {
+async function attempt(label: string, run: () => Promise<unknown>) {
 	try {
 		await run();
 	} catch (error) {
@@ -138,25 +153,47 @@ async function attempt(label: string, run: () => Promise<void>) {
 	}
 }
 
+/** Sends a guest email in the restaurant's name, replies going to the owner. */
+async function sendToGuest(
+	order: LoadedOrder,
+	subject: string,
+	build: (brand: EmailBrand) => ReactElement,
+) {
+	if (!order.customerEmail) return;
+	const identity = await getRestaurantEmailIdentity(order.restaurant.id);
+	await getQueuedMailer().emails.send({
+		from: identity.from,
+		replyTo: identity.replyTo,
+		to: order.customerEmail,
+		subject,
+		react: build(identity.brand),
+	});
+}
+
 // ─── Order placed ─────────────────────────────────────
 // Customer gets nothing here on purpose: the restaurant hasn't accepted yet,
-// and an order can still be declined. The admin needs to know immediately.
+// and an order can still be declined. The owner needs to know immediately.
 
 export async function notifyOrderPlaced(orderId: string) {
 	const order = await loadOrder(orderId);
 	if (!order) return;
 	if (!(await claim(orderId, "newOrderEmailSentAt"))) return;
 
-	await attempt("admin-new-order", () =>
-		sendAdminNewOrderEmail({
+	await attempt("admin-new-order", async () =>
+		getQueuedMailer().emails.send({
+			from: getAccountsFromEmail(),
 			to: order.restaurant.owner.email,
-			restaurantName: order.restaurant.name,
-			orderId: order.id,
-			orderType: describeType(order.type),
-			customerName: order.customerName,
-			total: formatMoney(Number(order.total), order.restaurant.currency),
-			items: lineItems(order),
-			dashboardUrl: adminUrl(order),
+			subject: `New ${describeType(order.type).toLowerCase()} order #${reference(order)} · ${total(order)}`,
+			react: NewOrderEmail({
+				brand: await getPlatformBrand(),
+				restaurantName: order.restaurant.name,
+				reference: reference(order),
+				orderType: describeType(order.type),
+				customerName: order.customerName,
+				items: lineItems(order),
+				total: total(order),
+				dashboardUrl: adminUrl(order),
+			}),
 		}),
 	);
 }
@@ -169,23 +206,23 @@ export async function notifyOrderConfirmed(orderId: string) {
 	if (!(await claim(orderId, "confirmationEmailSentAt"))) return;
 
 	await attempt("customer-confirmed", () =>
-		sendOrderConfirmedEmail({
-			to: order.customerEmail as string,
-			restaurantName: order.restaurant.name,
-			restaurantReplyToEmail: order.restaurant.owner.email,
-			orderId: order.id,
-			orderType: describeType(order.type),
-			customerName: order.customerName,
-			total: formatMoney(Number(order.total), order.restaurant.currency),
-			items: lineItems(order),
-			orderUrl: orderUrl(order),
-		}),
+		sendToGuest(order, `Order #${reference(order)} confirmed`, (brand) =>
+			OrderConfirmedEmail({
+				brand,
+				customerName: order.customerName,
+				reference: reference(order),
+				orderUrl: orderUrl(order),
+				orderType: describeType(order.type),
+				items: lineItems(order),
+				total: total(order),
+			}),
+		),
 	);
 }
 
 // ─── Paid ─────────────────────────────────────────────
-// One receipt to the customer, one alert to the restaurant, whichever of the
-// seven payment paths got there first.
+// One receipt to the customer and one alert to the owner, whichever payment
+// path got there first.
 
 export async function notifyOrderPaid(
 	orderId: string,
@@ -195,21 +232,19 @@ export async function notifyOrderPaid(
 	if (!order) return;
 	if (!(await claim(orderId, "receiptEmailSentAt"))) return;
 
-	const total = formatMoney(Number(order.total), order.restaurant.currency);
+	const method = options?.method ?? "Online payment";
 
-	if (order.customerEmail) {
-		await attempt("customer-receipt", () =>
-			sendOrderReceiptEmail({
-				to: order.customerEmail as string,
-				restaurantName: order.restaurant.name,
-				restaurantReplyToEmail: order.restaurant.owner.email,
-				orderId: order.id,
-				orderType: describeType(order.type),
+	await attempt("customer-receipt", () =>
+		sendToGuest(order, `Your receipt for order #${reference(order)}`, (brand) =>
+			OrderReceiptEmail({
+				brand,
 				customerName: order.customerName,
-				items: lineItems(order),
-				total,
-				paymentMethod: options?.method ?? "Online payment",
+				reference: reference(order),
 				orderUrl: orderUrl(order),
+				orderType: describeType(order.type),
+				items: lineItems(order),
+				total: total(order),
+				paymentMethod: method,
 				fulfilmentDetail:
 					order.type === OrderType.DELIVERY
 						? (order.deliveryAddress ?? undefined)
@@ -217,64 +252,53 @@ export async function notifyOrderPaid(
 							? `Table ${order.tableNumber}`
 							: undefined,
 			}),
-		);
-	}
+		),
+	);
 
-	await attempt("admin-payment", () =>
-		sendAdminPaymentReceivedEmail({
+	await attempt("admin-payment", async () =>
+		getQueuedMailer().emails.send({
+			from: getAccountsFromEmail(),
 			to: order.restaurant.owner.email,
-			restaurantName: order.restaurant.name,
-			orderId: order.id,
-			orderType: describeType(order.type),
-			customerName: order.customerName,
-			total,
-			paymentMethod: options?.method ?? "Online payment",
-			dashboardUrl: adminUrl(order),
+			subject: `${total(order)} received for order #${reference(order)}`,
+			react: OwnerPaymentReceivedEmail({
+				brand: await getPlatformBrand(),
+				restaurantName: order.restaurant.name,
+				reference: reference(order),
+				orderType: describeType(order.type),
+				customerName: order.customerName,
+				total: total(order),
+				paymentMethod: method,
+				dashboardUrl: adminUrl(order),
+			}),
 		}),
 	);
 }
 
 // ─── Completed ────────────────────────────────────────
+// The guest only: the owner or their staff just completed it themselves.
 
 export async function notifyOrderCompleted(orderId: string) {
 	const order = await loadOrder(orderId);
-	if (!order) return;
+	if (!order?.customerEmail) return;
 	if (!(await claim(orderId, "completionEmailSentAt"))) return;
 
-	const total = formatMoney(Number(order.total), order.restaurant.currency);
-
-	if (order.customerEmail) {
-		await attempt("customer-completed", () =>
-			sendOrderCompletedEmail({
-				to: order.customerEmail as string,
-				restaurantName: order.restaurant.name,
-				restaurantReplyToEmail: order.restaurant.owner.email,
-				orderId: order.id,
+	await attempt("customer-completed", () =>
+		sendToGuest(order, `Thanks for your order #${reference(order)}`, (brand) =>
+			OrderCompletedEmail({
+				brand,
 				customerName: order.customerName,
-				summary: describeCompletion(order.type),
-				total,
+				reference: reference(order),
 				orderUrl: orderUrl(order),
+				summary: describeCompletion(order.type),
+				total: total(order),
 			}),
-		);
-	}
-
-	await attempt("admin-completed", () =>
-		sendAdminOrderCompletedEmail({
-			to: order.restaurant.owner.email,
-			restaurantName: order.restaurant.name,
-			orderId: order.id,
-			orderType: describeType(order.type),
-			customerName: order.customerName,
-			total,
-			dashboardUrl: adminUrl(order),
-		}),
+		),
 	);
 }
 
 // ─── Declined / cancelled ─────────────────────────────
-// Not on the original list, but the one case where silence is worst: a
-// customer who ordered and paid attention deserves to hear that it won't
-// happen, rather than waiting for food that isn't coming.
+// The one case where silence is worst: a customer waiting for food that isn't
+// coming deserves to hear it won't.
 
 export async function notifyOrderCancelled(
 	orderId: string,
@@ -285,14 +309,15 @@ export async function notifyOrderCancelled(
 	if (!(await claim(orderId, "cancellationEmailSentAt"))) return;
 
 	await attempt("customer-cancelled", () =>
-		sendOrderCancelledEmail({
-			to: order.customerEmail as string,
-			restaurantName: order.restaurant.name,
-			restaurantReplyToEmail: order.restaurant.owner.email,
-			orderId: order.id,
-			customerName: order.customerName,
-			reason: options?.reason ?? null,
-			orderUrl: orderUrl(order),
-		}),
+		sendToGuest(order, `Order #${reference(order)} was cancelled`, (brand) =>
+			OrderCancelledEmail({
+				brand,
+				customerName: order.customerName,
+				reference: reference(order),
+				orderUrl: orderUrl(order),
+				reason: options?.reason ?? null,
+				paid: order.paymentStatus === PaymentStatus.PAID,
+			}),
+		),
 	);
 }

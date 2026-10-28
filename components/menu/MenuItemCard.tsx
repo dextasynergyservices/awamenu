@@ -3,17 +3,15 @@
 import { ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { MenuItemBadges, SoldOutPill } from "@/components/menu/MenuItemBadges";
 import { MenuItemDetailsModal } from "@/components/menu/MenuItemDetailsModal";
+import { useOrderingPaused } from "@/components/menu/OrderingPaused";
 import { useCart } from "@/hooks/useCart";
+import type { PublicMenuItem } from "@/lib/menu-tags";
+import { cn } from "@/lib/utils";
 
 type MenuItemCardProps = {
-	item: {
-		id: string;
-		name: string;
-		description: string | null;
-		price: number;
-		imageUrl: string | null;
-	};
+	item: PublicMenuItem;
 	restaurantSlug: string;
 	currency: string;
 };
@@ -32,6 +30,7 @@ export function MenuItemCard({
 	currency,
 }: MenuItemCardProps) {
 	const addItem = useCart((state) => state.addItem);
+	const paused = useOrderingPaused();
 	const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 	const cartItem = {
 		id: item.id,
@@ -55,7 +54,10 @@ export function MenuItemCard({
 								src={item.imageUrl}
 								alt={item.name}
 								fill
-								className="object-cover"
+								className={cn(
+									"object-cover",
+									item.soldOut && "opacity-60 grayscale",
+								)}
 								sizes="(min-width: 768px) 144px, 88px"
 								unoptimized
 							/>
@@ -72,6 +74,7 @@ export function MenuItemCard({
 							<h3 className="line-clamp-1 text-sm font-semibold leading-tight text-slate-950 md:text-xl">
 								{item.name}
 							</h3>
+							<MenuItemBadges item={item} className="mt-1" />
 							{item.description ? (
 								<p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500 md:text-base">
 									{item.description}
@@ -82,14 +85,18 @@ export function MenuItemCard({
 							</p>
 						</button>
 					</div>
-					<button
-						type="button"
-						onClick={() => addItem(cartItem)}
-						className="grid size-10 place-items-center rounded-full bg-yellow-300 text-emerald-950 transition-colors hover:bg-yellow-200 md:size-14"
-						aria-label={`Add ${item.name} to cart`}
-					>
-						<ShoppingCart className="size-3.5 md:size-6" aria-hidden="true" />
-					</button>
+					{item.soldOut ? (
+						<SoldOutPill className="justify-self-end px-2 text-[10px]" />
+					) : paused ? null : (
+						<button
+							type="button"
+							onClick={() => addItem(cartItem)}
+							className="grid size-10 place-items-center rounded-full bg-yellow-300 text-emerald-950 transition-colors hover:bg-yellow-200 md:size-14"
+							aria-label={`Add ${item.name} to cart`}
+						>
+							<ShoppingCart className="size-3.5 md:size-6" aria-hidden="true" />
+						</button>
+					)}
 				</div>
 			</article>
 

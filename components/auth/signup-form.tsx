@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import {
@@ -148,6 +149,25 @@ export function SignupForm() {
 				}}
 			/>
 			{error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
+			<p className="text-xs font-medium leading-5 text-slate-500">
+				By creating an account you agree to our{" "}
+				<Link
+					href="/terms"
+					target="_blank"
+					className="font-bold text-emerald-700 underline"
+				>
+					Terms of Service
+				</Link>{" "}
+				and{" "}
+				<Link
+					href="/privacy"
+					target="_blank"
+					className="font-bold text-emerald-700 underline"
+				>
+					Privacy Policy
+				</Link>
+				.
+			</p>
 			<LoadingButton
 				type="submit"
 				disabled={!turnstileReady}

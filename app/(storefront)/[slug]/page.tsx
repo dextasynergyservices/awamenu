@@ -4,18 +4,20 @@ import { notFound } from "next/navigation";
 import { BannerSlider } from "@/components/menu/BannerSlider";
 import { CartDrawer } from "@/components/menu/CartDrawer";
 import { DesktopPublicMenu } from "@/components/menu/DesktopPublicMenu";
+import { OrderingPausedProvider } from "@/components/menu/OrderingPaused";
 import { OrderLookupForm } from "@/components/menu/OrderLookupForm";
 import {
 	type MenuGridTemplate,
 	PublicMenuContent,
 } from "@/components/menu/PublicMenuContent";
 import { PublicMenuNavbar } from "@/components/menu/PublicMenuNavbar";
-import { SubscriptionInactive } from "@/components/menu/SubscriptionInactive";
+import { RestaurantUnavailable } from "@/components/menu/RestaurantUnavailable";
 import { bannerRecordToItem } from "@/lib/banners";
-import { db } from "@/lib/db";
-import { getOpenState } from "@/lib/opening-hours";
-import { getRestaurantPlanFeaturesBySlug } from "@/lib/plan-features";
-import { isSubscriptionActive } from "@/lib/subscription";
+import { billingStateOf, canTrade } from "@/lib/billing-state";
+import { isSoldOut } from "@/lib/menu-tags";
+import { getOpenState, orderingClosedNotice } from "@/lib/opening-hours";
+import { getPublicMenu } from "@/lib/public-menu";
+import { getStorefrontShare, storefrontMetadata } from "@/lib/storefront-share";
 
 type PublicMenuPageProps = {
 	params: Promise<{ slug: string }>;
@@ -26,17 +28,10 @@ export async function generateMetadata({
 	params,
 }: PublicMenuPageProps): Promise<Metadata> {
 	const { slug } = await params;
-	const restaurant = await db.restaurant.findFirst({
-		where: { slug, isActive: true },
-		select: { name: true, description: true },
-	});
-
-	if (!restaurant) return {};
-
-	return {
-		title: `${restaurant.name} Menu | AwaMenu`,
-		description: restaurant.description ?? `Browse ${restaurant.name}'s menu.`,
-	};
+	// Same cached load as the page, so metadata costs no extra query. Title,
+	// description and the preview card follow the branding rule.
+	const share = await getStorefrontShare(slug);
+	return share ? storefrontMetadata(share, { page: "Menu" }) : {};
 }
 
 export default async function PublicMenuPage({
@@ -45,70 +40,34 @@ export default async function PublicMenuPage({
 }: PublicMenuPageProps) {
 	const { slug } = await params;
 	const { orderId } = (await searchParams) ?? {};
-	const restaurant = await db.restaurant.findFirst({
-		where: { slug, isActive: true },
-		select: {
-			name: true,
-			description: true,
-			logoUrl: true,
-			timezone: true,
-			openingHours: {
-				select: { dayOfWeek: true, opensAt: true, closesAt: true },
-			},
-			currency: true,
-			whatsappNumber: true,
-			tableReservationEnabled: true,
-			activeTemplate: true,
-			// Only the liveness check is needed here now — the actual feature
-			// values come from getRestaurantPlanFeaturesBySlug below.
-			subscription: {
-				select: { status: true, currentPeriodEnd: true },
-			},
-			categories: {
-				where: { isActive: true },
-				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-				select: {
-					id: true,
-					name: true,
-					emoji: true,
-					items: {
-						where: { isAvailable: true },
-						orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-						select: {
-							id: true,
-							name: true,
-							description: true,
-							price: true,
-							imageUrl: true,
-						},
-					},
-				},
-			},
-			banners: {
-				where: { isActive: true },
-				orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-				select: {
-					id: true,
-					imageUrl: true,
-					title: true,
-					subtitle: true,
-					sortOrder: true,
-					isActive: true,
-				},
-			},
-		},
-	});
+	// Cached per restaurant and purged when the menu changes (lib/public-menu.ts):
+	// this page is what every QR scan opens.
+	const restaurant = await getPublicMenu(slug);
 
 	if (!restaurant) notFound();
 
-	if (!isSubscriptionActive(restaurant.subscription)) {
-		return <SubscriptionInactive restaurantName={restaurant.name} />;
+	// Suspended by AwaMenu: an "unavailable" page, never a 404.
+	if (!restaurant.isActive) {
+		return (
+			<RestaurantUnavailable
+				name={restaurant.name}
+				logoUrl={restaurant.logoUrl}
+				phone={restaurant.phone ?? restaurant.whatsappNumber}
+			/>
+		);
 	}
+
+	// Subscription lapsed: the menu stays up, view-only. Ordering and new
+	// bookings pause (and the server refuses them either way).
+	const orderingPaused = !canTrade(billingStateOf(restaurant.subscription));
+	const contactPhone = restaurant.phone ?? restaurant.whatsappNumber;
+	const reservationsOpen =
+		restaurant.tableReservationEnabled && !orderingPaused;
 
 	// Resolved through the shared plan resolver rather than read straight off
 	// `subscription.plan`, so a lapsed-but-still-present subscription degrades
 	// to Free here exactly like it does everywhere else.
-	const planFeatures = await getRestaurantPlanFeaturesBySlug(slug);
+	const planFeatures = restaurant.planFeatures;
 
 	// The item cap is restaurant-wide (matches how the admin editor already
 	// enforces it), not per-category — so a downgraded restaurant with one
@@ -145,9 +104,10 @@ export default async function PublicMenuPage({
 
 	const categories = visibleCategories
 		.map((category) => {
-			const items = category.items.map((item) => ({
+			const items = category.items.map(({ soldOutUntil, ...item }) => ({
 				...item,
 				price: Number(item.price),
+				soldOut: isSoldOut(soldOutUntil),
 			}));
 			if (maxMenuItems < 0) return { ...category, items };
 
@@ -167,61 +127,95 @@ export default async function PublicMenuPage({
 		: "classic";
 
 	return (
-		<main className="min-h-screen bg-white text-slate-950">
-			<PublicMenuNavbar
-				openState={openState}
-				reservationsEnabled={restaurant.tableReservationEnabled}
-				openingPeriods={restaurant.openingHours}
-				timezone={restaurant.timezone ?? "Africa/Lagos"}
-				name={restaurant.name}
-				logoUrl={displayLogoUrl}
-				mode="mobile"
-				restaurantSlug={slug}
-			/>
+		<OrderingPausedProvider paused={orderingPaused}>
+			<main className="min-h-screen bg-white text-slate-950">
+				{orderingPaused ? (
+					<p
+						role="status"
+						className="bg-amber-100 px-4 py-2 text-center text-xs font-bold text-amber-900 sm:text-sm"
+					>
+						Online ordering is paused right now. You can still browse the menu
+						{contactPhone ? (
+							<>
+								{" "}
+								or call{" "}
+								<a
+									href={`tel:${contactPhone.replace(/\s+/g, "")}`}
+									className="underline"
+								>
+									{contactPhone}
+								</a>
+							</>
+						) : null}
+						.
+					</p>
+				) : !openState.isOpen ? (
+					<p
+						role="status"
+						className="bg-amber-100 px-4 py-2 text-center text-xs font-bold text-amber-900 sm:text-sm"
+					>
+						{orderingClosedNotice(
+							restaurant.openingHours,
+							restaurant.timezone ?? "Africa/Lagos",
+						)}{" "}
+						You can still browse the menu.
+					</p>
+				) : null}
+				<PublicMenuNavbar
+					openState={openState}
+					reservationsEnabled={reservationsOpen}
+					openingPeriods={restaurant.openingHours}
+					timezone={restaurant.timezone ?? "Africa/Lagos"}
+					name={restaurant.name}
+					logoUrl={displayLogoUrl}
+					mode="mobile"
+					restaurantSlug={slug}
+				/>
 
-			<div className="md:hidden">
-				<BannerSlider name={restaurant.name} bannerItems={bannerItems} />
-				<OrderLookupForm restaurantSlug={slug} />
+				<div className="md:hidden">
+					<BannerSlider name={restaurant.name} bannerItems={bannerItems} />
+					<OrderLookupForm restaurantSlug={slug} />
 
-				<PublicMenuContent
+					<PublicMenuContent
+						categories={categories}
+						restaurantSlug={slug}
+						currency={restaurant.currency}
+						template={template}
+					/>
+				</div>
+
+				<DesktopPublicMenu
+					openState={openState}
+					openingPeriods={restaurant.openingHours}
+					timezone={restaurant.timezone ?? "Africa/Lagos"}
+					reservationsEnabled={reservationsOpen}
+					name={restaurant.name}
+					logoUrl={displayLogoUrl}
+					bannerItems={bannerItems}
 					categories={categories}
 					restaurantSlug={slug}
 					currency={restaurant.currency}
-					template={template}
-				/>
-			</div>
-
-			<DesktopPublicMenu
-				openState={openState}
-				openingPeriods={restaurant.openingHours}
-				timezone={restaurant.timezone ?? "Africa/Lagos"}
-				reservationsEnabled={restaurant.tableReservationEnabled}
-				name={restaurant.name}
-				logoUrl={displayLogoUrl}
-				bannerItems={bannerItems}
-				categories={categories}
-				restaurantSlug={slug}
-				currency={restaurant.currency}
-				appendOrderId={orderId}
-				tableReservationEnabled={restaurant.tableReservationEnabled}
-			/>
-
-			{restaurant.tableReservationEnabled ? (
-				<Link
-					href={`/${slug}/tables`}
-					className="fixed right-4 bottom-4 left-4 z-20 inline-flex min-h-12 items-center justify-center rounded-2xl bg-emerald-700 px-4 text-sm font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.25)] md:hidden"
-				>
-					Reserve table
-				</Link>
-			) : null}
-
-			<div className="md:hidden">
-				<CartDrawer
-					currency={restaurant.currency}
-					restaurantSlug={slug}
 					appendOrderId={orderId}
+					tableReservationEnabled={reservationsOpen}
 				/>
-			</div>
-		</main>
+
+				{reservationsOpen ? (
+					<Link
+						href={`/${slug}/tables`}
+						className="fixed right-4 bottom-4 left-4 z-20 inline-flex min-h-12 items-center justify-center rounded-2xl bg-emerald-700 px-4 text-sm font-black text-white shadow-[0_14px_35px_rgba(4,120,87,0.25)] md:hidden"
+					>
+						Reserve table
+					</Link>
+				) : null}
+
+				<div className="md:hidden">
+					<CartDrawer
+						currency={restaurant.currency}
+						restaurantSlug={slug}
+						appendOrderId={orderId}
+					/>
+				</div>
+			</main>
+		</OrderingPausedProvider>
 	);
 }
