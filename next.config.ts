@@ -36,6 +36,7 @@ const contentSecurityPolicy = [
 	"script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://*.posthog.com",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data: blob: https://res.cloudinary.com",
+	"media-src 'self' https://res.cloudinary.com",
 	"font-src 'self' data:",
 	"connect-src 'self' https://api.cloudinary.com https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.posthog.com https://res.cloudinary.com https://checkout.paystack.com https://checkout.flutterwave.com https://*.monnify.com https://challenges.cloudflare.com https://*.turnstile.com https://paystack.com https://api.paystack.co https://api.flutterwave.com https://api.monnify.com",
 	"frame-src https://challenges.cloudflare.com",
