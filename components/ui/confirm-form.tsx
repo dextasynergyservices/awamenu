@@ -4,6 +4,10 @@ import { AlertTriangle } from "lucide-react";
 import type * as React from "react";
 import { useRef, useState } from "react";
 import {
+	ActionFormStatusContext,
+	useActionFormStatus,
+} from "@/components/ui/action-form";
+import {
 	ConfirmDialog,
 	type ConfirmTone,
 	splitConfirm,
@@ -50,6 +54,7 @@ export function ConfirmForm({
 	const formRef = useRef<HTMLFormElement>(null);
 	const submitterRef = useRef<HTMLElement | null>(null);
 	const confirmedRef = useRef(false);
+	const { status, start, finish } = useActionFormStatus();
 	const prompt = splitConfirm(confirmMessage);
 
 	return (
@@ -57,15 +62,24 @@ export function ConfirmForm({
 			ref={formRef}
 			action={async (formData) => {
 				setError(null);
-				const result = await action(formData);
-				if (result && typeof result === "object" && "error" in result) {
-					setError(result.error);
+				try {
+					const result = await action(formData);
+					if (result && typeof result === "object" && "error" in result) {
+						setError(result.error);
+						finish(false);
+						return;
+					}
+					finish(true);
+				} catch (caught) {
+					finish(false);
+					throw caught;
 				}
 			}}
 			className={className}
 			onSubmit={(event) => {
 				if (confirmedRef.current) {
 					confirmedRef.current = false;
+					start();
 					return;
 				}
 				event.preventDefault();
@@ -75,10 +89,12 @@ export function ConfirmForm({
 				setAsking(true);
 			}}
 		>
-			{Object.entries(hiddenFields).map(([name, value]) => (
-				<input key={name} type="hidden" name={name} value={value} />
-			))}
-			{children}
+			<ActionFormStatusContext.Provider value={status}>
+				{Object.entries(hiddenFields).map(([name, value]) => (
+					<input key={name} type="hidden" name={name} value={value} />
+				))}
+				{children}
+			</ActionFormStatusContext.Provider>
 			{error ? (
 				<p
 					role="alert"

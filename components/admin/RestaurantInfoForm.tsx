@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Pencil, Phone, Store } from "lucide-react";
+import { MapPin, Phone, Store } from "lucide-react";
 import { useState } from "react";
 import { updateRestaurantInfoAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
@@ -84,15 +84,6 @@ export function RestaurantInfoForm({
 			title="Restaurant Profile"
 			description="Update your public information and location details."
 			icon={Store}
-			headerAction={
-				<button
-					type="button"
-					className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs md:text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100"
-				>
-					<Pencil className="size-3.5" />
-					Edit
-				</button>
-			}
 		>
 			<ActionForm action={updateRestaurantInfoAction} className="grid gap-6">
 				<input type="hidden" name="restaurantId" value={restaurantId} />

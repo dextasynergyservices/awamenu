@@ -7,6 +7,7 @@ import { updateRestaurantSettingsAction } from "@/actions/restaurant.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { StaffPasswordReveal } from "@/components/admin/StaffPasswordReveal";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PaymentPolicy } from "@/lib/payment-policy";
 
@@ -47,7 +48,10 @@ export function RestaurantSettingsForm({
 			description="Configure your dining policies and preferences."
 			icon={Settings}
 		>
-			<form action={updateRestaurantSettingsAction} className="grid gap-6">
+			<ActionForm
+				action={updateRestaurantSettingsAction}
+				className="grid gap-6"
+			>
 				<input type="hidden" name="slug" value={slug} />
 
 				<fieldset className="grid gap-3">
@@ -311,7 +315,7 @@ export function RestaurantSettingsForm({
 				>
 					Save Settings
 				</SubmitButton>
-			</form>
+			</ActionForm>
 		</SettingsCard>
 	);
 }

@@ -11,7 +11,7 @@ import {
 	X,
 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
 	createMenuItemAction,
 	deleteMenuItemAction,
@@ -22,7 +22,8 @@ import {
 	SoldOutToggle,
 } from "@/components/admin/MenuItemExtras";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
-import { FormSubmitButton, SubmitButton } from "@/components/ui/action-button";
+import { PlanLimitNote } from "@/components/admin/PlanLimitNote";
+import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
 import {
 	RowActionButton,
@@ -36,6 +37,8 @@ type MenuEditorProps = {
 	restaurantId: string;
 	slug: string;
 	canCreateItem: boolean;
+	planName: string;
+	maxMenuItems: number;
 	activeTemplate: string;
 	availableTemplates: string[];
 	categories: Array<{
@@ -153,7 +156,7 @@ function ImageUploadField({
 					<p className="truncate text-xs font-bold text-emerald-700">
 						{autoSave
 							? "Uploaded and saving item..."
-							: "Uploaded. Add item to publish."}
+							: "Photo uploaded. Save the item to publish it."}
 					</p>
 				</div>
 			) : null}
@@ -165,6 +168,8 @@ export function MenuEditor({
 	restaurantId,
 	slug,
 	canCreateItem,
+	planName,
+	maxMenuItems,
 	activeTemplate,
 	availableTemplates,
 	categories,
@@ -187,8 +192,28 @@ export function MenuEditor({
 	);
 	const [layoutModalOpen, setLayoutModalOpen] = useState(false);
 	const [photoError, setPhotoError] = useState<string | null>(null);
-	const pageCount = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-	const visibleItems = items.slice(
+	// Bumped after a successful save so the form remounts empty (fields, photo
+	// preview and all), ready for the next item.
+	const [newItemFormKey, setNewItemFormKey] = useState(0);
+	const newItemNameRef = useRef<HTMLInputElement>(null);
+	const [categoryFilter, setCategoryFilter] = useState("all");
+	const [statusFilter, setStatusFilter] = useState("all");
+	const [query, setQuery] = useState("");
+	const search = query.trim().toLowerCase();
+	const filteredItems = items.filter(
+		(item) =>
+			(categoryFilter === "all" || item.categoryId === categoryFilter) &&
+			(statusFilter === "all" ||
+				(statusFilter === "published") === item.isAvailable) &&
+			(!search ||
+				item.name.toLowerCase().includes(search) ||
+				item.description?.toLowerCase().includes(search)),
+	);
+	const pageCount = Math.max(
+		1,
+		Math.ceil(filteredItems.length / ITEMS_PER_PAGE),
+	);
+	const visibleItems = filteredItems.slice(
 		(itemPage - 1) * ITEMS_PER_PAGE,
 		itemPage * ITEMS_PER_PAGE,
 	);
@@ -216,17 +241,19 @@ export function MenuEditor({
 						<LayoutGrid className="size-4" aria-hidden="true" />
 						Layout: {templateLabels[activeTemplate] ?? "Classic"}
 					</button>
-					{hasNoCategories ? null : (
-						<FormSubmitButton
-							form="new-menu-item-form"
-							disabled={!canCreateItem}
-							loadingText="Creating..."
-							successText="Created"
-							className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 disabled:opacity-50"
+					{hasNoCategories || !canCreateItem ? null : (
+						<button
+							type="button"
+							onClick={() => {
+								const input = newItemNameRef.current;
+								input?.scrollIntoView({ behavior: "smooth", block: "center" });
+								input?.focus({ preventScroll: true });
+							}}
+							className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-50 px-3 text-sm font-black text-emerald-800 hover:bg-emerald-100"
 						>
 							<Plus className="size-4" aria-hidden="true" />
 							Add new item
-						</FormSubmitButton>
+						</button>
 					)}
 				</div>
 			</div>
@@ -254,12 +281,23 @@ export function MenuEditor({
 						Add your first category
 					</a>
 				</div>
+			) : !canCreateItem ? (
+				<PlanLimitNote
+					slug={slug}
+					planName={planName}
+					max={maxMenuItems}
+					noun={["menu item", "menu items"]}
+					className="mt-4"
+				/>
 			) : (
 				<ActionForm
+					key={newItemFormKey}
 					id="new-menu-item-form"
 					action={createMenuItemAction}
-					className="mt-4 grid gap-3"
+					onSuccess={() => setNewItemFormKey((key) => key + 1)}
+					className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3"
 				>
+					<p className="text-xs font-black text-slate-700">New item</p>
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="sortOrder" value={items.length + 1} />
@@ -279,8 +317,10 @@ export function MenuEditor({
 							))}
 						</select>
 						<input
+							ref={newItemNameRef}
 							name="name"
 							required
+							aria-label="Item name"
 							placeholder="Item name"
 							className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-700"
 						/>
@@ -303,22 +343,60 @@ export function MenuEditor({
 						restaurantId={restaurantId}
 						inputId="new-item-image"
 					/>
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<p className="text-xs font-medium text-slate-500">
+							Saved items appear on your menu straight away.
+						</p>
+						<SubmitButton
+							loadingText="Saving..."
+							successText="Saved"
+							className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white hover:bg-emerald-800"
+						>
+							<Plus className="size-4" aria-hidden="true" />
+							Save item
+						</SubmitButton>
+					</div>
 				</ActionForm>
 			)}
 
 			<div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1.2fr]">
-				<select className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none">
-					<option>All categories</option>
+				<select
+					aria-label="Filter by category"
+					value={categoryFilter}
+					onChange={(event) => {
+						setCategoryFilter(event.target.value);
+						setItemPage(1);
+					}}
+					className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none"
+				>
+					<option value="all">All categories</option>
 					{categories.map((category) => (
-						<option key={category.id}>{category.name}</option>
+						<option key={category.id} value={category.id}>
+							{category.name}
+						</option>
 					))}
 				</select>
-				<select className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none">
-					<option>All status</option>
-					<option>Published</option>
-					<option>Draft</option>
+				<select
+					aria-label="Filter by status"
+					value={statusFilter}
+					onChange={(event) => {
+						setStatusFilter(event.target.value);
+						setItemPage(1);
+					}}
+					className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none"
+				>
+					<option value="all">All status</option>
+					<option value="published">Published</option>
+					<option value="draft">Draft</option>
 				</select>
 				<input
+					type="search"
+					aria-label="Search items"
+					value={query}
+					onChange={(event) => {
+						setQuery(event.target.value);
+						setItemPage(1);
+					}}
 					placeholder="Search items..."
 					className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none"
 				/>
@@ -338,7 +416,7 @@ export function MenuEditor({
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-slate-100">
-						{items.length > 0 ? (
+						{visibleItems.length > 0 ? (
 							visibleItems.map((item) => (
 								<tr key={item.id} className="bg-white">
 									<td className="px-3 py-3 align-middle">
@@ -529,7 +607,9 @@ export function MenuEditor({
 									colSpan={5}
 									className="px-3 py-8 text-center text-sm font-bold text-slate-500"
 								>
-									No menu items yet.
+									{items.length === 0
+										? "No menu items yet."
+										: "No items match these filters."}
 								</td>
 							</tr>
 						)}

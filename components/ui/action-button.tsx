@@ -2,8 +2,9 @@
 
 import { Check, LoaderCircle } from "lucide-react";
 import type * as React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { ActionFormStatusContext } from "@/components/ui/action-form";
 import { cn } from "@/lib/utils";
 
 type LoadingContentProps = {
@@ -26,10 +27,6 @@ type LoadingButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 	success?: boolean;
 	loadingText?: React.ReactNode;
 	successText?: React.ReactNode;
-};
-
-type FormSubmitButtonProps = SubmitButtonProps & {
-	loadingDuration?: number;
 };
 
 function LoadingContent({
@@ -70,7 +67,14 @@ export function SubmitButton({
 	onSuccess,
 	...props
 }: SubmitButtonProps) {
-	const { pending } = useFormStatus();
+	// Inside ActionForm/ConfirmForm the form's own status is used: it knows
+	// whether the server accepted the change, and useFormStatus can report
+	// "done" before the server has answered (see ActionFormStatusContext). A
+	// plain <form> has only useFormStatus, and finishing is all it can go on.
+	const formStatus = useContext(ActionFormStatusContext);
+	const nativeStatus = useFormStatus();
+	const pending = formStatus ? formStatus.pending : nativeStatus.pending;
+	const refused = formStatus?.result === "error";
 	const [isSuccess, setIsSuccess] = useState(false);
 	const wasPending = useRef(false);
 	const buttonRef = useRef<HTMLButtonElement>(null);
@@ -95,6 +99,9 @@ export function SubmitButton({
 		if (!wasPending.current) return;
 
 		wasPending.current = false;
+		// The server refused: the form shows why, so no tick and no onSuccess
+		// (which would usually close the dialog and hide the message).
+		if (refused) return;
 		setIsSuccess(true);
 		onSuccessRef.current?.();
 		const timeout = window.setTimeout(
@@ -102,7 +109,7 @@ export function SubmitButton({
 			successDuration,
 		);
 		return () => window.clearTimeout(timeout);
-	}, [pending, successDuration]);
+	}, [pending, successDuration, refused]);
 
 	// Editing anything in the form clears the tick immediately, rather than
 	// waiting on the timer. The timer is a nicety; this is the guarantee — if it
@@ -176,103 +183,6 @@ export function LoadingButton({
 			<LoadingContent
 				isLoading={loading}
 				isSuccess={success}
-				loadingText={loadingText}
-				successText={successText}
-			>
-				{children}
-			</LoadingContent>
-		</button>
-	);
-}
-
-export function FormSubmitButton({
-	children,
-	className,
-	disabled,
-	loadingText,
-	successText,
-	successDuration = 900,
-	loadingDuration = 1800,
-	onClick,
-	...props
-}: FormSubmitButtonProps) {
-	const [isLoading, setIsLoading] = useState(false);
-	const [isSuccess, setIsSuccess] = useState(false);
-	const buttonRef = useRef<HTMLButtonElement>(null);
-
-	// Each timer is owned by the state that starts it. Previously both were
-	// created in one effect keyed on `isLoading`: when loading finished, that
-	// effect's cleanup ran and cancelled the *success* timer before it could
-	// fire, so the button stayed on the tick and disabled forever — one save
-	// per page load.
-	useEffect(() => {
-		if (!isLoading) return;
-
-		const timeout = window.setTimeout(() => {
-			setIsLoading(false);
-			setIsSuccess(true);
-		}, loadingDuration);
-
-		return () => window.clearTimeout(timeout);
-	}, [isLoading, loadingDuration]);
-
-	useEffect(() => {
-		if (!isSuccess) return;
-
-		const timeout = window.setTimeout(
-			() => setIsSuccess(false),
-			successDuration,
-		);
-		return () => window.clearTimeout(timeout);
-	}, [isSuccess, successDuration]);
-
-	// See SubmitButton: any edit clears the tick, so a missed timer can't leave
-	// the button claiming "saved" over unsaved changes.
-	useEffect(() => {
-		if (!isSuccess) return;
-		const form = props.form
-			? document.getElementById(props.form)
-			: buttonRef.current?.form;
-		if (!(form instanceof HTMLFormElement)) return;
-
-		const clear = () => setIsSuccess(false);
-		form.addEventListener("input", clear);
-		form.addEventListener("change", clear);
-		return () => {
-			form.removeEventListener("input", clear);
-			form.removeEventListener("change", clear);
-		};
-	}, [isSuccess, props.form]);
-
-	return (
-		<button
-			{...props}
-			ref={buttonRef}
-			type={props.type ?? "submit"}
-			aria-busy={isLoading}
-			// Not disabled on success — see SubmitButton.
-			disabled={disabled || isLoading}
-			onClick={(event) => {
-				onClick?.(event);
-				if (event.defaultPrevented || disabled) return;
-
-				const form = props.form
-					? document.getElementById(props.form)
-					: event.currentTarget.form;
-				if (form instanceof HTMLFormElement && !form.checkValidity()) return;
-
-				setIsSuccess(false);
-				setIsLoading(true);
-			}}
-			className={cn(
-				"disabled:pointer-events-none disabled:opacity-60",
-				className,
-				(isLoading || isSuccess) && "!inline-flex items-center justify-center",
-			)}
-		>
-			<LoadingContent
-				isLoading={isLoading}
-				isSuccess={isSuccess}
 				loadingText={loadingText}
 				successText={successText}
 			>

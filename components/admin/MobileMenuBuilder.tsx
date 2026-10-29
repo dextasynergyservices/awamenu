@@ -12,7 +12,6 @@ import {
 	MoreHorizontal,
 	Plus,
 	Search,
-	SlidersHorizontal,
 	Trash2,
 	Utensils,
 	X,
@@ -35,6 +34,7 @@ import {
 	SoldOutToggle,
 } from "@/components/admin/MenuItemExtras";
 import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
+import { PlanLimitNote } from "@/components/admin/PlanLimitNote";
 import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
 import type { BannerItem } from "@/lib/banners";
@@ -67,10 +67,12 @@ type MobileMenuBuilderProps = {
 	slug: string;
 	currency: string;
 	canCreateCategory: boolean;
+	canCreateItem: boolean;
 	categories: MobileCategory[];
 	bannerItems: BannerItem[];
 	maxCategories: number;
 	maxMenuItems: number;
+	planName: string;
 	activeTemplate: string;
 	availableTemplates: string[];
 };
@@ -116,10 +118,12 @@ export function MobileMenuBuilder({
 	slug,
 	currency,
 	canCreateCategory,
+	canCreateItem,
 	categories,
 	bannerItems,
 	maxCategories,
 	maxMenuItems,
+	planName,
 	activeTemplate,
 	availableTemplates,
 }: MobileMenuBuilderProps) {
@@ -234,6 +238,14 @@ export function MobileMenuBuilder({
 
 			{activeTab === "items" ? (
 				<section className="grid gap-2.5">
+					{canCreateItem ? null : (
+						<PlanLimitNote
+							slug={slug}
+							planName={planName}
+							max={maxMenuItems}
+							noun={["menu item", "menu items"]}
+						/>
+					)}
 					<button
 						type="button"
 						onClick={() => setLayoutModalOpen(true)}
@@ -266,13 +278,6 @@ export function MobileMenuBuilder({
 								className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
 							/>
 						</label>
-						<button
-							type="button"
-							className="grid min-h-10 place-items-center rounded-[1rem] border border-slate-200 bg-white text-slate-600"
-							aria-label="Filter menu items"
-						>
-							<SlidersHorizontal className="size-4" aria-hidden="true" />
-						</button>
 					</div>
 
 					<div className="grid gap-2.5">
@@ -328,20 +333,22 @@ export function MobileMenuBuilder({
 					{/* With no categories the item sheet would render an empty
 					    category dropdown and fail validation on submit, so the
 					    button routes to the categories tab instead. */}
-					<button
-						type="button"
-						onClick={() =>
-							categories.length === 0
-								? setActiveTab("categories")
-								: setIsCreatingItem(true)
-						}
-						className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 grid gap-1 text-center text-xs font-bold text-slate-700"
-					>
-						<span className="grid size-12 place-items-center rounded-full bg-emerald-700 text-white shadow-lg">
-							<Plus className="size-5" aria-hidden="true" />
-						</span>
-						{categories.length === 0 ? "Add category" : "Add item"}
-					</button>
+					{canCreateItem || categories.length === 0 ? (
+						<button
+							type="button"
+							onClick={() =>
+								categories.length === 0
+									? setActiveTab("categories")
+									: setIsCreatingItem(true)
+							}
+							className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 grid gap-1 text-center text-xs font-bold text-slate-700"
+						>
+							<span className="grid size-12 place-items-center rounded-full bg-emerald-700 text-white shadow-lg">
+								<Plus className="size-5" aria-hidden="true" />
+							</span>
+							{categories.length === 0 ? "Add category" : "Add item"}
+						</button>
+					) : null}
 				</section>
 			) : null}
 
@@ -350,6 +357,8 @@ export function MobileMenuBuilder({
 					restaurantId={restaurantId}
 					slug={slug}
 					canCreateCategory={canCreateCategory}
+					planName={planName}
+					maxCategories={maxCategories}
 					categories={categories}
 				/>
 			) : null}
@@ -410,11 +419,15 @@ function MobileCategorySection({
 	restaurantId,
 	slug,
 	canCreateCategory,
+	planName,
+	maxCategories,
 	categories,
 }: {
 	restaurantId: string;
 	slug: string;
 	canCreateCategory: boolean;
+	planName: string;
+	maxCategories: number;
 	categories: MobileCategory[];
 }) {
 	const CATEGORIES_PER_PAGE = 3;
@@ -444,6 +457,14 @@ function MobileCategorySection({
 				<Plus className="size-4" aria-hidden="true" />
 				<span className="text-xs font-black">Add category</span>
 			</button>
+			{canCreateCategory ? null : (
+				<PlanLimitNote
+					slug={slug}
+					planName={planName}
+					max={maxCategories}
+					noun={["category", "categories"]}
+				/>
+			)}
 
 			<div className="grid min-w-0 gap-2.5">
 				{paginatedCategories.length > 0 ? (
@@ -677,7 +698,7 @@ function MobileCategoryFormModal({
 				</ActionForm>
 
 				{isEditing && category ? (
-					<form action={deleteCategoryAction} className="mt-3">
+					<ActionForm action={deleteCategoryAction} className="mt-3">
 						<input type="hidden" name="restaurantId" value={restaurantId} />
 						<input type="hidden" name="slug" value={slug} />
 						<input type="hidden" name="categoryId" value={category.id} />
@@ -693,7 +714,7 @@ function MobileCategoryFormModal({
 							<Trash2 className="size-3.5" aria-hidden="true" />
 							Delete category
 						</SubmitButton>
-					</form>
+					</ActionForm>
 				) : null}
 			</div>
 		</div>
@@ -921,7 +942,7 @@ function MobileBannerFormModal({
 					</button>
 				</div>
 
-				<form
+				<ActionForm
 					action={isEditing ? updateBannerAction : createBannerAction}
 					className="mt-4 grid gap-3"
 				>
@@ -1025,10 +1046,10 @@ function MobileBannerFormModal({
 					>
 						{isEditing ? "Save changes" : "Add banner"}
 					</SubmitButton>
-				</form>
+				</ActionForm>
 
 				{isEditing && banner?.id ? (
-					<form action={removeBannerAction} className="mt-3">
+					<ActionForm action={removeBannerAction} className="mt-3">
 						<input type="hidden" name="restaurantId" value={restaurantId} />
 						<input type="hidden" name="slug" value={slug} />
 						<input type="hidden" name="bannerId" value={banner.id} />
@@ -1044,7 +1065,7 @@ function MobileBannerFormModal({
 							<Trash2 className="size-3.5" aria-hidden="true" />
 							Delete banner
 						</SubmitButton>
-					</form>
+					</ActionForm>
 				) : null}
 			</div>
 		</div>
