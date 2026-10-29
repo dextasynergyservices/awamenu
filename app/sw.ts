@@ -59,9 +59,15 @@ const serwist = new Serwist({
 	navigationPreload: true,
 	runtimeCaching: [
 		...staticAssetCaching,
-		// Everything else — navigations, RSC payloads, API calls — always goes
-		// to the network. No stale payloads, no cross-account bleed.
-		{ matcher: () => true, handler: new NetworkOnly() },
+		// Everything else same-origin — navigations, RSC payloads, API calls —
+		// always goes to the network. No stale payloads, no cross-account bleed.
+		//
+		// Cross-origin requests (Cloudinary images, PostHog, Sentry) are left
+		// alone so the browser loads them itself. If the worker fetched them,
+		// they would be checked against connect-src rather than img-src, and the
+		// worker keeps the CSP it was installed with until sw.js changes, so an
+		// image host added to the policy later would stay blocked.
+		{ matcher: ({ sameOrigin }) => sameOrigin, handler: new NetworkOnly() },
 	],
 });
 
