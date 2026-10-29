@@ -2,7 +2,12 @@
 
 import { AlertTriangle } from "lucide-react";
 import type * as React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+	ConfirmDialog,
+	type ConfirmTone,
+	splitConfirm,
+} from "@/components/ui/confirm-dialog";
 import type { ActionResponse } from "@/lib/action-error";
 
 type ConfirmFormProps = {
@@ -10,27 +15,46 @@ type ConfirmFormProps = {
 	action: (
 		formData: FormData,
 	) => void | Promise<void> | Promise<ActionResponse | undefined>;
+	/** "Question? Explanation." — the question becomes the dialog title. */
 	confirmMessage: string;
+	/** Defaults to the text of the button that submitted the form. */
+	confirmLabel?: string;
+	cancelLabel?: string;
+	tone?: ConfirmTone;
 	hiddenFields: Record<string, string>;
 	children: React.ReactNode;
 	className?: string;
 };
 
 /**
- * A form that asks "are you sure?" before submitting, and shows the server's
- * answer if it refuses ("Cannot delete a plan with active subscriptions…").
+ * A form that asks "are you sure?" in a dialog before submitting, and shows
+ * the server's answer if it refuses ("Cannot delete a plan with active
+ * subscriptions…").
+ *
+ * The real submit happens only after confirming, so submit buttons inside
+ * (SubmitButton's pending state, a submitter's name/value) behave as usual.
  */
 export function ConfirmForm({
 	action,
 	confirmMessage,
+	confirmLabel,
+	cancelLabel,
+	tone = "danger",
 	hiddenFields,
 	children,
 	className,
 }: ConfirmFormProps) {
 	const [error, setError] = useState<string | null>(null);
+	const [asking, setAsking] = useState(false);
+	const [label, setLabel] = useState(confirmLabel ?? "Confirm");
+	const formRef = useRef<HTMLFormElement>(null);
+	const submitterRef = useRef<HTMLElement | null>(null);
+	const confirmedRef = useRef(false);
+	const prompt = splitConfirm(confirmMessage);
 
 	return (
 		<form
+			ref={formRef}
 			action={async (formData) => {
 				setError(null);
 				const result = await action(formData);
@@ -40,9 +64,15 @@ export function ConfirmForm({
 			}}
 			className={className}
 			onSubmit={(event) => {
-				if (!window.confirm(confirmMessage)) {
-					event.preventDefault();
+				if (confirmedRef.current) {
+					confirmedRef.current = false;
+					return;
 				}
+				event.preventDefault();
+				const submitter = (event.nativeEvent as SubmitEvent).submitter;
+				submitterRef.current = submitter;
+				setLabel(confirmLabel ?? (submitter?.textContent?.trim() || "Confirm"));
+				setAsking(true);
 			}}
 		>
 			{Object.entries(hiddenFields).map(([name, value]) => (
@@ -61,6 +91,25 @@ export function ConfirmForm({
 					<span className="min-w-0">{error}</span>
 				</p>
 			) : null}
+			<ConfirmDialog
+				open={asking}
+				onOpenChange={setAsking}
+				title={prompt.title}
+				message={prompt.message}
+				confirmLabel={label}
+				cancelLabel={cancelLabel}
+				tone={tone}
+				onConfirm={() => {
+					setAsking(false);
+					confirmedRef.current = true;
+					const submitter = submitterRef.current;
+					formRef.current?.requestSubmit(
+						submitter && formRef.current.contains(submitter)
+							? (submitter as HTMLButtonElement)
+							: undefined,
+					);
+				}}
+			/>
 		</form>
 	);
 }

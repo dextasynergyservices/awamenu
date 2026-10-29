@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 	if (user?.role !== UserRole.SUPER_ADMIN) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
-	const parsed = schema.safeParse(await request.json());
+	const parsed = schema.safeParse(await request.json().catch(() => null));
 	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: "Use a PNG, JPG or WebP image." },

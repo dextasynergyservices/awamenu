@@ -684,6 +684,7 @@ function ReservationAction({
 }) {
 	const router = useRouter();
 	const [promptingPin, setPromptingPin] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 	const [isPending, startTransition] = useTransition();
 
 	// A request is approved; a confirmed booking is checked in when the guest
@@ -692,6 +693,7 @@ function ReservationAction({
 
 	function handleStaffId(staffId: string, pin: string) {
 		setPromptingPin(false);
+		setError(null);
 		const fd = new FormData();
 		fd.set("reservationId", res.id);
 		fd.set("slug", slug);
@@ -705,12 +707,12 @@ function ReservationAction({
 				if ("error" in result) throw new Error(result.error);
 				router.refresh();
 			} catch (err) {
-				alert(
+				setError(
 					err instanceof Error
 						? err.message
 						: isRequest
-							? "Error approving reservation"
-							: "Error checking in",
+							? "Couldn't approve this reservation. Try again."
+							: "Couldn't check this guest in. Try again.",
 				);
 			}
 		});
@@ -734,6 +736,14 @@ function ReservationAction({
 							: "Check in"}
 				</button>
 			</div>
+			{error ? (
+				<p
+					role="alert"
+					className="mt-1.5 ml-auto max-w-56 text-right text-[11px] font-bold text-red-600"
+				>
+					{error}
+				</p>
+			) : null}
 			{promptingPin ? (
 				<PinPromptModal
 					onPinEnter={handleStaffId}

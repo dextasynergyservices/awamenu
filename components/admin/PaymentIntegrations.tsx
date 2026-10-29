@@ -592,12 +592,13 @@ export function PaymentIntegrations({
 										autoComplete="off"
 										placeholder={field.placeholder}
 										value={credentials[field.key] ?? ""}
-										onChange={(event) =>
+										onChange={(event) => {
+											const value = event.target.value;
 											setCredentials((prev) => ({
 												...prev,
-												[field.key]: event.target.value,
-											}))
-										}
+												[field.key]: value,
+											}));
+										}}
 										className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-base font-medium text-slate-950 outline-none focus:border-emerald-500 sm:text-sm"
 									/>
 									{field.help ? (

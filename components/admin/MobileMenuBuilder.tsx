@@ -38,6 +38,7 @@ import { MenuLayoutModal } from "@/components/admin/MenuLayoutModal";
 import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
 import type { BannerItem } from "@/lib/banners";
+import { uploadImage, webpUrl } from "@/lib/image-upload";
 
 const MOBILE_ITEMS_BATCH = 8;
 
@@ -105,57 +106,8 @@ async function uploadItemPhoto(
 	file: File,
 	input: HTMLInputElement,
 ) {
-	if (!["image/webp", "image/jpeg", "image/png"].includes(file.type)) {
-		throw new Error("Item photos must be WebP, JPG, or PNG images.");
-	}
-
-	const res = await fetch("/api/upload", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			restaurantId,
-			kind: "item",
-			contentType: file.type,
-		}),
-	});
-
-	if (!res.ok) {
-		throw new Error("Unable to create upload URL.");
-	}
-
-	const payload = (await res.json()) as {
-		apiKey: string;
-		folder: string;
-		publicId: string;
-		signature: string;
-		timestamp: number;
-		uploadUrl: string;
-	};
-	const uploadData = new FormData();
-	uploadData.set("file", file);
-	uploadData.set("api_key", payload.apiKey);
-	uploadData.set("folder", payload.folder);
-	uploadData.set("public_id", payload.publicId);
-	uploadData.set("signature", payload.signature);
-	uploadData.set("timestamp", String(payload.timestamp));
-
-	const uploadRes = await fetch(payload.uploadUrl, {
-		method: "POST",
-		body: uploadData,
-	});
-
-	if (!uploadRes.ok) {
-		throw new Error("Unable to upload item photo.");
-	}
-
-	const uploadPayload = (await uploadRes.json()) as { secure_url?: string };
-	if (!uploadPayload.secure_url) {
-		throw new Error("Cloudinary did not return an image URL.");
-	}
-
-	input.value = uploadPayload.secure_url.replace(
-		"/upload/",
-		"/upload/f_webp,q_auto/",
+	input.value = webpUrl(
+		await uploadImage({ restaurantId, kind: "item" }, file),
 	);
 }
 
@@ -749,55 +701,7 @@ function MobileCategoryFormModal({
 }
 
 async function uploadBannerPhoto(restaurantId: string, file: File) {
-	if (!["image/webp", "image/jpeg", "image/png"].includes(file.type)) {
-		throw new Error("Banner images must be WebP, JPG, or PNG images.");
-	}
-
-	const res = await fetch("/api/upload", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			restaurantId,
-			kind: "cover",
-			contentType: file.type,
-		}),
-	});
-
-	if (!res.ok) {
-		throw new Error("Unable to create upload URL.");
-	}
-
-	const payload = (await res.json()) as {
-		apiKey: string;
-		folder: string;
-		publicId: string;
-		signature: string;
-		timestamp: number;
-		uploadUrl: string;
-	};
-	const uploadData = new FormData();
-	uploadData.set("file", file);
-	uploadData.set("api_key", payload.apiKey);
-	uploadData.set("folder", payload.folder);
-	uploadData.set("public_id", payload.publicId);
-	uploadData.set("signature", payload.signature);
-	uploadData.set("timestamp", String(payload.timestamp));
-
-	const uploadRes = await fetch(payload.uploadUrl, {
-		method: "POST",
-		body: uploadData,
-	});
-
-	if (!uploadRes.ok) {
-		throw new Error("Unable to upload banner image.");
-	}
-
-	const uploadPayload = (await uploadRes.json()) as { secure_url?: string };
-	if (!uploadPayload.secure_url) {
-		throw new Error("Cloudinary did not return an image URL.");
-	}
-
-	return uploadPayload.secure_url.replace("/upload/", "/upload/f_webp,q_auto/");
+	return webpUrl(await uploadImage({ restaurantId, kind: "cover" }, file));
 }
 
 function bannerKey(banner: BannerItem) {

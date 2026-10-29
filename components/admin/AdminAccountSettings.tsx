@@ -24,7 +24,8 @@ export function AdminAccountSettings({ email }: { email: string }) {
 
 	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const formData = new FormData(event.currentTarget);
+		const form = event.currentTarget;
+		const formData = new FormData(form);
 
 		const newPassword = String(formData.get("newPassword") ?? "");
 		const confirmPassword = String(formData.get("confirmPassword") ?? "");
@@ -41,7 +42,7 @@ export function AdminAccountSettings({ email }: { email: string }) {
 				const result = await updateAdminPasswordAction(formData);
 				if (result && "error" in result) throw new Error(result.error);
 				setIsSuccess(true);
-				(event.target as HTMLFormElement).reset();
+				form.reset();
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "Failed to update password.",

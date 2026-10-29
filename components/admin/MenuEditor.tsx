@@ -30,6 +30,7 @@ import {
 	RowActionSeparator,
 	RowActions,
 } from "@/components/ui/RowActions";
+import { uploadImage, webpUrl } from "@/lib/image-upload";
 
 type MenuEditorProps = {
 	restaurantId: string;
@@ -69,57 +70,8 @@ async function uploadItemPhoto(
 	file: File,
 	input: HTMLInputElement,
 ) {
-	if (!file) return;
-	if (!["image/webp", "image/jpeg", "image/png"].includes(file.type)) {
-		throw new Error("Item photos must be WebP, JPG, or PNG images.");
-	}
-
-	const res = await fetch("/api/upload", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			restaurantId,
-			kind: "item",
-			contentType: file.type,
-		}),
-	});
-
-	if (!res.ok) {
-		throw new Error("Unable to create upload URL.");
-	}
-
-	const payload = (await res.json()) as {
-		apiKey: string;
-		folder: string;
-		publicId: string;
-		signature: string;
-		timestamp: number;
-		uploadUrl: string;
-	};
-	const uploadData = new FormData();
-	uploadData.set("file", file);
-	uploadData.set("api_key", payload.apiKey);
-	uploadData.set("folder", payload.folder);
-	uploadData.set("public_id", payload.publicId);
-	uploadData.set("signature", payload.signature);
-	uploadData.set("timestamp", String(payload.timestamp));
-	const uploadRes = await fetch(payload.uploadUrl, {
-		method: "POST",
-		body: uploadData,
-	});
-
-	if (!uploadRes.ok) {
-		throw new Error("Unable to upload item photo.");
-	}
-
-	const uploadPayload = (await uploadRes.json()) as { secure_url?: string };
-	if (!uploadPayload.secure_url) {
-		throw new Error("Cloudinary did not return an image URL.");
-	}
-
-	input.value = uploadPayload.secure_url.replace(
-		"/upload/",
-		"/upload/f_webp,q_auto/",
+	input.value = webpUrl(
+		await uploadImage({ restaurantId, kind: "item" }, file),
 	);
 }
 
@@ -136,6 +88,7 @@ function ImageUploadField({
 }) {
 	const [previewUrl, setPreviewUrl] = useState(defaultValue ?? "");
 	const [isUploading, setIsUploading] = useState(false);
+	const [uploadError, setUploadError] = useState<string | null>(null);
 
 	return (
 		<div className="grid gap-2">
@@ -153,9 +106,10 @@ function ImageUploadField({
 					className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
 					onChange={async (event) => {
 						const fileInput = event.currentTarget;
-						const file = event.currentTarget.files?.[0];
+						const file = fileInput.files?.[0];
 						const hiddenInput = document.getElementById(inputId);
 						if (!file || !(hiddenInput instanceof HTMLInputElement)) return;
+						setUploadError(null);
 						try {
 							setIsUploading(true);
 							await uploadItemPhoto(restaurantId, file, hiddenInput);
@@ -163,6 +117,12 @@ function ImageUploadField({
 							if (autoSave) {
 								hiddenInput.form?.requestSubmit();
 							}
+						} catch (error) {
+							setUploadError(
+								error instanceof Error
+									? error.message
+									: "Unable to upload item photo.",
+							);
 						} finally {
 							setIsUploading(false);
 							fileInput.value = "";
@@ -172,6 +132,11 @@ function ImageUploadField({
 			</label>
 			{isUploading ? (
 				<p className="text-xs font-black text-emerald-700">Uploading...</p>
+			) : null}
+			{uploadError ? (
+				<p role="alert" className="text-xs font-black text-red-600">
+					{uploadError}
+				</p>
 			) : null}
 			{previewUrl ? (
 				<div className="grid gap-2">
@@ -221,6 +186,7 @@ export function MenuEditor({
 		null,
 	);
 	const [layoutModalOpen, setLayoutModalOpen] = useState(false);
+	const [photoError, setPhotoError] = useState<string | null>(null);
 	const pageCount = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
 	const visibleItems = items.slice(
 		(itemPage - 1) * ITEMS_PER_PAGE,
@@ -235,6 +201,11 @@ export function MenuEditor({
 					<p className="mt-1 text-sm font-medium text-slate-500">
 						Create, edit, publish, and upload WebP photos for menu items.
 					</p>
+					{photoError ? (
+						<p role="alert" className="mt-2 text-xs font-bold text-red-600">
+							{photoError}
+						</p>
+					) : null}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					<button
@@ -499,6 +470,7 @@ export function MenuEditor({
 													) {
 														return;
 													}
+													setPhotoError(null);
 													try {
 														await uploadItemPhoto(
 															restaurantId,
@@ -506,6 +478,14 @@ export function MenuEditor({
 															hiddenInput,
 														);
 														hiddenInput.form?.requestSubmit();
+													} catch (error) {
+														setPhotoError(
+															`${item.name}: ${
+																error instanceof Error
+																	? error.message
+																	: "Unable to upload item photo."
+															}`,
+														);
 													} finally {
 														fileInput.value = "";
 													}

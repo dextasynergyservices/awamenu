@@ -640,6 +640,7 @@ function ReservationDetailsModal({
 								</p>
 								<ConfirmForm
 									action={markReservationRefundedAction}
+									tone="default"
 									hiddenFields={{ slug, reservationId: reservation.id }}
 									confirmMessage="Mark this refund as done? Only do this once the guest has been refunded."
 									className="mt-3"
