@@ -157,68 +157,74 @@ export async function createCategoryAction(formData: FormData) {
 }
 
 export async function createBannerAction(formData: FormData) {
-	const input = bannerSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		imageUrl: formData.get("imageUrl"),
-		title: formData.get("title") || undefined,
-		subtitle: formData.get("subtitle") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-		isActive: formData.get("isActive") === "on",
+	return actionResult(async () => {
+		const input = bannerSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			imageUrl: formData.get("imageUrl"),
+			title: formData.get("title") || undefined,
+			subtitle: formData.get("subtitle") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+			isActive: formData.get("isActive") === "on",
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		await db.restaurantBanner.create({
+			data: {
+				restaurantId: input.restaurantId,
+				imageUrl: input.imageUrl,
+				title: input.title,
+				subtitle: input.subtitle,
+				sortOrder: input.sortOrder,
+				isActive: input.isActive,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePublicMenu(input.slug);
 	});
-	await requireOwnedRestaurant(input.restaurantId);
-	await db.restaurantBanner.create({
-		data: {
-			restaurantId: input.restaurantId,
-			imageUrl: input.imageUrl,
-			title: input.title,
-			subtitle: input.subtitle,
-			sortOrder: input.sortOrder,
-			isActive: input.isActive,
-		},
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePublicMenu(input.slug);
 }
 
 export async function updateBannerAction(formData: FormData) {
-	const input = updateBannerSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		bannerId: formData.get("bannerId"),
-		imageUrl: formData.get("imageUrl"),
-		title: formData.get("title") || undefined,
-		subtitle: formData.get("subtitle") || undefined,
-		sortOrder: formData.get("sortOrder") || 0,
-		isActive: formData.get("isActive") === "on",
+	return actionResult(async () => {
+		const input = updateBannerSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			bannerId: formData.get("bannerId"),
+			imageUrl: formData.get("imageUrl"),
+			title: formData.get("title") || undefined,
+			subtitle: formData.get("subtitle") || undefined,
+			sortOrder: formData.get("sortOrder") || 0,
+			isActive: formData.get("isActive") === "on",
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		await db.restaurantBanner.updateMany({
+			where: { id: input.bannerId, restaurantId: input.restaurantId },
+			data: {
+				imageUrl: input.imageUrl,
+				title: input.title,
+				subtitle: input.subtitle,
+				sortOrder: input.sortOrder,
+				isActive: input.isActive,
+			},
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePublicMenu(input.slug);
 	});
-	await requireOwnedRestaurant(input.restaurantId);
-	await db.restaurantBanner.updateMany({
-		where: { id: input.bannerId, restaurantId: input.restaurantId },
-		data: {
-			imageUrl: input.imageUrl,
-			title: input.title,
-			subtitle: input.subtitle,
-			sortOrder: input.sortOrder,
-			isActive: input.isActive,
-		},
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePublicMenu(input.slug);
 }
 
 export async function removeBannerAction(formData: FormData) {
-	const input = removeBannerSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		bannerId: formData.get("bannerId"),
+	return actionResult(async () => {
+		const input = removeBannerSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			bannerId: formData.get("bannerId"),
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		await db.restaurantBanner.deleteMany({
+			where: { id: input.bannerId, restaurantId: input.restaurantId },
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePublicMenu(input.slug);
 	});
-	await requireOwnedRestaurant(input.restaurantId);
-	await db.restaurantBanner.deleteMany({
-		where: { id: input.bannerId, restaurantId: input.restaurantId },
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePublicMenu(input.slug);
 }
 
 export async function updateCategoryAction(formData: FormData) {
@@ -248,17 +254,19 @@ export async function updateCategoryAction(formData: FormData) {
 }
 
 export async function deleteCategoryAction(formData: FormData) {
-	const input = categoryIdSchema.parse({
-		restaurantId: formData.get("restaurantId"),
-		slug: formData.get("slug"),
-		categoryId: formData.get("categoryId"),
+	return actionResult(async () => {
+		const input = categoryIdSchema.parse({
+			restaurantId: formData.get("restaurantId"),
+			slug: formData.get("slug"),
+			categoryId: formData.get("categoryId"),
+		});
+		await requireOwnedRestaurant(input.restaurantId);
+		await db.menuCategory.delete({
+			where: { id: input.categoryId, restaurantId: input.restaurantId },
+		});
+		revalidatePath(`/dashboard/${input.slug}/menu`);
+		revalidatePublicMenu(input.slug);
 	});
-	await requireOwnedRestaurant(input.restaurantId);
-	await db.menuCategory.delete({
-		where: { id: input.categoryId, restaurantId: input.restaurantId },
-	});
-	revalidatePath(`/dashboard/${input.slug}/menu`);
-	revalidatePublicMenu(input.slug);
 }
 
 export async function createMenuItemAction(formData: FormData) {

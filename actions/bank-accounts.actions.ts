@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { actionResult } from "@/lib/action-error";
 import { requireUser } from "@/lib/auth-guards";
 import { db } from "@/lib/db";
 import { revalidatePublicMenu } from "@/lib/public-menu";
@@ -56,41 +57,45 @@ export async function saveBankAccountAction(formData: FormData) {
 }
 
 export async function toggleBankAccountStatusAction(formData: FormData) {
-	const user = await requireUser();
-	await assertOwnerCanChange(user.id, formData);
-	const id = formData.get("id") as string;
-	const slug = formData.get("slug") as string;
-	const isActive = formData.get("isActive") === "true";
+	return actionResult(async () => {
+		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
+		const id = formData.get("id") as string;
+		const slug = formData.get("slug") as string;
+		const isActive = formData.get("isActive") === "true";
 
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug, ownerId: user.id },
-		select: { id: true, slug: true },
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+
+		await db.restaurantBankAccount.update({
+			where: { id, restaurantId: restaurant.id },
+			data: { isActive },
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePublicMenu(restaurant.slug);
 	});
-
-	await db.restaurantBankAccount.update({
-		where: { id, restaurantId: restaurant.id },
-		data: { isActive },
-	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePublicMenu(restaurant.slug);
 }
 
 export async function deleteBankAccountAction(formData: FormData) {
-	const user = await requireUser();
-	await assertOwnerCanChange(user.id, formData);
-	const id = formData.get("id") as string;
-	const slug = formData.get("slug") as string;
+	return actionResult(async () => {
+		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
+		const id = formData.get("id") as string;
+		const slug = formData.get("slug") as string;
 
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug, ownerId: user.id },
-		select: { id: true, slug: true },
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+
+		await db.restaurantBankAccount.delete({
+			where: { id, restaurantId: restaurant.id },
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePublicMenu(restaurant.slug);
 	});
-
-	await db.restaurantBankAccount.delete({
-		where: { id, restaurantId: restaurant.id },
-	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePublicMenu(restaurant.slug);
 }

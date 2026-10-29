@@ -6,7 +6,6 @@ import {
 	Calendar,
 	CalendarDays,
 	Check,
-	ChevronDown,
 	ClipboardCopy,
 	KeyRound,
 	Lock,
@@ -483,12 +482,6 @@ function MobileStaffCard({
 							/>
 							{staff.isActive ? "Active" : "Suspended"}
 						</div>
-						<button
-							type="button"
-							className="p-1 text-slate-400 hover:text-slate-600"
-						>
-							<ChevronDown className="size-4 sm:size-5" />
-						</button>
 					</div>
 				</div>
 

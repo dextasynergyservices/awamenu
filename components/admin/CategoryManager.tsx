@@ -7,6 +7,7 @@ import {
 	deleteCategoryAction,
 	updateCategoryAction,
 } from "@/actions/menu.actions";
+import { PlanLimitNote } from "@/components/admin/PlanLimitNote";
 import { SubmitButton } from "@/components/ui/action-button";
 import { ActionForm } from "@/components/ui/action-form";
 import {
@@ -20,6 +21,8 @@ type CategoryManagerProps = {
 	restaurantId: string;
 	slug: string;
 	canCreateCategory: boolean;
+	planName: string;
+	maxCategories: number;
 	categories: Array<{
 		id: string;
 		name: string;
@@ -36,9 +39,14 @@ export function CategoryManager({
 	restaurantId,
 	slug,
 	canCreateCategory,
+	planName,
+	maxCategories,
 	categories,
 }: CategoryManagerProps) {
 	const [categoryPage, setCategoryPage] = useState(1);
+	// Remounts the "new category" form empty after a save, so a second click
+	// can't create the same category twice.
+	const [createFormKey, setCreateFormKey] = useState(0);
 	const pageCount = Math.max(
 		1,
 		Math.ceil(categories.length / CATEGORIES_PER_PAGE),
@@ -60,7 +68,12 @@ export function CategoryManager({
 						Create, edit, order, and publish menu categories.
 					</p>
 				</div>
-				<ActionForm action={createCategoryAction} className="flex gap-2">
+				<ActionForm
+					key={createFormKey}
+					action={createCategoryAction}
+					onSuccess={() => setCreateFormKey((key) => key + 1)}
+					className="flex gap-2"
+				>
 					<input type="hidden" name="restaurantId" value={restaurantId} />
 					<input type="hidden" name="slug" value={slug} />
 					<input type="hidden" name="emoji" value="" />
@@ -68,6 +81,8 @@ export function CategoryManager({
 					<input
 						name="name"
 						required
+						disabled={!canCreateCategory}
+						aria-label="New category name"
 						placeholder="New category"
 						className="hidden min-h-9 w-36 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-emerald-700 sm:block"
 					/>
@@ -82,6 +97,15 @@ export function CategoryManager({
 					</SubmitButton>
 				</ActionForm>
 			</div>
+			{canCreateCategory ? null : (
+				<PlanLimitNote
+					slug={slug}
+					planName={planName}
+					max={maxCategories}
+					noun={["category", "categories"]}
+					className="mt-3"
+				/>
+			)}
 
 			<div className="mt-4 overflow-hidden rounded-2xl border border-slate-100">
 				<table className="w-full text-left text-sm">

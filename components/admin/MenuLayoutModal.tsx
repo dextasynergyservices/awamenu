@@ -4,6 +4,7 @@ import { Lock, X } from "lucide-react";
 import { useState } from "react";
 import { updateRestaurantBrandingAction } from "@/actions/restaurant.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { MENU_TEMPLATES, type MenuTemplateId } from "@/lib/menu-templates";
 import { cn } from "@/lib/utils";
 
@@ -115,7 +116,7 @@ export function MenuLayoutModal({
 					</button>
 				</div>
 
-				<form
+				<ActionForm
 					action={updateRestaurantBrandingAction}
 					className="mt-4 grid gap-4"
 				>
@@ -173,7 +174,7 @@ export function MenuLayoutModal({
 					>
 						Save layout
 					</SubmitButton>
-				</form>
+				</ActionForm>
 			</div>
 		</div>
 	);

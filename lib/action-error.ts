@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 /**
  * Expected, user-facing failures from a server action.
  *
@@ -23,6 +25,27 @@ export class ActionError extends Error {
 export type ActionResponse = { ok: true } | { error: string };
 
 /**
+ * Bad form input (most actions validate with `schema.parse`) is the person's
+ * to fix, not a bug, so it comes back as a message like any ActionError
+ * instead of replacing the page with the error screen.
+ */
+function expectedFailure(error: unknown): string | null {
+	if (error instanceof ActionError) return error.message;
+	if (error instanceof ZodError) {
+		const issue = error.issues[0];
+		const field = issue?.path.at(-1);
+		const label =
+			typeof field === "string"
+				? field.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()
+				: null;
+		return label
+			? `Check the ${label} and try again.`
+			: "Check the form and try again.";
+	}
+	return null;
+}
+
+/**
  * Runs an action body, converting `ActionError` into a returned message.
  *
  * Everything else is rethrown untouched — including Next's `redirect()` and
@@ -35,9 +58,8 @@ export async function actionResult(
 		await run();
 		return { ok: true };
 	} catch (error) {
-		if (error instanceof ActionError) {
-			return { error: error.message };
-		}
+		const message = expectedFailure(error);
+		if (message) return { error: message };
 		throw error;
 	}
 }
@@ -55,9 +77,8 @@ export async function actionData<T extends object>(
 	try {
 		return await run();
 	} catch (error) {
-		if (error instanceof ActionError) {
-			return { error: error.message };
-		}
+		const message = expectedFailure(error);
+		if (message) return { error: message };
 		throw error;
 	}
 }
