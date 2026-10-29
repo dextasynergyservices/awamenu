@@ -18,7 +18,14 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const input = uploadSchema.parse(await request.json());
+	const parsed = uploadSchema.safeParse(await request.json().catch(() => null));
+	if (!parsed.success) {
+		return NextResponse.json(
+			{ error: "Use a WebP, JPG or PNG image." },
+			{ status: 400 },
+		);
+	}
+	const input = parsed.data;
 	const restaurant = await db.restaurant.findFirst({
 		where: {
 			id: input.restaurantId,
@@ -28,7 +35,10 @@ export async function POST(request: Request) {
 	});
 
 	if (!restaurant) {
-		return NextResponse.json({ error: "Not found" }, { status: 404 });
+		return NextResponse.json(
+			{ error: "You can't upload photos for this restaurant." },
+			{ status: 404 },
+		);
 	}
 
 	const publicId = input.kind === "logo" ? input.kind : randomUUID();

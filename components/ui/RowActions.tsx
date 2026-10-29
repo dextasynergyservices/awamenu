@@ -15,6 +15,7 @@ import {
 	useTransition,
 } from "react";
 import { createPortal } from "react-dom";
+import { ConfirmDialog, splitConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,10 +27,16 @@ import { cn } from "@/lib/utils";
  * bottom of the screen; closes on outside click, Escape, scroll or resize.
  */
 
-type Ctx = { close: () => void; setError: (message: string | null) => void };
+type Ctx = {
+	close: () => void;
+	setError: (message: string | null) => void;
+	/** Keeps the menu open (and hidden) while an item's dialog is showing. */
+	hold: (held: boolean) => void;
+};
 const RowActionsContext = createContext<Ctx>({
 	close: () => {},
 	setError: () => {},
+	hold: () => {},
 });
 
 const MENU_WIDTH = 208;
@@ -46,6 +53,9 @@ export function RowActions({
 }) {
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// A confirm dialog lives outside the menu, so clicks, Escape and scrolling
+	// inside it would otherwise count as "outside" and unmount it mid-action.
+	const [held, setHeld] = useState(false);
 	const [position, setPosition] = useState<{
 		top: number;
 		left: number;
@@ -58,6 +68,7 @@ export function RowActions({
 	const close = useCallback(() => {
 		setOpen(false);
 		setError(null);
+		setHeld(false);
 	}, []);
 
 	const place = useCallback(() => {
@@ -84,7 +95,7 @@ export function RowActions({
 	}, [open, place]);
 
 	useEffect(() => {
-		if (!open) return;
+		if (!open || held) return;
 		function onPointer(event: PointerEvent) {
 			const target = event.target as Node;
 			if (
@@ -110,10 +121,10 @@ export function RowActions({
 			window.removeEventListener("resize", close);
 			window.removeEventListener("scroll", close, true);
 		};
-	}, [open, close]);
+	}, [open, held, close]);
 
 	return (
-		<RowActionsContext.Provider value={{ close, setError }}>
+		<RowActionsContext.Provider value={{ close, setError, hold: setHeld }}>
 			<button
 				ref={triggerRef}
 				type="button"
@@ -141,6 +152,7 @@ export function RowActions({
 								top: position?.top ?? -9999,
 								left: position?.left ?? -9999,
 								width: MENU_WIDTH,
+								visibility: held ? "hidden" : undefined,
 							}}
 							className="z-[200] grid gap-0.5 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
 						>
@@ -253,45 +265,76 @@ export function RowActionForm({
 	confirm?: string;
 	onDone?: () => void;
 }) {
-	const { close, setError } = useContext(RowActionsContext);
+	const { close, setError, hold } = useContext(RowActionsContext);
 	const [pending, startTransition] = useTransition();
+	const [confirming, setConfirming] = useState(false);
+	const [dialogError, setDialogError] = useState<string | null>(null);
+
+	function run() {
+		const fd = new FormData();
+		for (const [key, value] of Object.entries(fields)) fd.set(key, value);
+		const showError = confirm ? setDialogError : setError;
+		showError(null);
+		startTransition(async () => {
+			try {
+				const result = await action(fd);
+				if (result && typeof result === "object" && "error" in result) {
+					showError(String(result.error));
+					return;
+				}
+				setConfirming(false);
+				close();
+				onDone?.();
+			} catch {
+				showError("Something went wrong. Please try again.");
+			}
+		});
+	}
+
+	const prompt = confirm ? splitConfirm(confirm) : null;
+
 	return (
-		<button
-			type="button"
-			role="menuitem"
-			disabled={disabled || pending}
-			title={title}
-			onClick={() => {
-				if (confirm && !window.confirm(confirm)) return;
-				const fd = new FormData();
-				for (const [key, value] of Object.entries(fields)) fd.set(key, value);
-				setError(null);
-				startTransition(async () => {
-					try {
-						const result = await action(fd);
-						if (result && typeof result === "object" && "error" in result) {
-							setError(String(result.error));
-							return;
-						}
-						close();
-						onDone?.();
-					} catch {
-						setError("Something went wrong. Please try again.");
-					}
-				});
-			}}
-			className={itemClass(tone)}
-		>
-			{pending ? (
-				<Loader2
-					className="size-3.5 shrink-0 animate-spin"
-					aria-hidden="true"
+		<>
+			<button
+				type="button"
+				role="menuitem"
+				disabled={disabled || pending}
+				title={title}
+				onClick={() => {
+					if (!confirm) return run();
+					setDialogError(null);
+					hold(true);
+					setConfirming(true);
+				}}
+				className={itemClass(tone)}
+			>
+				{pending && !confirming ? (
+					<Loader2
+						className="size-3.5 shrink-0 animate-spin"
+						aria-hidden="true"
+					/>
+				) : Icon ? (
+					<Icon className="size-3.5 shrink-0" aria-hidden="true" />
+				) : null}
+				{children}
+			</button>
+			{prompt ? (
+				<ConfirmDialog
+					open={confirming}
+					onOpenChange={(open) => {
+						setConfirming(open);
+						if (!open) close();
+					}}
+					title={prompt.title}
+					message={prompt.message}
+					confirmLabel={children}
+					tone={tone === "danger" ? "danger" : "default"}
+					pending={pending}
+					error={dialogError}
+					onConfirm={run}
 				/>
-			) : Icon ? (
-				<Icon className="size-3.5 shrink-0" aria-hidden="true" />
 			) : null}
-			{children}
-		</button>
+		</>
 	);
 }
 

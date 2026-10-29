@@ -54,18 +54,26 @@ export function RestaurantBrandingForm({
 	const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 	const logoInputId = useId();
 
+	const [logoError, setLogoError] = useState<string | null>(null);
+
 	async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-		const file = e.target.files?.[0];
+		const input = e.currentTarget;
+		const file = input.files?.[0];
 		if (!file) return;
 
+		setLogoError(null);
 		try {
 			setIsUploadingLogo(true);
 			const url = await uploadRestaurantPhoto(restaurantId, "logo", file);
 			setLogoUrl(url);
 		} catch (error) {
-			alert(error instanceof Error ? error.message : "Upload failed");
+			setLogoError(
+				error instanceof Error ? error.message : "Unable to upload the logo.",
+			);
 		} finally {
 			setIsUploadingLogo(false);
+			// Lets the same file be picked again after a failure.
+			input.value = "";
 		}
 	}
 
@@ -129,6 +137,11 @@ export function RestaurantBrandingForm({
 								</div>
 							)}
 						</div>
+						{logoError ? (
+							<p role="alert" className="mt-2 text-xs font-bold text-red-600">
+								{logoError}
+							</p>
+						) : null}
 					</div>
 				</div>
 

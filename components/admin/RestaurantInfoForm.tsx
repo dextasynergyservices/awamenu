@@ -110,9 +110,10 @@ export function RestaurantInfoForm({
 							id="name"
 							name="name"
 							value={formValues.name}
-							onChange={(e) =>
-								setFormValues((prev) => ({ ...prev, name: e.target.value }))
-							}
+							onChange={(e) => {
+								const value = e.target.value;
+								setFormValues((prev) => ({ ...prev, name: value }));
+							}}
 							required
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
@@ -130,9 +131,10 @@ export function RestaurantInfoForm({
 							id="slug"
 							name="slug"
 							value={formValues.slug}
-							onChange={(e) =>
-								setFormValues((prev) => ({ ...prev, slug: e.target.value }))
-							}
+							onChange={(e) => {
+								const value = e.target.value;
+								setFormValues((prev) => ({ ...prev, slug: value }));
+							}}
 							required
 							pattern="[a-z0-9]+(-[a-z0-9]+)*"
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -159,12 +161,10 @@ export function RestaurantInfoForm({
 							id="description"
 							name="description"
 							value={formValues.description}
-							onChange={(e) =>
-								setFormValues((prev) => ({
-									...prev,
-									description: e.target.value,
-								}))
-							}
+							onChange={(e) => {
+								const value = e.target.value;
+								setFormValues((prev) => ({ ...prev, description: value }));
+							}}
 							rows={3}
 							className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						/>
@@ -183,12 +183,10 @@ export function RestaurantInfoForm({
 								id="phone"
 								name="phone"
 								value={formValues.phone}
-								onChange={(e) =>
-									setFormValues((prev) => ({
-										...prev,
-										phone: e.target.value,
-									}))
-								}
+								onChange={(e) => {
+									const value = e.target.value;
+									setFormValues((prev) => ({ ...prev, phone: value }));
+								}}
 								className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-3 pr-10 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 							/>
 							<div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
@@ -210,12 +208,10 @@ export function RestaurantInfoForm({
 								id="address"
 								name="address"
 								value={formValues.address}
-								onChange={(e) =>
-									setFormValues((prev) => ({
-										...prev,
-										address: e.target.value,
-									}))
-								}
+								onChange={(e) => {
+									const value = e.target.value;
+									setFormValues((prev) => ({ ...prev, address: value }));
+								}}
 								className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-3 pr-10 text-base md:text-[13px] font-medium text-slate-950 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 							/>
 							<div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
@@ -235,12 +231,10 @@ export function RestaurantInfoForm({
 							id="currency"
 							name="currency"
 							value={formValues.currency}
-							onChange={(e) =>
-								setFormValues((prev) => ({
-									...prev,
-									currency: e.target.value,
-								}))
-							}
+							onChange={(e) => {
+								const value = e.target.value;
+								setFormValues((prev) => ({ ...prev, currency: value }));
+							}}
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						>
 							<option value="NGN">NGN (₦)</option>
@@ -260,12 +254,10 @@ export function RestaurantInfoForm({
 							id="timezone"
 							name="timezone"
 							value={formValues.timezone}
-							onChange={(e) =>
-								setFormValues((prev) => ({
-									...prev,
-									timezone: e.target.value,
-								}))
-							}
+							onChange={(e) => {
+								const value = e.target.value;
+								setFormValues((prev) => ({ ...prev, timezone: value }));
+							}}
 							className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base md:text-[13px] font-medium text-slate-950 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
 						>
 							<option value="Africa/Lagos">Africa/Lagos</option>
