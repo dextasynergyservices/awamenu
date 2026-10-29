@@ -554,6 +554,7 @@ export default async function ReservationStatusPage({
 							) : null}
 							<ConfirmForm
 								action={cancelReservationAsGuestAction}
+								cancelLabel="Keep booking"
 								hiddenFields={{
 									slug: reservation.restaurant.slug,
 									reservationId: reservation.id,

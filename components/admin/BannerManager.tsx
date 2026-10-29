@@ -10,6 +10,7 @@ import {
 } from "@/actions/menu.actions";
 import { SubmitButton } from "@/components/ui/action-button";
 import { type BannerItem, createBannerItem } from "@/lib/banners";
+import { uploadImage, webpUrl } from "@/lib/image-upload";
 
 type BannerManagerProps = {
 	restaurantId: string;
@@ -18,55 +19,7 @@ type BannerManagerProps = {
 };
 
 async function uploadBannerImage(restaurantId: string, file: File) {
-	if (!["image/webp", "image/jpeg", "image/png"].includes(file.type)) {
-		throw new Error("Banner images must be WebP, JPG, or PNG images.");
-	}
-
-	const res = await fetch("/api/upload", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			restaurantId,
-			kind: "cover",
-			contentType: file.type,
-		}),
-	});
-
-	if (!res.ok) {
-		throw new Error("Unable to create upload URL.");
-	}
-
-	const payload = (await res.json()) as {
-		apiKey: string;
-		folder: string;
-		publicId: string;
-		signature: string;
-		timestamp: number;
-		uploadUrl: string;
-	};
-	const uploadData = new FormData();
-	uploadData.set("file", file);
-	uploadData.set("api_key", payload.apiKey);
-	uploadData.set("folder", payload.folder);
-	uploadData.set("public_id", payload.publicId);
-	uploadData.set("signature", payload.signature);
-	uploadData.set("timestamp", String(payload.timestamp));
-
-	const uploadRes = await fetch(payload.uploadUrl, {
-		method: "POST",
-		body: uploadData,
-	});
-
-	if (!uploadRes.ok) {
-		throw new Error("Unable to upload banner image.");
-	}
-
-	const uploadPayload = (await uploadRes.json()) as { secure_url?: string };
-	if (!uploadPayload.secure_url) {
-		throw new Error("Cloudinary did not return an image URL.");
-	}
-
-	return uploadPayload.secure_url.replace("/upload/", "/upload/f_webp,q_auto/");
+	return webpUrl(await uploadImage({ restaurantId, kind: "cover" }, file));
 }
 
 export function BannerManager({
@@ -76,6 +29,7 @@ export function BannerManager({
 }: BannerManagerProps) {
 	const [currentBannerItems, setCurrentBannerItems] = useState(bannerItems);
 	const [isUploading, setIsUploading] = useState(false);
+	const [uploadError, setUploadError] = useState<string | null>(null);
 	const scrollerRef = useRef<HTMLDivElement>(null);
 
 	function scrollBanners(direction: "left" | "right") {
@@ -94,6 +48,11 @@ export function BannerManager({
 				<p className="mt-1 text-xs md:text-sm font-medium text-slate-500">
 					Add banner images and the text shown on each public menu banner.
 				</p>
+				{uploadError ? (
+					<p role="alert" className="mt-2 text-xs font-bold text-red-600">
+						{uploadError}
+					</p>
+				) : null}
 			</div>
 
 			<div className="mt-4 grid min-w-0 max-w-full gap-4 overflow-hidden">
@@ -216,13 +175,14 @@ export function BannerManager({
 											name="title"
 											value={banner.title ?? ""}
 											rows={2}
-											onChange={(event) =>
+											onChange={(event) => {
+												// Read now: the updater may run later, when React
+												// has already cleared currentTarget.
+												const title = event.currentTarget.value;
 												setCurrentBannerItems((items) =>
-													updateBannerText(items, index, {
-														title: event.currentTarget.value,
-													}),
-												)
-											}
+													updateBannerText(items, index, { title }),
+												);
+											}}
 											placeholder="Fresh meals, made with love"
 											className="min-h-16 resize-none rounded-lg border border-slate-200 px-2 py-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
 										/>
@@ -233,13 +193,12 @@ export function BannerManager({
 											name="subtitle"
 											value={banner.subtitle ?? ""}
 											rows={2}
-											onChange={(event) =>
+											onChange={(event) => {
+												const subtitle = event.currentTarget.value;
 												setCurrentBannerItems((items) =>
-													updateBannerText(items, index, {
-														subtitle: event.currentTarget.value,
-													}),
-												)
-											}
+													updateBannerText(items, index, { subtitle }),
+												);
+											}}
 											placeholder="Delicious. Local. Always fresh."
 											className="min-h-16 resize-none rounded-lg border border-slate-200 px-2 py-2 text-base font-bold text-slate-900 outline-none focus:border-emerald-700 md:text-sm"
 										/>
@@ -287,15 +246,37 @@ export function BannerManager({
 									if (files.length === 0) return;
 
 									setIsUploading(true);
+									setUploadError(null);
 									try {
-										const uploadedUrls = await Promise.all(
+										// One bad file shouldn't throw away the others.
+										const results = await Promise.allSettled(
 											files.map((file) =>
 												uploadBannerImage(restaurantId, file),
 											),
 										);
-										setCurrentBannerItems((items) =>
-											addUploadedBanners(items, uploadedUrls),
+										const uploadedUrls = results.flatMap((result) =>
+											result.status === "fulfilled" ? [result.value] : [],
 										);
+										if (uploadedUrls.length > 0) {
+											setCurrentBannerItems((items) =>
+												addUploadedBanners(items, uploadedUrls),
+											);
+										}
+										const failed = results.find(
+											(result) => result.status === "rejected",
+										);
+										if (failed?.status === "rejected") {
+											const reason =
+												failed.reason instanceof Error
+													? failed.reason.message
+													: "The upload failed. Try again.";
+											const failedCount = results.length - uploadedUrls.length;
+											setUploadError(
+												results.length > 1
+													? `${failedCount} of ${results.length} images didn't upload. ${reason}`
+													: reason,
+											);
+										}
 									} finally {
 										setIsUploading(false);
 										input.value = "";

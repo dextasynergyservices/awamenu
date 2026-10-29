@@ -378,6 +378,7 @@ export default async function SuperAdminRestaurantDetailPage({
 					<div className="mt-3 border-slate-100 border-t pt-3">
 						<ConfirmForm
 							action={sendOwnerPasswordResetAction}
+							tone="default"
 							hiddenFields={{ userId: owner.id }}
 							confirmMessage={`Email ${owner.email} a password reset code? They will choose the new password themselves.`}
 						>

@@ -2,6 +2,7 @@
 
 import { ImageUp, Loader2, Trash2 } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { uploadImage } from "@/lib/image-upload";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -23,46 +24,17 @@ export function PlatformLogoField({
 
 	async function upload(file: File) {
 		setError(null);
-		if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-			setError("Use a PNG, JPG or WebP image.");
-			return;
-		}
-		if (file.size > MAX_BYTES) {
-			setError("Keep it under 2 MB.");
-			return;
-		}
 		setBusy(true);
 		try {
-			const signed = await fetch("/api/upload/platform", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ kind: "logo", contentType: file.type }),
-			});
-			if (!signed.ok) throw new Error("Couldn't start the upload.");
-			const p = (await signed.json()) as {
-				apiKey: string;
-				folder: string;
-				publicId: string;
-				signature: string;
-				timestamp: number;
-				uploadUrl: string;
-			};
-			const body = new FormData();
-			body.set("file", file);
-			body.set("api_key", p.apiKey);
-			body.set("folder", p.folder);
-			body.set("public_id", p.publicId);
-			body.set("signature", p.signature);
-			body.set("timestamp", String(p.timestamp));
-			const res = await fetch(p.uploadUrl, { method: "POST", body });
-			const json = (await res.json()) as {
-				secure_url?: string;
-				version?: number;
-			};
-			if (!res.ok || !json.secure_url)
-				throw new Error("The upload failed. Try again.");
+			const secureUrl = await uploadImage(
+				{ platform: true, kind: "logo" },
+				file,
+				{
+					maxBytes: MAX_BYTES,
+				},
+			);
 			// PNG keeps transparency (WebP would too, but email clients vary).
-			setUrl(json.secure_url.replace("/upload/", "/upload/q_auto/"));
+			setUrl(secureUrl.replace("/upload/", "/upload/q_auto/"));
 		} catch (e) {
 			setError(
 				e instanceof Error ? e.message : "The upload failed. Try again.",
