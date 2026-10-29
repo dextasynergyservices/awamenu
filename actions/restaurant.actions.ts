@@ -51,46 +51,50 @@ const updateBrandingSchema = z.object({
 });
 
 export async function updateRestaurantSettingsAction(formData: FormData) {
-	const user = await requireUser();
-	await assertOwnerCanChange(user.id, formData);
-	const input = updateSettingsSchema.parse({
-		slug: formData.get("slug"),
-		dineInPaymentPolicy: formData.get("dineInPaymentPolicy"),
-		staffDashboardPassword: formData.get("staffDashboardPassword") || undefined,
-		staffDashboardAutoLockHours: formData.get("staffDashboardAutoLockHours"),
-		customerUpdateChannel: formData.get("customerUpdateChannel") ?? "WHATSAPP",
+	return actionResult(async () => {
+		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
+		const input = updateSettingsSchema.parse({
+			slug: formData.get("slug"),
+			dineInPaymentPolicy: formData.get("dineInPaymentPolicy"),
+			staffDashboardPassword:
+				formData.get("staffDashboardPassword") || undefined,
+			staffDashboardAutoLockHours: formData.get("staffDashboardAutoLockHours"),
+			customerUpdateChannel:
+				formData.get("customerUpdateChannel") ?? "WHATSAPP",
+		});
+
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug: input.slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+
+		// Encrypted rather than hashed. This is a shared operational credential the
+		// owner needs to read back and pass to staff, so it has to be recoverable —
+		// see lib/secret-box.ts. Reading it back is gated behind re-entering the
+		// owner's own account password.
+		const encryptedStaffPassword =
+			input.staffDashboardPassword !== undefined
+				? encryptSecret(input.staffDashboardPassword)
+				: undefined;
+
+		await db.restaurant.update({
+			where: { id: restaurant.id },
+			data: {
+				dineInPaymentPolicy: input.dineInPaymentPolicy,
+				customerUpdateChannel: input.customerUpdateChannel,
+				...(encryptedStaffPassword !== undefined && {
+					staffDashboardPassword: encryptedStaffPassword,
+				}),
+				...(input.staffDashboardAutoLockHours !== undefined && {
+					staffDashboardAutoLockHours: input.staffDashboardAutoLockHours,
+				}),
+			},
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePublicMenu(restaurant.slug);
 	});
-
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug: input.slug, ownerId: user.id },
-		select: { id: true, slug: true },
-	});
-
-	// Encrypted rather than hashed. This is a shared operational credential the
-	// owner needs to read back and pass to staff, so it has to be recoverable —
-	// see lib/secret-box.ts. Reading it back is gated behind re-entering the
-	// owner's own account password.
-	const encryptedStaffPassword =
-		input.staffDashboardPassword !== undefined
-			? encryptSecret(input.staffDashboardPassword)
-			: undefined;
-
-	await db.restaurant.update({
-		where: { id: restaurant.id },
-		data: {
-			dineInPaymentPolicy: input.dineInPaymentPolicy,
-			customerUpdateChannel: input.customerUpdateChannel,
-			...(encryptedStaffPassword !== undefined && {
-				staffDashboardPassword: encryptedStaffPassword,
-			}),
-			...(input.staffDashboardAutoLockHours !== undefined && {
-				staffDashboardAutoLockHours: input.staffDashboardAutoLockHours,
-			}),
-		},
-	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePublicMenu(restaurant.slug);
 }
 
 export async function updateRestaurantInfoAction(formData: FormData) {
@@ -163,51 +167,53 @@ export async function updateRestaurantInfoAction(formData: FormData) {
 }
 
 export async function updateRestaurantBrandingAction(formData: FormData) {
-	const user = await requireUser();
-	await assertOwnerCanChange(user.id, formData);
-	const input = updateBrandingSchema.parse({
-		slug: formData.get("slug"),
-		logoUrl: formData.get("logoUrl") || undefined,
-		coverUrl: formData.get("coverUrl") || undefined,
-		primaryColor: formData.get("primaryColor") || undefined,
-		fontFamily: formData.get("fontFamily") || undefined,
-		activeTemplate: formData.get("activeTemplate") || "classic",
+	return actionResult(async () => {
+		const user = await requireUser();
+		await assertOwnerCanChange(user.id, formData);
+		const input = updateBrandingSchema.parse({
+			slug: formData.get("slug"),
+			logoUrl: formData.get("logoUrl") || undefined,
+			coverUrl: formData.get("coverUrl") || undefined,
+			primaryColor: formData.get("primaryColor") || undefined,
+			fontFamily: formData.get("fontFamily") || undefined,
+			activeTemplate: formData.get("activeTemplate") || "classic",
+		});
+
+		const restaurant = await db.restaurant.findFirstOrThrow({
+			where: { slug: input.slug, ownerId: user.id },
+			select: { id: true, slug: true },
+		});
+
+		// The layout picker greys out locked templates, but that's presentation
+		// only — this form posts a plain string, so the entitlement is re-checked
+		// here before it's persisted.
+		//
+		// Coerced to "classic" rather than rejected: the branding form re-submits
+		// whatever template is already stored as a hidden field, so a restaurant
+		// that downgraded while on a paid layout would otherwise be unable to save
+		// even their logo. Normalising on write also stops a stale locked template
+		// from lingering in the database.
+		const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
+		const activeTemplate = (
+			planFeatures.availableTemplates as string[]
+		).includes(input.activeTemplate)
+			? input.activeTemplate
+			: "classic";
+
+		await db.restaurant.update({
+			where: { id: restaurant.id },
+			data: {
+				logoUrl: input.logoUrl,
+				coverUrl: input.coverUrl,
+				primaryColor: input.primaryColor,
+				fontFamily: input.fontFamily,
+				activeTemplate,
+			},
+		});
+
+		revalidatePath(`/dashboard/${restaurant.slug}/settings`);
+		revalidatePublicMenu(restaurant.slug);
 	});
-
-	const restaurant = await db.restaurant.findFirstOrThrow({
-		where: { slug: input.slug, ownerId: user.id },
-		select: { id: true, slug: true },
-	});
-
-	// The layout picker greys out locked templates, but that's presentation
-	// only — this form posts a plain string, so the entitlement is re-checked
-	// here before it's persisted.
-	//
-	// Coerced to "classic" rather than rejected: the branding form re-submits
-	// whatever template is already stored as a hidden field, so a restaurant
-	// that downgraded while on a paid layout would otherwise be unable to save
-	// even their logo. Normalising on write also stops a stale locked template
-	// from lingering in the database.
-	const planFeatures = await getRestaurantPlanFeatures(restaurant.id);
-	const activeTemplate = (planFeatures.availableTemplates as string[]).includes(
-		input.activeTemplate,
-	)
-		? input.activeTemplate
-		: "classic";
-
-	await db.restaurant.update({
-		where: { id: restaurant.id },
-		data: {
-			logoUrl: input.logoUrl,
-			coverUrl: input.coverUrl,
-			primaryColor: input.primaryColor,
-			fontFamily: input.fontFamily,
-			activeTemplate,
-		},
-	});
-
-	revalidatePath(`/dashboard/${restaurant.slug}/settings`);
-	revalidatePublicMenu(restaurant.slug);
 }
 
 const revealStaffPasswordSchema = z.object({

@@ -9,6 +9,7 @@ import {
 } from "@/actions/bank-accounts.actions";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 
 type BankAccount = {
 	id: string;
@@ -73,7 +74,7 @@ export function BankAccountsManager({ slug, bankAccounts }: Props) {
 								</div>
 							</div>
 							<div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-								<form action={toggleBankAccountStatusAction}>
+								<ActionForm action={toggleBankAccountStatusAction}>
 									<input type="hidden" name="id" value={account.id} />
 									<input type="hidden" name="slug" value={slug} />
 									<input
@@ -90,7 +91,7 @@ export function BankAccountsManager({ slug, bankAccounts }: Props) {
 									>
 										{account.isActive ? "Active" : "Inactive"}
 									</SubmitButton>
-								</form>
+								</ActionForm>
 								<div className="flex items-center gap-2">
 									<button
 										type="button"
@@ -99,13 +100,13 @@ export function BankAccountsManager({ slug, bankAccounts }: Props) {
 									>
 										<Pencil className="size-4" />
 									</button>
-									<form action={deleteBankAccountAction}>
+									<ActionForm action={deleteBankAccountAction}>
 										<input type="hidden" name="id" value={account.id} />
 										<input type="hidden" name="slug" value={slug} />
 										<SubmitButton className="grid size-8 place-items-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors">
 											<Trash2 className="size-4" />
 										</SubmitButton>
-									</form>
+									</ActionForm>
 								</div>
 							</div>
 						</div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, Check, ImageIcon, Pencil, Upload } from "lucide-react";
+import { BadgeCheck, Check, ImageIcon, Upload } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useId, useState } from "react";
@@ -8,6 +8,7 @@ import { updateRestaurantBrandingAction } from "@/actions/restaurant.actions";
 import { uploadRestaurantPhoto } from "@/components/admin/restaurant-photo-upload";
 import { SettingsCard } from "@/components/admin/SettingsCard";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 
 const BRAND_PRESET_COLORS = [
 	{ name: "Emerald", hex: "#10b981" },
@@ -83,17 +84,8 @@ export function RestaurantBrandingForm({
 			title="Branding"
 			description="Customize how your brand appears to your customers."
 			icon={BadgeCheck}
-			headerAction={
-				<button
-					type="button"
-					className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs md:text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100"
-				>
-					<Pencil className="size-3.5" />
-					Edit
-				</button>
-			}
 		>
-			<form
+			<ActionForm
 				action={updateRestaurantBrandingAction}
 				className="grid gap-8 sm:grid-cols-2"
 			>
@@ -211,13 +203,13 @@ export function RestaurantBrandingForm({
 							Live Brand Button Preview
 						</p>
 						<div className="flex flex-wrap items-center gap-3">
-							<button
-								type="button"
+							<span
+								aria-hidden="true"
 								style={{ backgroundColor: color }}
 								className="rounded-xl px-5 py-2.5 text-xs font-black text-white shadow-sm"
 							>
 								Order Now
-							</button>
+							</span>
 							<span style={{ color }} className="text-xs font-black">
 								Sample Accent Text
 							</span>
@@ -245,7 +237,7 @@ export function RestaurantBrandingForm({
 						Save Branding
 					</SubmitButton>
 				</div>
-			</form>
+			</ActionForm>
 		</SettingsCard>
 	);
 }

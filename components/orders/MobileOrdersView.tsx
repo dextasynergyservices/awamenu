@@ -11,7 +11,6 @@ import {
 	FileText,
 	Phone,
 	Search,
-	SlidersHorizontal,
 	Truck,
 	X,
 } from "lucide-react";
@@ -248,13 +247,6 @@ export function MobileOrdersView({
 						className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-base font-medium text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
 					/>
 				</div>
-				<button
-					type="button"
-					className="flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600"
-				>
-					<SlidersHorizontal className="size-3.5" aria-hidden="true" />
-					Filters
-				</button>
 			</div>
 
 			{/* ── Filter pills ───────────────────────────── */}

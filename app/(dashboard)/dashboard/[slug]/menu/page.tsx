@@ -112,10 +112,12 @@ export default async function MenuBuilderPage({
 				slug={restaurant.slug}
 				currency={restaurant.currency}
 				canCreateCategory={isWithinLimit(categoryCount, plan.maxCategories)}
+				canCreateItem={isWithinLimit(menuItemCount, plan.maxMenuItems)}
 				categories={categories}
 				bannerItems={bannerItems}
 				maxCategories={plan.maxCategories}
 				maxMenuItems={plan.maxMenuItems}
+				planName={plan.planName}
 				activeTemplate={restaurant.activeTemplate}
 				availableTemplates={plan.availableTemplates}
 			/>
@@ -141,12 +143,16 @@ export default async function MenuBuilderPage({
 						restaurantId={restaurant.id}
 						slug={restaurant.slug}
 						canCreateCategory={isWithinLimit(categoryCount, plan.maxCategories)}
+						planName={plan.planName}
+						maxCategories={plan.maxCategories}
 						categories={categories}
 					/>
 					<MenuEditor
 						restaurantId={restaurant.id}
 						slug={restaurant.slug}
 						canCreateItem={isWithinLimit(menuItemCount, plan.maxMenuItems)}
+						planName={plan.planName}
+						maxMenuItems={plan.maxMenuItems}
 						activeTemplate={restaurant.activeTemplate}
 						availableTemplates={plan.availableTemplates}
 						categories={categories}

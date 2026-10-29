@@ -9,6 +9,7 @@ import {
 	updateBannerAction,
 } from "@/actions/menu.actions";
 import { SubmitButton } from "@/components/ui/action-button";
+import { ActionForm } from "@/components/ui/action-form";
 import { type BannerItem, createBannerItem } from "@/lib/banners";
 import { uploadImage, webpUrl } from "@/lib/image-upload";
 
@@ -154,7 +155,7 @@ export function BannerManager({
 										</button>
 									)}
 								</div>
-								<form
+								<ActionForm
 									action={banner.id ? updateBannerAction : createBannerAction}
 									className="grid gap-2 p-2"
 								>
@@ -223,7 +224,7 @@ export function BannerManager({
 											Save
 										</SubmitButton>
 									</div>
-								</form>
+								</ActionForm>
 							</div>
 						))}
 						<label className="grid h-36 w-68 shrink-0 cursor-pointer place-items-center rounded-xl border border-emerald-200 border-dashed bg-emerald-50/30 text-center text-emerald-700 lg:w-72 xl:w-76">
